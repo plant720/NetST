@@ -454,14 +454,9 @@ class MainForm(MainWindowUI):
         """Handle analysis completion."""
         if result.success:
             self.log_tab.append_success("Analysis completed!")
-
             vis_path = result.get_visualization_path()
             if os.path.isfile(vis_path):
                 self.web_view_main.setUrl(QUrl.fromLocalFile(vis_path))
-
-            # Show / refresh the Haplotype tab with the latest results.
-            # show_haplotype_tab() handles both first-time creation and re-runs.
-            self.show_haplotype_tab(result.output_path, result.prefix)
         else:
             self.log_tab.append_error(f"Analysis failed: {result.error_message}")
             QMessageBox.critical(self, "Error", f"Analysis failed: {result.error_message}")
@@ -469,6 +464,11 @@ class MainForm(MainWindowUI):
             main_page = os.path.join(self.current_directory, "statics", self.language, "main.html")
             if os.path.isfile(main_page):
                 self.web_view_main.setUrl(QUrl.fromLocalFile(main_page))
+
+        # Show / refresh the Haplotype tab whenever haplotype data was produced,
+        # regardless of whether downstream steps (fastHaN, visualization) succeeded.
+        if result.haplotype_ready:
+            self.show_haplotype_tab(result.output_path, result.prefix)
 
         self.set_progress(0)
         self.set_status("Ready")
