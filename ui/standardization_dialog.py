@@ -229,7 +229,7 @@ class StandardizationDialog(QDialog):
         
         self.preview_names = QTextEdit()
         self.preview_names.setReadOnly(True)
-        self.preview_names.setFont(QFont("Consolas", 9))
+        self.preview_names.setFont(QFont("Courier New", 9))
         self.preview_names.setStyleSheet("background-color: #FFFFCC;")
         names_layout.addWidget(self.preview_names)
         
@@ -242,7 +242,7 @@ class StandardizationDialog(QDialog):
         
         self.split_results = QTextEdit()
         self.split_results.setReadOnly(True)
-        self.split_results.setFont(QFont("Consolas", 9))
+        self.split_results.setFont(QFont("Courier New", 9))
         self.split_results.setStyleSheet("background-color: #FFFFCC;")
         results_layout.addWidget(self.split_results)
         
