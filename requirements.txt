@@ -1,0 +1,16 @@
+# 单倍型网络分析工具 - Python依赖
+# Haplotype Network Analysis Tool - Python Dependencies
+
+# PyQt6 GUI框架
+# PyQt6 GUI Framework
+PyQt6>=6.4.0
+PyQt6-WebEngine>=6.4.0
+
+# 数据处理
+# Data Processing
+numpy>=1.21.0
+pandas>=1.3.0
+
+# 可选：生物信息学处理
+# Optional: Bioinformatics Processing
+# biopython>=1.79
