@@ -75,17 +75,15 @@ class MainWindowUI(QMainWindow):
     TAB_NAMES = {
         'network': "Network View",
         'data': "Data",
-        'report': "Analysis Report"
     }
-    
+
     def __init__(self):
         """Initialize main window UI"""
         super().__init__()
-        
+
         # Component references
         self.tab_widget: Optional[QTabWidget] = None
         self.web_view_main: Optional[QWebEngineView] = None
-        self.web_view_analysis: Optional[QWebEngineView] = None
         self.data_tab: Optional[DataTabWidget] = None
         self.output_panel: Optional[OutputPanel] = None
         
@@ -143,7 +141,6 @@ class MainWindowUI(QMainWindow):
         # Create tabs
         self._create_network_tab()
         self._create_data_tab()
-        self._create_report_tab()
         
         splitter.addWidget(left_widget)
         
@@ -174,16 +171,6 @@ class MainWindowUI(QMainWindow):
         self.data_tab = DataTabWidget()
         self.tab_widget.addTab(self.data_tab, self.TAB_NAMES['data'])
     
-    def _create_report_tab(self):
-        """Create analysis report tab"""
-        if WEBENGINE_AVAILABLE:
-            self.web_view_analysis = QWebEngineView()
-            self.web_view_analysis.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
-        else:
-            self.web_view_analysis = FallbackWebView()
-        
-        self.tab_widget.addTab(self.web_view_analysis, self.TAB_NAMES['report'])
-    
     def setup_menus(self, callbacks: Dict[str, Callable]):
         """Setup menu bar"""
         self.menu_builder = MenuBarBuilder(self)
@@ -193,15 +180,10 @@ class MainWindowUI(QMainWindow):
         """Load main network view page"""
         if os.path.isfile(html_path):
             self.web_view_main.setUrl(QUrl.fromLocalFile(html_path))
-    
-    def load_report_page(self, html_path: str):
-        """Load analysis report page"""
-        if os.path.isfile(html_path):
-            self.web_view_analysis.setUrl(QUrl.fromLocalFile(html_path))
-    
+
     def switch_to_tab(self, tab_name: str):
         """Switch to specified tab"""
-        tab_indices = {'network': 0, 'data': 1, 'report': 2}
+        tab_indices = {'network': 0, 'data': 1}
         if tab_name in tab_indices:
             self.tab_widget.setCurrentIndex(tab_indices[tab_name])
     
@@ -229,7 +211,13 @@ class MainWindowUI(QMainWindow):
         if self.output_panel:
             return self.output_panel.get_output_path()
         return ""
-    
+
+    def get_project_prefix(self) -> str:
+        """Get project name used as output file prefix."""
+        if self.output_panel:
+            return self.output_panel.get_project_prefix()
+        return "project"
+
     # Compatibility property for log_tab
     @property
     def log_tab(self):

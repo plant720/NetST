@@ -49,12 +49,13 @@ class AnalysisWorker(QThread):
     log = pyqtSignal(str)
 
     def __init__(self, analysis_service: AnalysisService, network_type: str,
-                 taxons: list, output_path: str):
+                 taxons: list, output_path: str, prefix: str):
         super().__init__()
         self.analysis_service = analysis_service
         self.network_type = network_type
         self.taxons = taxons
         self.output_path = output_path
+        self.prefix = prefix
 
     def run(self):
         """Execute analysis task in child thread."""
@@ -62,7 +63,7 @@ class AnalysisWorker(QThread):
         self.analysis_service.set_log_callback(lambda m: self.log.emit(m))
 
         result = self.analysis_service.run_network_analysis(
-            self.network_type, self.taxons, self.output_path
+            self.network_type, self.taxons, self.output_path, self.prefix
         )
         self.finished.emit(result)
 
@@ -423,10 +424,15 @@ class MainForm(MainWindowUI):
             QMessageBox.critical(self, "Validation Error", message)
             return
 
-        # Get output path from user setting
+        # Get output path and project prefix from output panel
         output_path = self.get_output_path()
         if not output_path:
             QMessageBox.warning(self, "Warning", "Please set output directory first!")
+            return
+
+        prefix = self.get_project_prefix()
+        if not prefix:
+            QMessageBox.warning(self, "Warning", "Please enter a project name!")
             return
 
         self.switch_to_tab('network')
@@ -435,11 +441,12 @@ class MainForm(MainWindowUI):
             self.web_view_main.setUrl(QUrl.fromLocalFile(waiting_page))
 
         self.log_tab.append_info(f"Starting {network_type} network analysis...")
+        self.log_tab.append_info(f"Project: {prefix}")
         self.log_tab.append_info(f"Output directory: {output_path}")
         self.set_status("Analyzing...")
 
         self.analysis_worker = AnalysisWorker(
-            self.analysis_service, network_type, selected, output_path
+            self.analysis_service, network_type, selected, output_path, prefix
         )
         self.analysis_worker.progress.connect(self.set_progress)
         self.analysis_worker.log.connect(self.log_tab.append_info)
@@ -454,10 +461,6 @@ class MainForm(MainWindowUI):
             vis_path = result.get_visualization_path()
             if os.path.isfile(vis_path):
                 self.web_view_main.setUrl(QUrl.fromLocalFile(vis_path))
-
-            report_path = result.get_html_report_path()
-            if os.path.isfile(report_path):
-                self.web_view_analysis.setUrl(QUrl.fromLocalFile(report_path))
         else:
             self.log_tab.append_error(f"Analysis failed: {result.error_message}")
             QMessageBox.critical(self, "Error", f"Analysis failed: {result.error_message}")
@@ -570,10 +573,9 @@ class MainForm(MainWindowUI):
         # Update window title
         self.setWindowTitle(lang_manager.get('window_title'))
 
-        # Update tab names (only 3 tabs now)
+        # Update tab names
         self.tab_widget.setTabText(0, lang_manager.get('tab_network'))
         self.tab_widget.setTabText(1, lang_manager.get('tab_data'))
-        self.tab_widget.setTabText(2, lang_manager.get('tab_report'))
 
         # Update component texts
         if self.data_tab:
