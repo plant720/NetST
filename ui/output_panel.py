@@ -37,6 +37,7 @@ class OutputPanel(QWidget):
         """Initialize the output panel"""
         super().__init__(parent)
 
+        self.project_name_edit: Optional[QLineEdit] = None
         self.output_path_edit: Optional[QLineEdit] = None
         self.log_text: Optional[QTextEdit] = None
         self.btn_open: Optional[QPushButton] = None
@@ -77,7 +78,15 @@ class OutputPanel(QWidget):
         title_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
         layout.addWidget(title_label)
 
-        # Path display
+        # Project name (file prefix)
+        layout.addWidget(QLabel("Project Name:"))
+        self.project_name_edit = QLineEdit()
+        self.project_name_edit.setPlaceholderText("e.g. my_project")
+        self.project_name_edit.setText("project")
+        layout.addWidget(self.project_name_edit)
+
+        # Output folder path
+        layout.addWidget(QLabel("Output Folder:"))
         self.output_path_edit = QLineEdit()
         self.output_path_edit.setText(self.output_path)
         self.output_path_edit.setReadOnly(True)
@@ -152,6 +161,14 @@ class OutputPanel(QWidget):
         if folder:
             self.output_path = folder
             self.output_path_edit.setText(folder)
+
+    def get_project_prefix(self) -> str:
+        """Get the project name used as output file prefix."""
+        return self.project_name_edit.text().strip()
+
+    def set_project_prefix(self, name: str):
+        """Set the project name / file prefix."""
+        self.project_name_edit.setText(name)
 
     def get_output_path(self) -> str:
         """Get current output path"""
