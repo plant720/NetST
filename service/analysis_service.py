@@ -23,6 +23,9 @@ class AnalysisResult:
     success: bool
     output_path: str = ""
     error_message: Optional[str] = None
+    # True as soon as _process_haplotypes() succeeds, even if later steps fail.
+    # The haplotype tab should be shown whenever this is True.
+    haplotype_ready: bool = False
 
     def get_visualization_path(self) -> str:
         return os.path.join(self.output_path, f"{self.prefix}.html")
@@ -86,6 +89,11 @@ class AnalysisService:
         """
         FileService.ensure_directory(output_path)
 
+        # Tracks whether _process_haplotypes() wrote its output files.
+        # The haplotype tab should be shown whenever this is True, even if
+        # downstream steps (fastHaN, visualization) fail.
+        haplotype_ready = False
+
         try:
             # ── Step 1: Write input FASTA ──────────────────────────────────────
             input_fasta = os.path.join(output_path, f"{prefix}.fasta")
@@ -121,6 +129,9 @@ class AnalysisService:
             if not self._process_haplotypes(aligned_fasta, file_suffix):
                 return AnalysisResult(prefix, False, output_path,
                                       "Haplotype processing failed")
+
+            # CSV / mapping files are now on disk — haplotype tab can be shown
+            haplotype_ready = True
             self._update_progress(50)
 
             # ── Step 5: Run fastHaN ────────────────────────────────────────────
@@ -132,7 +143,8 @@ class AnalysisService:
             if not os.path.isfile(exe_path):
                 self._log(f"Network executable not found: {exe_path}")
                 return AnalysisResult(prefix, False, output_path,
-                                      f"Executable not found: {network_executable}")
+                                      f"Executable not found: {network_executable}",
+                                      haplotype_ready=haplotype_ready)
 
             success = True
             try:
@@ -174,9 +186,11 @@ class AnalysisService:
         except Exception as e:
             self._log(f"Analysis error: {str(e)}")
             self._log(traceback.format_exc())
-            return AnalysisResult(prefix, False, output_path, str(e))
+            return AnalysisResult(prefix, False, output_path, str(e),
+                                  haplotype_ready=haplotype_ready)
 
-        return AnalysisResult(prefix, success, output_path)
+        return AnalysisResult(prefix, success, output_path,
+                              haplotype_ready=haplotype_ready)
 
     # ── Alignment helpers ───────────────────────────────────────────────────────
 
