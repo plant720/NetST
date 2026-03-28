@@ -4,21 +4,20 @@ Haplotype Tab Widget — Displays haplotype analysis results.
 Layout (vertical outer splitter):
   Top:    Haplotype Summary
             Horizontal inner splitter:
-              Left:  QTableWidget — Haplotype | Total Count | Samples  (sortable)
+              Left:  QTableWidget — Haplotype | Total Count | Samples
               Right: Nucleotide sequence viewer — one column per position,
                      color-coded by base (A/T/C/G); rows stay in sync with left table
-  Bottom: Sequence → Haplotype Mapping — Sequence Name | Haplotype  (sortable)
+  Bottom: Sequence → Haplotype Mapping — Sequence Name | Haplotype
 
 Tooltips: every cell shows its full text on hover.
-Sorting:  Haplotype (alpha) and Total Count (numeric) columns are sortable;
-          the seq viewer re-renders automatically to follow the new row order.
+Sorting:  disabled — column headers are not clickable for sorting.
 """
 
 import csv
 import os
 from typing import Dict, List, Optional, Tuple
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor, QFont
 from PyQt6.QtWidgets import (
     QAbstractItemView, QHeaderView, QLabel, QSplitter,
@@ -42,16 +41,6 @@ _MAX_FULL_POSITIONS = 500
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
-
-class _NumericItem(QTableWidgetItem):
-    """QTableWidgetItem whose less-than comparison is numeric when possible."""
-
-    def __lt__(self, other: QTableWidgetItem) -> bool:  # noqa: D105
-        try:
-            return float(self.text()) < float(other.text())
-        except (ValueError, TypeError):
-            return self.text() < other.text()
-
 
 def _plain_item(value: str) -> QTableWidgetItem:
     """Read-only item whose tooltip shows the full text (handles long values)."""
@@ -97,23 +86,20 @@ class HaplotypeTabWidget(QWidget):
         tl.addWidget(_section_header("Haplotype Summary"))
 
         inner = QSplitter(Qt.Orientation.Horizontal)
-        tl.addWidget(inner)
+        # stretch=1 ensures inner fills all remaining height in the top pane,
+        # preventing a blank gap above the table when the pane is taller than
+        # the inner splitter's preferred size.
+        tl.addWidget(inner, 1)
 
         # Left: stat table (Haplotype | Total Count | Samples)
         self._hap_table = _make_table(["Haplotype", "Total Count", "Samples"])
-        self._hap_table.setSortingEnabled(True)
-        # Re-sync the seq viewer whenever the sort order changes.
-        # Use QTimer.singleShot(0) so the slot runs after Qt finishes sorting.
-        self._hap_table.horizontalHeader().sortIndicatorChanged.connect(
-            lambda *_: QTimer.singleShot(0, self._sync_seq_viewer_order)
-        )
         inner.addWidget(self._hap_table)
 
         # Right: nucleotide sequence viewer
         self._seq_viewer = self._make_seq_viewer()
         inner.addWidget(self._seq_viewer)
 
-        inner.setSizes([300, 700])
+        inner.setSizes([280, 700])
 
         # Synchronise vertical scrolling between the two top-pane tables
         self._hap_table.verticalScrollBar().valueChanged.connect(
@@ -132,11 +118,11 @@ class HaplotypeTabWidget(QWidget):
         bl.setSpacing(2)
         bl.addWidget(_section_header("Sequence → Haplotype Mapping"))
         self._seq_table = _make_table(["Sequence Name", "Haplotype"])
-        self._seq_table.setSortingEnabled(True)
-        bl.addWidget(self._seq_table)
+        bl.addWidget(self._seq_table, 1)   # stretch=1 mirrors the top pane fix
         outer.addWidget(bottom)
 
-        outer.setSizes([450, 250])
+        # Give roughly equal initial space to both panes
+        outer.setSizes([300, 300])
 
     @staticmethod
     def _make_seq_viewer() -> QTableWidget:
@@ -145,7 +131,7 @@ class HaplotypeTabWidget(QWidget):
         t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         t.setShowGrid(True)
-        t.setSortingEnabled(False)          # order is driven by _hap_table
+        t.setSortingEnabled(False)
         t.verticalHeader().setDefaultSectionSize(24)
         t.verticalHeader().setVisible(False)
         t.horizontalHeader().setDefaultSectionSize(20)
@@ -188,12 +174,8 @@ class HaplotypeTabWidget(QWidget):
 
     def _fill_hap_table(self, csv_path: str) -> int:
         """Fill the haplotype summary table; returns row count."""
-        # Disable sorting during bulk insert to avoid index scrambling
-        self._hap_table.setSortingEnabled(False)
         self._hap_table.setRowCount(0)
-
         if not os.path.isfile(csv_path):
-            self._hap_table.setSortingEnabled(True)
             return 0
 
         rows: List[Tuple[str, str, str]] = []
@@ -206,33 +188,24 @@ class HaplotypeTabWidget(QWidget):
                         row.get("samples", ""),
                     ))
         except Exception:
-            self._hap_table.setSortingEnabled(True)
             return 0
 
         self._hap_table.setRowCount(len(rows))
         for r, (hap, count, samples) in enumerate(rows):
             self._hap_table.setItem(r, 0, _plain_item(hap))
-
-            # Numeric item so "10" sorts after "9", not before it
-            cnt = _NumericItem(count)
-            cnt.setToolTip(count)
+            cnt = _plain_item(count)
             cnt.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self._hap_table.setItem(r, 1, cnt)
-
             self._hap_table.setItem(r, 2, _plain_item(samples))
 
         self._hap_table.resizeColumnToContents(0)
         self._hap_table.resizeColumnToContents(1)
-        self._hap_table.setSortingEnabled(True)
         return len(rows)
 
     def _fill_seq_table(self, csv_path: str) -> int:
         """Fill the sequence mapping table; returns row count."""
-        self._seq_table.setSortingEnabled(False)
         self._seq_table.setRowCount(0)
-
         if not os.path.isfile(csv_path):
-            self._seq_table.setSortingEnabled(True)
             return 0
 
         rows: List[Tuple[str, str]] = []
@@ -244,7 +217,6 @@ class HaplotypeTabWidget(QWidget):
                         row.get("haplotype", ""),
                     ))
         except Exception:
-            self._seq_table.setSortingEnabled(True)
             return 0
 
         self._seq_table.setRowCount(len(rows))
@@ -254,7 +226,6 @@ class HaplotypeTabWidget(QWidget):
 
         self._seq_table.resizeColumnToContents(0)
         self._seq_table.resizeColumnToContents(1)
-        self._seq_table.setSortingEnabled(True)
         return len(rows)
 
     def _load_seq_viewer(self, fasta_path: str) -> None:
@@ -295,31 +266,28 @@ class HaplotypeTabWidget(QWidget):
         seq_len = max(len(s) for s in seqs)
 
         if len(seqs) == 1 or seq_len <= _MAX_FULL_POSITIONS:
-            # Show every position
             self._display_positions = list(range(seq_len))
         else:
-            # Sequence is long: only show informative (variable) positions
+            # Long sequence: show only informative (variable) positions
             self._display_positions = [
                 i for i in range(seq_len)
                 if len({s[i] if i < len(s) else '?' for s in seqs}) > 1
             ]
             if not self._display_positions:
-                # All identical (edge case) — fall back to full display
                 self._display_positions = list(range(seq_len))
 
-        # Use the current row order from _hap_table for the initial render
-        self._render_seq_viewer(self._current_hap_order())
+        self._render_seq_viewer()
 
-    def _render_seq_viewer(self, hap_order: List[str]) -> None:
-        """Populate the nucleotide grid in the given haplotype row order."""
+    def _render_seq_viewer(self) -> None:
+        """Populate the nucleotide grid in FASTA insertion order."""
         if not self._hap_sequences or not self._display_positions:
             self._seq_viewer.setRowCount(0)
             self._seq_viewer.setColumnCount(0)
             return
 
+        hap_order = list(self._hap_sequences.keys())
         n_cols = len(self._display_positions)
 
-        # Batch update: disable repaints during fill for performance
         self._seq_viewer.setUpdatesEnabled(False)
         self._seq_viewer.setRowCount(len(hap_order))
         self._seq_viewer.setColumnCount(n_cols)
@@ -343,12 +311,6 @@ class HaplotypeTabWidget(QWidget):
 
         self._seq_viewer.setUpdatesEnabled(True)
 
-    # ── Slot: keep seq viewer row order in sync with hap_table sort ──────────
-
-    def _sync_seq_viewer_order(self) -> None:
-        """Called via QTimer after _hap_table finishes sorting its rows."""
-        self._render_seq_viewer(self._current_hap_order())
-
     # ── Utility ───────────────────────────────────────────────────────────────
 
     def _current_hap_order(self) -> List[str]:
@@ -358,7 +320,6 @@ class HaplotypeTabWidget(QWidget):
             for r in range(self._hap_table.rowCount())
             if self._hap_table.item(r, 0)
         ]
-        # Fall back to FASTA insertion order when the table is empty
         return order if order else list(self._hap_sequences.keys())
 
 
@@ -374,6 +335,7 @@ def _section_header(text: str) -> QLabel:
 
 
 def _make_table(headers: List[str]) -> QTableWidget:
+    """Standard read-only table with tooltips and no column-header sorting."""
     table = QTableWidget()
     table.setColumnCount(len(headers))
     table.setHorizontalHeaderLabels(headers)
@@ -381,9 +343,11 @@ def _make_table(headers: List[str]) -> QTableWidget:
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.setShowGrid(True)
+    table.setSortingEnabled(False)   # column-header click must not sort
     h = table.horizontalHeader()
     h.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
     h.setStretchLastSection(True)
+    h.setSectionsClickable(False)    # visually disable the clickable header
     table.verticalHeader().setDefaultSectionSize(24)
     table.verticalHeader().setVisible(False)
     return table
