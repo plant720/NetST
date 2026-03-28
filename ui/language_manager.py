@@ -96,10 +96,12 @@ class LanguageManager:
             'menu_help_docs': {'cn': '帮助文档', 'en': 'Help Docs'},
 
             # Tab Names
-            'tab_network': {'cn': '网络视图', 'en': 'Network View'},
-            'tab_data': {'cn': '数据', 'en': 'Data'},
-            'tab_report': {'cn': '分析结果', 'en': 'Analysis Report'},
-            'tab_log': {'cn': '日志', 'en': 'Log'},
+            'tab_index':     {'cn': '首页',     'en': 'Index'},
+            'tab_network':   {'cn': '网络视图', 'en': 'Network View'},
+            'tab_data':      {'cn': '数据',     'en': 'Data'},
+            'tab_haplotype': {'cn': '单倍型',   'en': 'Haplotype'},
+            'tab_report':    {'cn': '分析结果', 'en': 'Analysis Report'},
+            'tab_log':       {'cn': '日志',     'en': 'Log'},
 
             # Data Tab
             'btn_select_all': {'cn': '全选', 'en': 'Select All'},

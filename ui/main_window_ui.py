@@ -10,7 +10,7 @@ from typing import Optional, Dict, Callable
 
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, 
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QApplication, QTextEdit, QSplitter
 )
 
@@ -27,6 +27,8 @@ from .menu_bar import MenuBarBuilder
 from .status_bar import StatusBarWidget
 from .data_tab_widget import DataTabWidget
 from .output_panel import OutputPanel
+from .index_tab_widget import IndexTabWidget
+from .haplotype_tab_widget import HaplotypeTabWidget
 
 
 class FallbackWebView(QTextEdit):
@@ -73,8 +75,10 @@ class MainWindowUI(QMainWindow):
     DEFAULT_WINDOW_POSITION = (100, 100)
     
     TAB_NAMES = {
-        'network': "Network View",
-        'data': "Data",
+        'index':     "Index",
+        'network':   "Network View",
+        'data':      "Data",
+        'haplotype': "Haplotype",
     }
 
     def __init__(self):
@@ -83,8 +87,10 @@ class MainWindowUI(QMainWindow):
 
         # Component references
         self.tab_widget: Optional[QTabWidget] = None
+        self.index_tab: Optional[IndexTabWidget] = None
         self.web_view_main: Optional[QWebEngineView] = None
         self.data_tab: Optional[DataTabWidget] = None
+        self.haplotype_tab: Optional[HaplotypeTabWidget] = None  # hidden until first analysis
         self.output_panel: Optional[OutputPanel] = None
         
         # UI builders
@@ -138,7 +144,9 @@ class MainWindowUI(QMainWindow):
         self.tab_widget = QTabWidget()
         left_layout.addWidget(self.tab_widget)
         
-        # Create tabs
+        # Create tabs (order: Index first, then Network, then Data)
+        # Haplotype tab is NOT added here — it appears only after a successful analysis.
+        self._create_index_tab()
         self._create_network_tab()
         self._create_data_tab()
         
@@ -156,6 +164,11 @@ class MainWindowUI(QMainWindow):
         # Create status bar
         self.status_bar_widget = StatusBarWidget(self)
     
+    def _create_index_tab(self):
+        """Create the Index (welcome) tab — always the first tab."""
+        self.index_tab = IndexTabWidget()
+        self.tab_widget.addTab(self.index_tab, self.TAB_NAMES['index'])
+
     def _create_network_tab(self):
         """Create network view tab"""
         if WEBENGINE_AVAILABLE:
@@ -182,10 +195,34 @@ class MainWindowUI(QMainWindow):
             self.web_view_main.setUrl(QUrl.fromLocalFile(html_path))
 
     def switch_to_tab(self, tab_name: str):
-        """Switch to specified tab"""
-        tab_indices = {'network': 0, 'data': 1}
-        if tab_name in tab_indices:
-            self.tab_widget.setCurrentIndex(tab_indices[tab_name])
+        """Switch to the named tab using widget references (robust against index changes)."""
+        widget_map = {
+            'index':     self.index_tab,
+            'network':   self.web_view_main,
+            'data':      self.data_tab,
+            'haplotype': self.haplotype_tab,
+        }
+        widget = widget_map.get(tab_name)
+        if widget is not None:
+            idx = self.tab_widget.indexOf(widget)
+            if idx >= 0:
+                self.tab_widget.setCurrentIndex(idx)
+
+    def show_haplotype_tab(self, output_path: str, prefix: str) -> None:
+        """Create (once) and show the Haplotype tab, then load the latest results.
+
+        Safe to call repeatedly — avoids adding duplicate tabs on re-analysis.
+        """
+        if self.haplotype_tab is None:
+            # First successful analysis: create and register the tab
+            self.haplotype_tab = HaplotypeTabWidget()
+            self.tab_widget.addTab(self.haplotype_tab, self.TAB_NAMES['haplotype'])
+
+        # Always refresh content so re-runs show up-to-date data
+        self.haplotype_tab.load_result(output_path, prefix)
+
+        # Switch focus to the haplotype tab so the user notices it
+        self.switch_to_tab('haplotype')
     
     def set_status(self, message: str):
         """Set status bar message"""

@@ -458,6 +458,10 @@ class MainForm(MainWindowUI):
             vis_path = result.get_visualization_path()
             if os.path.isfile(vis_path):
                 self.web_view_main.setUrl(QUrl.fromLocalFile(vis_path))
+
+            # Show / refresh the Haplotype tab with the latest results.
+            # show_haplotype_tab() handles both first-time creation and re-runs.
+            self.show_haplotype_tab(result.output_path, result.prefix)
         else:
             self.log_tab.append_error(f"Analysis failed: {result.error_message}")
             QMessageBox.critical(self, "Error", f"Analysis failed: {result.error_message}")
@@ -570,9 +574,14 @@ class MainForm(MainWindowUI):
         # Update window title
         self.setWindowTitle(lang_manager.get('window_title'))
 
-        # Update tab names
-        self.tab_widget.setTabText(0, lang_manager.get('tab_network'))
-        self.tab_widget.setTabText(1, lang_manager.get('tab_data'))
+        # Update tab names using widget references so indices don't need to be hard-coded
+        for widget, lang_key in [
+            (self.web_view_main, 'tab_network'),
+            (self.data_tab,      'tab_data'),
+        ]:
+            idx = self.tab_widget.indexOf(widget)
+            if idx >= 0:
+                self.tab_widget.setTabText(idx, lang_manager.get(lang_key))
 
         # Update component texts
         if self.data_tab:
