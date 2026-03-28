@@ -126,7 +126,7 @@ class OutputPanel(QWidget):
         # Log text
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setFont(QFont("Consolas", 9))
+        self.log_text.setFont(QFont("Courier New", 9))
         self.log_text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         layout.addWidget(self.log_text)
 

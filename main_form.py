@@ -176,9 +176,6 @@ class MainForm(MainWindowUI):
         main_page = os.path.join(self.current_directory, "statics", self.language, "main.html")
         self.load_main_page(main_page)
 
-        report_page = os.path.join(self.current_directory, "statics", "report_init.html")
-        self.load_report_page(report_page)
-
         self.log_tab.append_info("Application started")
         self.log_tab.append_info(f"Working directory: {self.current_directory}")
 
