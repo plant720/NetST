@@ -3,13 +3,11 @@ Utility module replacing the GenNetworkConfig2 external executable.
 Generates haplotype network configuration and JavaScript visualization files.
 
 Original author: xlzh (xiaolongzhang2015@163.com)
-Modified by YY 2023/7/9, zzhen 2024/12/18
 Integrated as Python module 2026
 """
 
 import csv
 import random
-
 
 # Predefined color palettes for 3–10 groups
 _COLOR_PALETTES = {
@@ -43,9 +41,9 @@ def _gen_hap_config(hap_file: str):
         reader = csv.reader(f)
         next(reader)  # skip header
         for row in reader:
-            sample = row[2]
-            hap = row[1].replace("Hap_", "H")
-            group = row[3]
+            sample = row[0]
+            hap = row[1]
+            group = row[-1]
             hap_conf_list.append((sample, group, hap))
     return hap_conf_list
 
@@ -109,3 +107,12 @@ def generate_network_config(gml_file: str, hap_file: str, out_prefix: str) -> No
         fp.write('var groupconffile = {target: {files: [new File(["')
         fp.write(_file_to_escaped(out_prefix + '_groupconf.csv'))
         fp.write('"], ".gml")]}};\n')
+
+#
+# if __name__ == '__main__':
+#     import os
+#
+#     dir_name = "/Users/zzhen/HaplotypeOutput/"
+#     gml_file = os.path.join(dir_name, "project.gml")
+#
+# generate_network_config()
