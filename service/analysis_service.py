@@ -14,6 +14,7 @@ from typing import List, Optional, Callable, Tuple
 
 from model.taxon_data import TaxonData
 from service.file_service import FileService
+from service.gen_network_config import generate_network_config
 
 
 @dataclass
@@ -497,22 +498,14 @@ class AnalysisService:
 
     # ── Visualization helpers ───────────────────────────────────────────────────
 
-    def _generate_visualization(self, prefix: str, output_path: str) -> bool:
+    def _generate_visualization(self, prefix: str, output_path: str, _=None) -> bool:
         """Generate visualization files from GML network output."""
         try:
-            config_executable = os.path.join(
-                self.lib_path,
-                "GenNetworkConfig2" + (".exe" if self._is_windows() else "")
-            )
+            gml_file = os.path.join(output_path, f"{prefix}.gml")
+            hap_file = os.path.join(output_path, f"{prefix}_seq2hap.csv")
+            out_prefix = os.path.join(output_path, prefix)
 
-            subprocess.run(
-                [config_executable,
-                 f"{prefix}.gml",
-                 f"{prefix}_seq2hap.csv",
-                 prefix],
-                cwd=output_path,
-                capture_output=True
-            )
+            generate_network_config(gml_file, hap_file, out_prefix)
 
             js_file = os.path.join(output_path, f"{prefix}.js")
             if os.path.isfile(js_file):
