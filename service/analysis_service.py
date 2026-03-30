@@ -359,13 +359,12 @@ class AnalysisService:
             >name=quantity=continuous_traits$SPLIT$discrete_traits
 
         Produces:
-            _seq.fasta      – all sequences with original sequence IDs (fastHaN pipeline input)
-            _seq.phy        – PHYLIP format of _seq.fasta, all sequences (fastHaN input)
-            _hap.fasta      – unique (non-redundant) haplotype sequences labeled H1, H2, …
-            .meta           – tab-separated metadata per sample
-            _hap_trait.csv  – aggregated trait data per haplotype
-            _seq_trait.csv  – trait data per individual sequence
-            _seq2hap.csv    – mapping: sample_name → haplotype_name
+            _seq.fasta       – all sequences with original sequence IDs (fastHaN pipeline input)
+            _seq.phy         – PHYLIP format of _seq.fasta, all sequences (fastHaN input)
+            _hap.fasta       – unique (non-redundant) haplotype sequences labeled H1, H2, …
+            _hap_trait.csv   – aggregated trait data per haplotype
+            _seq_trait.csv   – trait data per individual sequence
+            _seq.meta.csv    – per-sample metadata: sequence_name, haplotype, quantity, traits
 
         Args:
             aligned_fasta: Path to aligned FASTA file
@@ -436,22 +435,12 @@ class AnalysisService:
                     f.write(f">{name}\n{seq}\n")
 
             # ── Write _seq.phy (fastHaN input) ────────────────────────────────
-            # All sequences in strict PHYLIP format (10-char padded names).
-            # Names are deduplicated by appending a counter if truncation causes collisions.
+            # All sequences in PHYLIP format with full original names.
             seq_phy = f"{output_prefix}_seq.phy"
-            seen_phy_names: dict = {}  # truncated_name → count
             with open(seq_phy, 'w', encoding='utf-8') as f:
                 f.write(f" {len(sequences)} {seq_len}\n")
                 for name, qty, cont, disc, seq in sequences:
-                    base = name[:10]
-                    if base not in seen_phy_names:
-                        seen_phy_names[base] = 0
-                        phy_name = base
-                    else:
-                        seen_phy_names[base] += 1
-                        suffix = str(seen_phy_names[base])
-                        phy_name = base[:10 - len(suffix)] + suffix
-                    f.write(f"{phy_name.ljust(10)}{seq}\n")
+                    f.write(f"{name} {seq}\n")
 
             # ── Write _hap.fasta ──────────────────────────────────────────────
             # Non-redundant unique haplotype sequences labeled H1, H2, …
@@ -459,14 +448,9 @@ class AnalysisService:
                 for hap_name in hap_names:
                     f.write(f">{hap_name}\n{hap_sequences[hap_name]}\n")
 
-            # ── Write .meta ───────────────────────────────────────────────────
-            with open(f"{output_prefix}.meta", 'w', encoding='utf-8') as f:
-                f.write("name\tquantity\tcontinuous_traits\tdiscrete_traits\thaplotype\n")
-                for name, qty, cont, disc, seq in sequences:
-                    f.write(f"{name}\t{qty}\t{cont}\t{disc}\t{seq_to_hap[seq]}\n")
-
-            # ── Write _seq2hap.csv ────────────────────────────────────────────
-            with open(f"{output_prefix}_seq2hap.csv", 'w', encoding='utf-8', newline='') as f:
+            # ── Write _seq.meta.csv ───────────────────────────────────────────
+            # Per-sample metadata: replaces both the old .meta and _seq2hap.csv files.
+            with open(f"{output_prefix}_seq.meta.csv", 'w', encoding='utf-8', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(
                     ['sequence_name', 'haplotype', 'quantity',
@@ -508,7 +492,7 @@ class AnalysisService:
         """Generate visualization files from GML network output."""
         try:
             gml_file = os.path.join(output_path, f"{prefix}.gml")
-            hap_file = os.path.join(output_path, f"{prefix}_seq2hap.csv")
+            hap_file = os.path.join(output_path, f"{prefix}_seq.meta.csv")
             out_prefix = os.path.join(output_path, prefix)
 
             generate_network_config(gml_file, hap_file, out_prefix)

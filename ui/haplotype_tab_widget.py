@@ -147,7 +147,7 @@ class HaplotypeTabWidget(QWidget):
         Safe to call multiple times — each call fully replaces the previous data.
         """
         hap_path   = os.path.join(output_path, f"{prefix}_hap_trait.csv")
-        seq_path   = os.path.join(output_path, f"{prefix}_seq2hap.csv")
+        seq_path   = os.path.join(output_path, f"{prefix}_seq.meta.csv")
         fasta_path = os.path.join(output_path, f"{prefix}_hap.fasta")
 
         hap_count = self._fill_hap_table(hap_path)
