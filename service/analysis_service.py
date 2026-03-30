@@ -5,7 +5,6 @@ Corresponds to the analysis_network and related methods in VB.NET.
 import csv
 import os
 import platform
-import shutil
 import subprocess
 import sys
 import traceback
@@ -360,10 +359,9 @@ class AnalysisService:
             >name=quantity=continuous_traits$SPLIT$discrete_traits
 
         Produces:
-            _seq.phy        – unique haplotypes in PHYLIP format  (fastHaN input)
-            _hap.phy        – same content as _seq.phy (haplotype reference)
-            _hap.fasta      – unique haplotypes in FASTA format
-            _seq.fasta      – all sequences in FASTA format
+            _seq.fasta      – all sequences with original sequence IDs (fastHaN pipeline input)
+            _seq.phy        – PHYLIP format of _seq.fasta, all sequences (fastHaN input)
+            _hap.fasta      – unique (non-redundant) haplotype sequences labeled H1, H2, …
             .meta           – tab-separated metadata per sample
             _hap_trait.csv  – aggregated trait data per haplotype
             _seq_trait.csv  – trait data per individual sequence
@@ -431,27 +429,35 @@ class AnalysisService:
             self._log(
                 f"Identified {len(hap_names)} unique haplotypes from {len(sequences)} sequences")
 
-            # ── Write _seq.phy (fastHaN input) ────────────────────────────────
-            # One row per unique haplotype in strict PHYLIP format (10-char name).
-            seq_phy = f"{output_prefix}_seq.phy"
-            with open(seq_phy, 'w', encoding='utf-8') as f:
-                f.write(f" {len(hap_names)} {seq_len}\n")
-                for hap_name in hap_names:
-                    padded = hap_name[:10].ljust(10)
-                    f.write(f"{padded}{hap_sequences[hap_name]}\n")
+            # ── Write _seq.fasta ──────────────────────────────────────────────
+            # All sequences with original sequence IDs (no analysis metadata in header).
+            with open(f"{output_prefix}_seq.fasta", 'w', encoding='utf-8') as f:
+                for name, qty, cont, disc, seq in sequences:
+                    f.write(f">{name}\n{seq}\n")
 
-            # ── Write _hap.phy ────────────────────────────────────────────────
-            shutil.copy2(seq_phy, f"{output_prefix}_hap.phy")
+            # ── Write _seq.phy (fastHaN input) ────────────────────────────────
+            # All sequences in strict PHYLIP format (10-char padded names).
+            # Names are deduplicated by appending a counter if truncation causes collisions.
+            seq_phy = f"{output_prefix}_seq.phy"
+            seen_phy_names: dict = {}  # truncated_name → count
+            with open(seq_phy, 'w', encoding='utf-8') as f:
+                f.write(f" {len(sequences)} {seq_len}\n")
+                for name, qty, cont, disc, seq in sequences:
+                    base = name[:10]
+                    if base not in seen_phy_names:
+                        seen_phy_names[base] = 0
+                        phy_name = base
+                    else:
+                        seen_phy_names[base] += 1
+                        suffix = str(seen_phy_names[base])
+                        phy_name = base[:10 - len(suffix)] + suffix
+                    f.write(f"{phy_name.ljust(10)}{seq}\n")
 
             # ── Write _hap.fasta ──────────────────────────────────────────────
+            # Non-redundant unique haplotype sequences labeled H1, H2, …
             with open(f"{output_prefix}_hap.fasta", 'w', encoding='utf-8') as f:
                 for hap_name in hap_names:
                     f.write(f">{hap_name}\n{hap_sequences[hap_name]}\n")
-
-            # ── Write _seq.fasta ──────────────────────────────────────────────
-            with open(f"{output_prefix}_seq.fasta", 'w', encoding='utf-8') as f:
-                for name, qty, cont, disc, seq in sequences:
-                    f.write(f">{name}={qty}={cont}$SPLIT${disc}\n{seq}\n")
 
             # ── Write .meta ───────────────────────────────────────────────────
             with open(f"{output_prefix}.meta", 'w', encoding='utf-8') as f:
