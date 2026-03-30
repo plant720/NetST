@@ -35,7 +35,7 @@ def _random_color(seed: int) -> str:
 
 
 def _gen_hap_config(hap_file: str):
-    """Read seq2hap CSV and return list of (sample, group, hap) tuples."""
+    """Read _seq.meta.csv and return list of (sample, group, hap) tuples."""
     hap_conf_list = []
     with open(hap_file, mode='r', newline='', encoding='utf-8') as f:
         reader = csv.reader(f)
@@ -86,7 +86,7 @@ def generate_network_config(gml_file: str, hap_file: str, out_prefix: str) -> No
 
     Args:
         gml_file:   Path to the .gml network file produced by fastHaN.
-        hap_file:   Path to the _seq2hap.csv file.
+        hap_file:   Path to the _seq.meta.csv file.
         out_prefix: Output path prefix (without extension). Writes
                     <out_prefix>_hapconf.csv, <out_prefix>_groupconf.csv,
                     and <out_prefix>.js.
