@@ -69,8 +69,8 @@ def _color_group_config(hap_conf_list):
 
 def _write_conf(hap_conf_list, group_conf_list, out_prefix: str) -> None:
     with open(out_prefix + '_hapconf.csv', 'w', encoding='utf-8') as f:
-        for sample, group, hap in hap_conf_list:
-            f.write(f"{sample};{group};{hap}\n")
+        for sample, group, _ in hap_conf_list:
+            f.write(f"{sample};{group}\n")
     with open(out_prefix + '_groupconf.csv', 'w', encoding='utf-8') as f:
         for group, color, style in group_conf_list:
             f.write(f"{group};{color};{style}\n")
