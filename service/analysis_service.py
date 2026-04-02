@@ -125,8 +125,9 @@ class AnalysisService:
 
             # ── Step 4: Process haplotypes → PHYLIP + supporting files ─────────
             file_suffix = os.path.join(output_path, prefix)
+            taxon_lookup = {t.name: (t.continuous_traits, t.discrete_traits) for t in taxons}
             self._log("Processing haplotypes...")
-            if not self._process_haplotypes(aligned_fasta, file_suffix):
+            if not self._process_haplotypes(aligned_fasta, file_suffix, taxon_lookup):
                 return AnalysisResult(prefix, False, output_path,
                                       "Haplotype processing failed")
 
@@ -324,39 +325,26 @@ class AnalysisService:
 
     # ── Haplotype processing ────────────────────────────────────────────────────
 
-    def _parse_analysis_header(self, header: str) -> Tuple[str, int, str, str]:
+    def _parse_analysis_header(self, header: str) -> str:
         """
         Parse analysis FASTA header.
 
-        Expected format:  name=quantity=continuous_traits$SPLIT$discrete_traits
-        Falls back gracefully if fields are missing.
+        Expected format: name (plain sequence name only)
 
         Returns:
-            (name, quantity, continuous_traits, discrete_traits)
+            name
         """
-        if '$SPLIT$' in header:
-            main_part, discrete_traits = header.split('$SPLIT$', 1)
-        else:
-            main_part = header
-            discrete_traits = ""
+        return header
 
-        parts = main_part.split('=')
-        name = parts[0] if parts else header
-
-        try:
-            quantity = int(parts[1]) if len(parts) > 1 else 1
-        except (ValueError, TypeError):
-            quantity = 1
-
-        continuous_traits = parts[2] if len(parts) > 2 else "0"
-        return name, quantity, continuous_traits, discrete_traits
-
-    def _process_haplotypes(self, aligned_fasta: str, output_prefix: str) -> bool:
+    def _process_haplotypes(self, aligned_fasta: str, output_prefix: str,
+                             taxon_lookup: dict = None) -> bool:
         """
         Process aligned FASTA sequences into haplotypes and write all required files.
 
-        Reads aligned FASTA with headers:
-            >name=quantity=continuous_traits$SPLIT$discrete_traits
+        Reads aligned FASTA with headers: >name (plain sequence name only)
+
+        Traits (continuous_traits, discrete_traits) are resolved from taxon_lookup
+        keyed by sequence name: {name: (continuous_traits, discrete_traits)}
 
         Produces:
             _seq.fasta       – all sequences with original sequence IDs (fastHaN pipeline input)
@@ -369,14 +357,18 @@ class AnalysisService:
         Args:
             aligned_fasta: Path to aligned FASTA file
             output_prefix: Path prefix for all output files (no extension)
+            taxon_lookup: Optional dict {name: (continuous_traits, discrete_traits)}
 
         Returns:
             True on success
         """
+        if taxon_lookup is None:
+            taxon_lookup = {}
+
         try:
             # ── Read aligned FASTA ────────────────────────────────────────────
-            sequences: List[Tuple[str, int, str, str, str]] = []
-            # each entry: (name, quantity, continuous_traits, discrete_traits, sequence)
+            sequences: List[Tuple[str, str]] = []
+            # each entry: (name, sequence)
 
             encoding = FileService.detect_encoding(aligned_fasta)
             with open(aligned_fasta, 'r', encoding=encoding) as f:
@@ -390,8 +382,8 @@ class AnalysisService:
                     if line.startswith('>'):
                         if current_header is not None and seq_lines:
                             seq = ''.join(seq_lines).upper()
-                            name, qty, cont, disc = self._parse_analysis_header(current_header)
-                            sequences.append((name, qty, cont, disc, seq))
+                            name = self._parse_analysis_header(current_header)
+                            sequences.append((name, seq))
                         current_header = line[1:]
                         seq_lines = []
                     else:
@@ -399,22 +391,22 @@ class AnalysisService:
 
                 if current_header is not None and seq_lines:
                     seq = ''.join(seq_lines).upper()
-                    name, qty, cont, disc = self._parse_analysis_header(current_header)
-                    sequences.append((name, qty, cont, disc, seq))
+                    name = self._parse_analysis_header(current_header)
+                    sequences.append((name, seq))
 
             if not sequences:
                 self._log("No sequences found in aligned FASTA")
                 return False
 
-            seq_len = len(sequences[0][4])
+            seq_len = len(sequences[0][1])
 
             # ── Identify unique haplotypes ────────────────────────────────────
             seq_to_hap: dict = {}     # sequence_str  → hap_name
             hap_sequences: dict = {}  # hap_name      → sequence_str
-            hap_info: dict = {}       # hap_name      → [(name, qty, cont, disc)]
+            hap_info: dict = {}       # hap_name      → [(name, cont, disc)]
             hap_counter = 0
 
-            for name, qty, cont, disc, seq in sequences:
+            for name, seq in sequences:
                 if seq not in seq_to_hap:
                     hap_counter += 1
                     hap_name = f"H{hap_counter}"
@@ -422,7 +414,8 @@ class AnalysisService:
                     hap_sequences[hap_name] = seq
                     hap_info[hap_name] = []
                 hap_name = seq_to_hap[seq]
-                hap_info[hap_name].append((name, qty, cont, disc))
+                cont, disc = taxon_lookup.get(name, ("0", ""))
+                hap_info[hap_name].append((name, cont, disc))
 
             hap_names = list(hap_sequences.keys())
             self._log(
@@ -431,7 +424,7 @@ class AnalysisService:
             # ── Write _seq.fasta ──────────────────────────────────────────────
             # All sequences with original sequence IDs (no analysis metadata in header).
             with open(f"{output_prefix}_seq.fasta", 'w', encoding='utf-8') as f:
-                for name, qty, cont, disc, seq in sequences:
+                for name, seq in sequences:
                     f.write(f">{name}\n{seq}\n")
 
             # ── Write _seq.phy (fastHaN input) ────────────────────────────────
@@ -439,7 +432,7 @@ class AnalysisService:
             seq_phy = f"{output_prefix}_seq.phy"
             with open(seq_phy, 'w', encoding='utf-8') as f:
                 f.write(f" {len(sequences)} {seq_len}\n")
-                for name, qty, cont, disc, seq in sequences:
+                for name, seq in sequences:
                     f.write(f"{name} {seq}\n")
 
             # ── Write _hap.fasta ──────────────────────────────────────────────
@@ -455,8 +448,9 @@ class AnalysisService:
                 writer.writerow(
                     ['sequence_name', 'haplotype', 'quantity',
                      'continuous_traits', 'discrete_traits'])
-                for name, qty, cont, disc, seq in sequences:
-                    writer.writerow([name, seq_to_hap[seq], qty, cont, disc])
+                for name, seq in sequences:
+                    cont, disc = taxon_lookup.get(name, ("0", ""))
+                    writer.writerow([name, seq_to_hap[seq], 1, cont, disc])
 
             # ── Write _hap_trait.csv ──────────────────────────────────────────
             with open(f"{output_prefix}_hap_trait.csv", 'w', encoding='utf-8', newline='') as f:
@@ -466,9 +460,9 @@ class AnalysisService:
                      'discrete_traits', 'samples'])
                 for hap_name in hap_names:
                     members = hap_info[hap_name]
-                    total_qty = sum(m[1] for m in members)
-                    cont_traits = members[0][2] if members else "0"
-                    disc_traits = ";".join(sorted({m[3] for m in members if m[3]}))
+                    total_qty = len(members)
+                    cont_traits = members[0][1] if members else "0"
+                    disc_traits = ";".join(sorted({m[2] for m in members if m[2]}))
                     samples = ";".join(m[0] for m in members)
                     writer.writerow([hap_name, total_qty, cont_traits, disc_traits, samples])
 
@@ -476,8 +470,9 @@ class AnalysisService:
             with open(f"{output_prefix}_seq_trait.csv", 'w', encoding='utf-8', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(['name', 'quantity', 'continuous_traits', 'discrete_traits'])
-                for name, qty, cont, disc, _ in sequences:
-                    writer.writerow([name, qty, cont, disc])
+                for name, _ in sequences:
+                    cont, disc = taxon_lookup.get(name, ("0", ""))
+                    writer.writerow([name, 1, cont, disc])
 
             return True
 

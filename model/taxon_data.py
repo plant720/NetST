@@ -39,10 +39,6 @@ class TaxonData:
         except (ValueError, TypeError):
             return False
     
-    def is_valid_quantity(self) -> bool:
-        """Validates that quantity is a positive integer."""
-        return isinstance(self.quantity, int) and self.quantity > 0
-    
     def validate(self) -> tuple[bool, Optional[str]]:
         """
         Validate the taxon data for analysis.
@@ -50,10 +46,7 @@ class TaxonData:
         """
         if not self.is_valid_continuous_traits():
             return False, f"ID: {self.id}, Name: {self.name} - Continuous Traits '{self.continuous_traits}' is not a numerical value."
-        
-        if not self.is_valid_quantity():
-            return False, f"ID: {self.id}, Name: {self.name} - Quantity must be greater than zero."
-        
+
         return True, None
     
     def to_fasta_header(self, delimiter: str = "|") -> str:
@@ -62,15 +55,12 @@ class TaxonData:
             self.name.replace(delimiter, "_"),
             self.discrete_traits.replace(delimiter, "_"),
             self.continuous_traits.replace(delimiter, "_"),
-            str(self.quantity),
-            self.organism.replace(delimiter, "_")
         ]
         return ">" + delimiter.join(parts)
-    
+
     def to_analysis_header(self) -> str:
         """Generate header for analysis FASTA file."""
-        # Format: >name=quantity=continuous_traits$SPLIT$discrete_traits
-        return f">{self.name}={self.quantity}={self.continuous_traits}$SPLIT${self.discrete_traits}"
+        return f">{self.name}"
     
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
