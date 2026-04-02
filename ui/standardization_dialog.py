@@ -36,14 +36,6 @@ class StandardizationConfig:
     split_continuous_delimiter: str = "|"
     split_continuous_index: int = 2
     
-    split_count_enabled: bool = False
-    split_count_delimiter: str = "|"
-    split_count_index: int = 3
-    
-    split_organism_enabled: bool = False
-    split_organism_delimiter: str = "|"
-    split_organism_index: int = 4
-    
     use_numbering: bool = False
 
 
@@ -205,14 +197,6 @@ class StandardizationDialog(QDialog):
         self.split_continuous.set_preview_callback(self._update_preview)
         layout.addWidget(self.split_continuous)
         
-        self.split_count = SplitOptionWidget("Use as counts", 3)
-        self.split_count.set_preview_callback(self._update_preview)
-        layout.addWidget(self.split_count)
-        
-        self.split_organism = SplitOptionWidget("Use as organism", 4)
-        self.split_organism.set_preview_callback(self._update_preview)
-        layout.addWidget(self.split_organism)
-        
         layout.addStretch()
         
         return group
@@ -270,9 +254,8 @@ class StandardizationDialog(QDialog):
         
         # If no active split, find the first enabled one
         if self._active_split is None or not self._active_split.is_enabled():
-            for split_widget in [self.split_name, self.split_discrete, 
-                                 self.split_continuous, self.split_count, 
-                                 self.split_organism]:
+            for split_widget in [self.split_name, self.split_discrete,
+                                 self.split_continuous]:
                 if split_widget.is_enabled():
                     self._active_split = split_widget
                     break
@@ -317,14 +300,6 @@ class StandardizationDialog(QDialog):
         self.config.split_continuous_enabled = self.split_continuous.is_enabled()
         self.config.split_continuous_delimiter = self.split_continuous.get_delimiter()
         self.config.split_continuous_index = self.split_continuous.get_index()
-        
-        self.config.split_count_enabled = self.split_count.is_enabled()
-        self.config.split_count_delimiter = self.split_count.get_delimiter()
-        self.config.split_count_index = self.split_count.get_index()
-        
-        self.config.split_organism_enabled = self.split_organism.is_enabled()
-        self.config.split_organism_delimiter = self.split_organism.get_delimiter()
-        self.config.split_organism_index = self.split_organism.get_index()
         
         self.config.use_numbering = self.numbering_check.isChecked()
         

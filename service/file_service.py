@@ -122,13 +122,6 @@ class FileService:
                     taxon.discrete_traits = row[2].strip()
                 if len(row) > 3:
                     taxon.continuous_traits = row[3].strip()
-                if len(row) > 4:
-                    try:
-                        taxon.quantity = int(row[4].strip())
-                    except ValueError:
-                        taxon.quantity = 1
-                if len(row) > 5:
-                    taxon.organism = row[5].strip()
                 
                 taxons.append(taxon)
         
@@ -146,9 +139,8 @@ class FileService:
             writer = csv.writer(f)
             
             # Write header
-            writer.writerow(['ID', 'Name', 'Sequence', 'Discrete Traits', 
-                           'Continuous Traits', 'Quantity', 'Organism'])
-            
+            writer.writerow(['ID', 'Name', 'Sequence', 'Discrete Traits', 'Continuous Traits'])
+
             # Write data
             for taxon in taxons:
                 writer.writerow([
@@ -157,8 +149,6 @@ class FileService:
                     taxon.sequence,
                     taxon.discrete_traits,
                     taxon.continuous_traits,
-                    taxon.quantity,
-                    taxon.organism
                 ])
     
     def export_to_fasta(self, file_path: str, taxons: List[TaxonData], delimiter: str = "|") -> None:
@@ -281,21 +271,6 @@ class FileService:
                 parts = original_name.split(config.split_continuous_delimiter)
                 if config.split_continuous_index < len(parts):
                     taxon.continuous_traits = parts[config.split_continuous_index].strip()
-            
-            # Split and extract count
-            if config.split_count_enabled and config.split_count_delimiter:
-                parts = original_name.split(config.split_count_delimiter)
-                if config.split_count_index < len(parts):
-                    try:
-                        taxon.quantity = int(parts[config.split_count_index].strip())
-                    except ValueError:
-                        pass
-            
-            # Split and extract organism
-            if config.split_organism_enabled and config.split_organism_delimiter:
-                parts = original_name.split(config.split_organism_delimiter)
-                if config.split_organism_index < len(parts):
-                    taxon.organism = parts[config.split_organism_index].strip()
             
             # Use numbering as name if requested
             if config.use_numbering:

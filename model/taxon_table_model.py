@@ -19,12 +19,10 @@ class TaxonTableModel(QAbstractTableModel):
         ("Sequence", "display_sequence"),
         ("Discrete Traits", "discrete_traits"),
         ("Continuous Traits", "continuous_traits"),
-        ("Quantity", "quantity"),
-        ("Organism", "organism")
     ]
-    
+
     # Columns that can be edited (all except ID which is column 1)
-    EDITABLE_COLUMNS = {0, 2, 3, 4, 5, 6, 7}  # Select, Name, Sequence, Discrete Traits, Continuous Traits, Quantity, Organism
+    EDITABLE_COLUMNS = {0, 2, 3, 4, 5}  # Select, Name, Sequence, Discrete Traits, Continuous Traits
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -63,8 +61,6 @@ class TaxonTableModel(QAbstractTableModel):
             # Highlight invalid data
             if col == 5 and not taxon.is_valid_continuous_traits():
                 return QColor(255, 200, 200)  # Light red
-            if col == 6 and not taxon.is_valid_quantity():
-                return QColor(255, 200, 200)
         
         elif role == Qt.ItemDataRole.ToolTipRole:
             if col == 3:  # Sequence column
@@ -96,11 +92,6 @@ class TaxonTableModel(QAbstractTableModel):
                 taxon.sequence = str(value)
                 self.dataChanged.emit(index, index, [role])
                 return True
-            elif col == 6:  # Quantity - convert to int
-                try:
-                    value = int(value)
-                except (ValueError, TypeError):
-                    return False
             
             setattr(taxon, attr_name, value)
             self.dataChanged.emit(index, index, [role])
