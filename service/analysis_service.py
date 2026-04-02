@@ -352,7 +352,8 @@ class AnalysisService:
             _hap.fasta       – unique (non-redundant) haplotype sequences labeled H1, H2, …
             _hap_trait.csv   – aggregated trait data per haplotype
             _seq_trait.csv   – trait data per individual sequence
-            _seq.meta.csv    – per-sample metadata: sequence_name, haplotype, quantity, traits
+            _seq.meta.csv    – per-sample metadata: sequence_name, haplotype, continuous_traits, discrete_traits
+            _traitconf.csv   – continuous trait per sequence: seqname;continuous_traits
 
         Args:
             aligned_fasta: Path to aligned FASTA file
@@ -446,11 +447,17 @@ class AnalysisService:
             with open(f"{output_prefix}_seq.meta.csv", 'w', encoding='utf-8', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(
-                    ['sequence_name', 'haplotype', 'quantity',
-                     'continuous_traits', 'discrete_traits'])
+                    ['sequence_name', 'haplotype', 'continuous_traits', 'discrete_traits'])
                 for name, seq in sequences:
                     cont, disc = taxon_lookup.get(name, ("0", ""))
-                    writer.writerow([name, seq_to_hap[seq], 1, cont, disc])
+                    writer.writerow([name, seq_to_hap[seq], cont, disc])
+
+            # ── Write _traitconf.csv ──────────────────────────────────────────
+            # Continuous trait per sequence: seqname;continuous_traits
+            with open(f"{output_prefix}_traitconf.csv", 'w', encoding='utf-8') as f:
+                for name, _ in sequences:
+                    cont, _ = taxon_lookup.get(name, ("0", ""))
+                    f.write(f"{name};{cont}\n")
 
             # ── Write _hap_trait.csv ──────────────────────────────────────────
             with open(f"{output_prefix}_hap_trait.csv", 'w', encoding='utf-8', newline='') as f:
