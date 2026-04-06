@@ -348,7 +348,7 @@ class MainForm(MainWindowUI):
             shutil.copy2(file_path, gml_dest)
 
             # Run visualization generator
-            success = self.analysis_service._generate_visualization(timestamp, output_path, None)
+            success = self.analysis_service._generate_visualization(timestamp, output_path, False)
 
             if success:
                 vis_path = os.path.join(output_path, f"{timestamp}.html")

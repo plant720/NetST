@@ -532,16 +532,19 @@ class AnalysisService:
         The generated HTML embeds the data script (js_file) before tcsBU.js so
         that the auto-load block in tcsBU.js can call loadGraph/loadGroups/
         loadHaplotypes/loadTraits immediately on page ready.
+
+        Uses pathlib.Path.as_uri() for file:// URL construction so this method
+        is safe to call from a worker thread (no Qt objects needed).
         """
-        from PyQt6.QtCore import QUrl
+        from pathlib import Path
 
         tcsbu_dir = os.path.join(self.root_path, "statics", "tcsbu")
 
         def fu(name: str) -> str:
             """Return an absolute file:// URL for a tcsbu asset."""
-            return QUrl.fromLocalFile(os.path.join(tcsbu_dir, name)).toString()
+            return Path(os.path.join(tcsbu_dir, name)).as_uri()
 
-        js_url = QUrl.fromLocalFile(js_file).toString()
+        js_url = Path(js_file).as_uri()
 
         html = (
             '<!DOCTYPE html>\n'
