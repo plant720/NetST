@@ -67,8 +67,8 @@ def _color_group_config(hap_conf_list):
 
 def _write_conf(hap_conf_list, group_conf_list, out_prefix: str) -> None:
     with open(out_prefix + '_hapconf.csv', 'w', encoding='utf-8') as f:
-        for sample, group, _ in hap_conf_list:
-            f.write(f"{sample};{group}\n")
+        for sample, group, hap in hap_conf_list:
+            f.write(f"{sample};{group};{hap}\n")
     with open(out_prefix + '_groupconf.csv', 'w', encoding='utf-8') as f:
         for group, color, style in group_conf_list:
             f.write(f"{group};{color};{style}\n")
@@ -107,12 +107,3 @@ def generate_network_config(gml_file: str, hap_file: str, out_prefix: str) -> No
         fp.write('var groupconffile = {target: {files: [new File(["')
         fp.write(_file_to_escaped(out_prefix + '_groupconf.csv'))
         fp.write('"], ".gml")]}};\n')
-
-#
-# if __name__ == '__main__':
-#     import os
-#
-#     dir_name = "/Users/zzhen/HaplotypeOutput/"
-#     gml_file = os.path.join(dir_name, "project.gml")
-#
-# generate_network_config()
