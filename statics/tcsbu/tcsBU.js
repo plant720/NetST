@@ -3134,9 +3134,13 @@ $(function () {
         w2alert('The File APIs are not fully supported by your browser.');
     }
 
-    // // Pre-load example data files on startup (for development/demo purposes).
-    // loadGraph(gmlfile);
-    // loadGroups(groupconffile);
-    // loadHaplotypes(hapconffile);
+    // Auto-load pre-embedded data files (set by generated {prefix}.js).
+    // These globals are defined when the HTML was opened with a data script.
+    if (typeof gmlfile !== 'undefined') {
+        loadGraph(gmlfile);
+        if (typeof groupconffile !== 'undefined') loadGroups(groupconffile);
+        if (typeof hapconffile !== 'undefined') loadHaplotypes(hapconffile);
+        if (typeof traitconffile !== 'undefined') loadTraits(traitconffile);
+    }
 
 });

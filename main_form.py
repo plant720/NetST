@@ -173,8 +173,10 @@ class MainForm(MainWindowUI):
 
     def _load_initial_pages(self):
         """Load initial HTML pages."""
-        main_page = os.path.join(self.current_directory, "statics", self.language, "main.html")
-        self.load_main_page(main_page)
+        # Load the tcsBU interface as the default network tab view.
+        index_html = os.path.join(self.current_directory, "statics", "tcsbu", "index.html")
+        if os.path.isfile(index_html):
+            self.load_main_page(index_html)
 
         self.log_tab.append_info("Application started")
         self.log_tab.append_info(f"Working directory: {self.current_directory}")
@@ -227,6 +229,7 @@ class MainForm(MainWindowUI):
             self.data_tab.update_counts(total=len(taxons))
 
             self.log_tab.append_success(f"Loaded {len(taxons)} sequences")
+            self._check_trait_completeness(taxons)
             self.switch_to_tab('data')
 
         except Exception as e:
@@ -280,6 +283,7 @@ class MainForm(MainWindowUI):
             self.data_tab.update_counts(total=self.table_model.rowCount())
 
             self.log_tab.append_success(f"Added {len(taxons)} sequences")
+            self._check_trait_completeness(taxons)
 
         except Exception as e:
             self.log_tab.append_error(f"Failed to add sequences: {str(e)}")
@@ -622,6 +626,22 @@ class MainForm(MainWindowUI):
             QMessageBox.information(self, "Help", "Help documentation is being written...")
 
     # ==================== Helper Methods ====================
+
+    def _check_trait_completeness(self, taxons: list) -> None:
+        """Check loaded taxons for missing discrete / continuous traits and warn the user."""
+        has_discrete = any(t.discrete_traits.strip() for t in taxons)
+        has_continuous = any(
+            t.continuous_traits.strip() not in ("", "0") and t.is_valid_continuous_traits()
+            for t in taxons
+        )
+        if not has_discrete:
+            self.log_tab.append_warning(
+                "数据中无离散性状（Discrete Traits），将无法进行分组（Group）可视化"
+            )
+        if not has_continuous:
+            self.log_tab.append_info(
+                "数据中无有效连续性状（Continuous Traits），将无法进行双性状可视化"
+            )
 
     @staticmethod
     def _is_numeric(value: str) -> bool:
