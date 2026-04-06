@@ -26,6 +26,9 @@ class AnalysisResult:
     # True as soon as _process_haplotypes() succeeds, even if later steps fail.
     # The haplotype tab should be shown whenever this is True.
     haplotype_ready: bool = False
+    # True when at least one taxon has a meaningful (non-zero, non-empty) continuous trait.
+    # Controls whether traitconf.csv is generated and loaded in the visualization.
+    has_continuous_traits: bool = False
 
     def get_visualization_path(self) -> str:
         return os.path.join(self.output_path, f"{self.prefix}.html")
@@ -127,7 +130,9 @@ class AnalysisService:
             file_suffix = os.path.join(output_path, prefix)
             taxon_lookup = {t.name: (t.continuous_traits, t.discrete_traits) for t in taxons}
             self._log("Processing haplotypes...")
-            if not self._process_haplotypes(aligned_fasta, file_suffix, taxon_lookup):
+            hap_ok, has_continuous_traits = self._process_haplotypes(
+                aligned_fasta, file_suffix, taxon_lookup)
+            if not hap_ok:
                 return AnalysisResult(prefix, False, output_path,
                                       "Haplotype processing failed")
 
@@ -180,7 +185,8 @@ class AnalysisService:
             if success:
                 # ── Step 7: Generate visualization ────────────────────────────
                 self._log("Generating visualization...")
-                success = self._generate_visualization(prefix, output_path)
+                success = self._generate_visualization(
+                    prefix, output_path, has_continuous_traits)
 
             self._update_progress(100)
 
@@ -191,7 +197,8 @@ class AnalysisService:
                                   haplotype_ready=haplotype_ready)
 
         return AnalysisResult(prefix, success, output_path,
-                              haplotype_ready=haplotype_ready)
+                              haplotype_ready=haplotype_ready,
+                              has_continuous_traits=has_continuous_traits)
 
     # ── Alignment helpers ───────────────────────────────────────────────────────
 
@@ -337,7 +344,7 @@ class AnalysisService:
         return header
 
     def _process_haplotypes(self, aligned_fasta: str, output_prefix: str,
-                             taxon_lookup: dict = None) -> bool:
+                             taxon_lookup: dict = None) -> Tuple[bool, bool]:
         """
         Process aligned FASTA sequences into haplotypes and write all required files.
 
@@ -353,7 +360,7 @@ class AnalysisService:
             _hap_trait.csv   – aggregated trait data per haplotype
             _seq_trait.csv   – trait data per individual sequence
             _seq.meta.csv    – per-sample metadata: sequence_name, haplotype, continuous_traits, discrete_traits
-            _traitconf.csv   – continuous trait per sequence: seqname;continuous_traits
+            _traitconf.csv   – continuous trait per sequence (only when continuous traits exist)
 
         Args:
             aligned_fasta: Path to aligned FASTA file
@@ -361,10 +368,16 @@ class AnalysisService:
             taxon_lookup: Optional dict {name: (continuous_traits, discrete_traits)}
 
         Returns:
-            True on success
+            (success, has_continuous_traits) tuple
         """
         if taxon_lookup is None:
             taxon_lookup = {}
+
+        # Determine upfront whether any taxon carries a meaningful continuous trait.
+        has_continuous = any(
+            cont.strip() not in ("", "0")
+            for cont, _ in taxon_lookup.values()
+        )
 
         try:
             # ── Read aligned FASTA ────────────────────────────────────────────
@@ -452,12 +465,13 @@ class AnalysisService:
                     cont, disc = taxon_lookup.get(name, ("0", ""))
                     writer.writerow([name, seq_to_hap[seq], cont, disc])
 
-            # ── Write _traitconf.csv ──────────────────────────────────────────
+            # ── Write _traitconf.csv (only when meaningful continuous traits exist) ──
             # Continuous trait per sequence: seqname;continuous_traits
-            with open(f"{output_prefix}_traitconf.csv", 'w', encoding='utf-8') as f:
-                for name, _ in sequences:
-                    cont, _ = taxon_lookup.get(name, ("0", ""))
-                    f.write(f"{name};{cont}\n")
+            if has_continuous:
+                with open(f"{output_prefix}_traitconf.csv", 'w', encoding='utf-8') as f:
+                    for name, _ in sequences:
+                        cont, _ = taxon_lookup.get(name, ("0", ""))
+                        f.write(f"{name};{cont}\n")
 
             # ── Write _hap_trait.csv ──────────────────────────────────────────
             with open(f"{output_prefix}_hap_trait.csv", 'w', encoding='utf-8', newline='') as f:
@@ -481,28 +495,30 @@ class AnalysisService:
                     cont, disc = taxon_lookup.get(name, ("0", ""))
                     writer.writerow([name, 1, cont, disc])
 
-            return True
+            return True, has_continuous
 
         except Exception as e:
             self._log(f"Haplotype processing error: {str(e)}")
             self._log(traceback.format_exc())
-            return False
+            return False, False
 
     # ── Visualization helpers ───────────────────────────────────────────────────
 
-    def _generate_visualization(self, prefix: str, output_path: str, _=None) -> bool:
+    def _generate_visualization(self, prefix: str, output_path: str,
+                                 has_continuous_traits: bool = False) -> bool:
         """Generate visualization files from GML network output."""
         try:
             gml_file = os.path.join(output_path, f"{prefix}.gml")
             hap_file = os.path.join(output_path, f"{prefix}_seq.meta.csv")
             out_prefix = os.path.join(output_path, prefix)
 
-            generate_network_config(gml_file, hap_file, out_prefix)
+            generate_network_config(gml_file, hap_file, out_prefix,
+                                    has_continuous_traits=has_continuous_traits)
 
             js_file = os.path.join(output_path, f"{prefix}.js")
             if os.path.isfile(js_file):
                 html_file = os.path.join(output_path, f"{prefix}.html")
-                self._generate_network_html(html_file, f"{prefix}.js")
+                self._generate_network_html(html_file, js_file)
                 return True
 
             return False
@@ -511,14 +527,48 @@ class AnalysisService:
             return False
 
     def _generate_network_html(self, html_file: str, js_file: str) -> None:
-        """Generate network visualization HTML from template."""
-        template_path = os.path.join(self.root_path, "statics", "en", "tcsBU.txt")
-        if os.path.isfile(template_path):
-            with open(template_path, 'r', encoding='utf-8') as f:
-                template = f.read()
-            html = template.replace("$data$", js_file)
-            with open(html_file, 'w', encoding='utf-8') as f:
-                f.write(html)
+        """Generate network visualization HTML that uses statics/tcsbu/ resources.
+
+        The generated HTML embeds the data script (js_file) before tcsBU.js so
+        that the auto-load block in tcsBU.js can call loadGraph/loadGroups/
+        loadHaplotypes/loadTraits immediately on page ready.
+
+        Uses pathlib.Path.as_uri() for file:// URL construction so this method
+        is safe to call from a worker thread (no Qt objects needed).
+        """
+        from pathlib import Path
+
+        tcsbu_dir = os.path.join(self.root_path, "statics", "tcsbu")
+
+        def fu(name: str) -> str:
+            """Return an absolute file:// URL for a tcsbu asset."""
+            return Path(os.path.join(tcsbu_dir, name)).as_uri()
+
+        js_url = Path(js_file).as_uri()
+
+        html = (
+            '<!DOCTYPE html>\n'
+            '<html>\n'
+            '<head>\n'
+            '<title>tcsBU - TCS Beautifier</title>\n'
+            '  <meta charset="UTF-8">\n'
+            '  <meta name="viewport" content="initial-scale=1.0, user-scalable=no">\n'
+            f'  <link rel="stylesheet" type="text/css" href="{fu("w2ui.min.css")}" />\n'
+            f'  <link rel="stylesheet" type="text/css" href="{fu("tcsBU.min.css")}" />\n'
+            f'  <script type="text/javascript" src="{fu("jquery-3.2.1.min.js")}"></script>\n'
+            f'  <script type="text/javascript" src="{fu("w2ui.min.js")}"></script>\n'
+            f'  <script type="text/javascript" src="{fu("d3.min.js")}"></script>\n'
+            f'  <script type="text/javascript" src="{fu("FileSaver.min.js")}"></script>\n'
+            f'  <script type="text/javascript" src="{js_url}"></script>\n'
+            f'  <script type="text/javascript" src="{fu("tcsBU.js")}"></script>\n'
+            '</head>\n'
+            '<body>\n'
+            '<div id="layout" style="width: 100%; height: 100%;"></div>\n'
+            '</body>\n'
+            '</html>\n'
+        )
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(html)
 
     # ── Generic executable helper ───────────────────────────────────────────────
 
