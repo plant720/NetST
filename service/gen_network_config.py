@@ -35,7 +35,12 @@ def _random_color(seed: int) -> str:
 
 
 def _gen_hap_config(hap_file: str):
-    """Read _seq.meta.csv and return list of (sample, group, hap) tuples."""
+    """Read _seq.meta.csv and return list of (sample, group, hap) tuples.
+
+    The CSV columns are: sequence_name, haplotype, continuous_traits, discrete_traits.
+    discrete_traits (last column) is used as the group label; empty values are
+    mapped to 'Default' so that tcsBU always has a valid group name.
+    """
     hap_conf_list = []
     with open(hap_file, mode='r', newline='', encoding='utf-8') as f:
         reader = csv.reader(f)
@@ -43,17 +48,33 @@ def _gen_hap_config(hap_file: str):
         for row in reader:
             sample = row[0]
             hap = row[1]
-            group = row[-1]
+            group = row[-1].strip() if len(row) >= 4 else ""
+            if not group:
+                group = "Default"
             hap_conf_list.append((sample, group, hap))
     return hap_conf_list
 
 
 def _color_group_config(hap_conf_list):
-    """Assign colors to each unique group."""
+    """Assign colors to each unique group.
+
+    Groups are written to groupconf.csv exactly as-is; tcsBU's loadGroups
+    already seeds the list with a 'Default' (white) entry, so we only
+    write non-Default groups.  When all samples fall into 'Default'
+    (i.e. no discrete traits) we return an empty list — the groupconf
+    file will be empty and tcsBU will keep its built-in Default group.
+    """
     group_names = list(dict.fromkeys(group for _, group, _ in hap_conf_list))
-    n = len(group_names)
+    non_default = [g for g in group_names if g != "Default"]
+
+    n = len(non_default)
+    if n == 0:
+        # No named groups — all samples belong to Default; groupconf stays empty.
+        return []
+
     if n in _COLOR_PALETTES:
-        return [(name, _COLOR_PALETTES[n][i], 'none') for i, name in enumerate(group_names)]
+        return [(name, _COLOR_PALETTES[n][i], 'none') for i, name in enumerate(non_default)]
+
     # Fallback: random colors seeded by group name
     result = []
     seen = {}

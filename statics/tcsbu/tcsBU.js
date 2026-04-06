@@ -3134,6 +3134,13 @@ $(function () {
         w2alert('The File APIs are not fully supported by your browser.');
     }
 
+    // Expose load functions globally so they can be called via QWebEngineView.runJavaScript
+    // after the page has fully initialised (used when index.html is the persistent network view).
+    window.loadGraph = loadGraph;
+    window.loadGroups = loadGroups;
+    window.loadHaplotypes = loadHaplotypes;
+    window.loadTraits = loadTraits;
+
     // Auto-load pre-embedded data files (set by generated {prefix}.js).
     // These globals are defined when the HTML was opened with a data script.
     if (typeof gmlfile !== 'undefined') {
