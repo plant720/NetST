@@ -71,7 +71,7 @@ class AnalysisWorker(QThread):
 class MainForm(MainWindowUI):
     """
     Main Window Business Logic Class
-    
+
     Inherits MainWindowUI and implements all business logic functions including:
     - File operations
     - Data management
@@ -97,6 +97,10 @@ class MainForm(MainWindowUI):
 
         # Worker thread reference
         self.analysis_worker: Optional[AnalysisWorker] = None
+
+        # Pending JavaScript to inject after the next successful page load in web_view_main.
+        # Set by _on_analysis_finished; consumed by _on_web_view_load_finished.
+        self._pending_js: Optional[str] = None
 
         # Initialization
         self._init_components()
@@ -170,6 +174,9 @@ class MainForm(MainWindowUI):
         """Setup signal connections."""
         self.table_model.dataChanged.connect(self._update_selected_count)
         self.data_tab.selection_changed.connect(self._update_selected_count)
+        # Connect WebEngine loadFinished so we can inject data JS after each analysis.
+        if hasattr(self.web_view_main, 'loadFinished'):
+            self.web_view_main.loadFinished.connect(self._on_web_view_load_finished)
 
     def _load_initial_pages(self):
         """Load initial HTML pages."""
@@ -348,14 +355,18 @@ class MainForm(MainWindowUI):
             shutil.copy2(file_path, gml_dest)
 
             # Run visualization generator
-            success = self.analysis_service._generate_visualization(timestamp, output_path, False)
+            success = self.analysis_service._generate_visualization(
+                str(timestamp), output_path, False)
 
             if success:
-                vis_path = os.path.join(output_path, f"{timestamp}.html")
-                if os.path.isfile(vis_path):
-                    self.web_view_main.setUrl(QUrl.fromLocalFile(vis_path))
+                js_file = os.path.join(output_path, f"{timestamp}.js")
+                if os.path.isfile(js_file):
+                    self._pending_js = self._build_network_js_injection(js_file, False)
+                    index_html = os.path.join(self.current_directory, "statics", "tcsbu", "index.html")
+                    if os.path.isfile(index_html):
+                        self.web_view_main.setUrl(QUrl.fromLocalFile(index_html))
                     self.switch_to_tab('network')
-                    self.log_tab.append_success(f"GML loaded and visualization generated")
+                    self.log_tab.append_success("GML loaded and visualization generated")
             else:
                 self.log_tab.append_warning("GML loaded but visualization generation failed")
                 QMessageBox.warning(self, "Warning", "Could not generate visualization from GML file")
@@ -436,6 +447,24 @@ class MainForm(MainWindowUI):
             QMessageBox.warning(self, "Warning", "Please enter a project name!")
             return
 
+        # Warn if selected data lacks traits that affect visualization
+        has_discrete = any(t.discrete_traits.strip() for t in selected)
+        has_continuous = any(
+            t.continuous_traits.strip() not in ("", "0") and self._is_numeric(t.continuous_traits)
+            for t in selected
+        )
+        if not has_discrete:
+            self.log_tab.append_warning(
+                "所选数据无离散性状（Discrete Traits），可视化将使用默认分组（Default），无法进行分组可视化"
+            )
+        if not has_continuous:
+            self.log_tab.append_info(
+                "所选数据无有效连续性状（Continuous Traits），将仅生成基础单倍型网络图，无法进行双性状可视化"
+            )
+
+        # Clear any leftover pending JS before showing the waiting state
+        self._pending_js = None
+
         self.switch_to_tab('network')
         waiting_page = os.path.join(self.current_directory, "statics", self.language, "waiting.html")
         if os.path.isfile(waiting_page):
@@ -455,19 +484,33 @@ class MainForm(MainWindowUI):
         self.analysis_worker.start()
 
     def _on_analysis_finished(self, result: AnalysisResult):
-        """Handle analysis completion."""
+        """Handle analysis completion.
+
+        On success the generated JS data file (prefix.js) is injected into the
+        persistent index.html page so that tcsBU's loadGraph / loadGroups /
+        loadHaplotypes / loadTraits functions are called without navigating away
+        from index.html.
+        """
+        index_html = os.path.join(self.current_directory, "statics", "tcsbu", "index.html")
+
         if result.success:
             self.log_tab.append_success("Analysis completed!")
-            vis_path = result.get_visualization_path()
-            if os.path.isfile(vis_path):
-                self.web_view_main.setUrl(QUrl.fromLocalFile(vis_path))
+            js_file = os.path.join(result.output_path, f"{result.prefix}.js")
+            if os.path.isfile(js_file):
+                self._pending_js = self._build_network_js_injection(
+                    js_file, result.has_continuous_traits
+                )
+                self.log_tab.append_info("Loading network visualization…")
+            # Reload index.html to reset tcsBU state, then inject data via loadFinished handler.
+            if os.path.isfile(index_html):
+                self.web_view_main.setUrl(QUrl.fromLocalFile(index_html))
+            self.switch_to_tab('network')
         else:
             self.log_tab.append_error(f"Analysis failed: {result.error_message}")
             QMessageBox.critical(self, "Error", f"Analysis failed: {result.error_message}")
-
-            main_page = os.path.join(self.current_directory, "statics", self.language, "main.html")
-            if os.path.isfile(main_page):
-                self.web_view_main.setUrl(QUrl.fromLocalFile(main_page))
+            # Return to index.html (reset state, no pending JS)
+            if os.path.isfile(index_html):
+                self.web_view_main.setUrl(QUrl.fromLocalFile(index_html))
 
         # Show / refresh the Haplotype tab whenever haplotype data was produced,
         # regardless of whether downstream steps (fastHaN, visualization) succeeded.
@@ -476,6 +519,49 @@ class MainForm(MainWindowUI):
 
         self.set_progress(0)
         self.set_status("Ready")
+
+    def _on_web_view_load_finished(self, ok: bool) -> None:
+        """Inject pending network data JS after index.html finishes loading."""
+        if self._pending_js is None:
+            return
+        js = self._pending_js
+        self._pending_js = None
+        if not ok:
+            self.log_tab.append_warning("Network view page failed to load; visualization not injected.")
+            return
+        # Delay slightly to let tcsBU's $(document).ready() and w2ui layout fully initialise.
+        QTimer.singleShot(300, lambda: self.web_view_main.page().runJavaScript(js))
+
+    def _build_network_js_injection(self, js_file: str, has_continuous_traits: bool) -> str:
+        """Build the JavaScript string that loads analysis results into index.html.
+
+        Reads the generated prefix.js (which embeds GML + CSV contents as JS
+        File objects) and appends calls to the tcsBU window-level load functions.
+        loadGroups is skipped when groupconf is empty (no discrete traits) to
+        avoid a spurious tcsBU warning popup.
+        """
+        with open(js_file, 'r', encoding='utf-8') as fh:
+            prefix_js = fh.read()
+
+        # Check whether groupconf has any real entries (non-empty file means named groups exist)
+        groupconf_path = js_file.replace('.js', '_groupconf.csv')
+        has_named_groups = (
+            os.path.isfile(groupconf_path) and
+            os.path.getsize(groupconf_path) > 0
+        )
+
+        lines = [prefix_js, ""]
+        lines.append("(function () {")
+        lines.append("    if (typeof window.loadGraph !== 'function') { return; }")
+        lines.append("    if (typeof gmlfile === 'undefined') { return; }")
+        lines.append("    window.loadGraph(gmlfile);")
+        if has_named_groups:
+            lines.append("    if (typeof groupconffile !== 'undefined') window.loadGroups(groupconffile);")
+        lines.append("    if (typeof hapconffile !== 'undefined') window.loadHaplotypes(hapconffile);")
+        if has_continuous_traits:
+            lines.append("    if (typeof traitconffile !== 'undefined') window.loadTraits(traitconffile);")
+        lines.append("})();")
+        return "\n".join(lines)
 
     # ==================== Alignment Functions ====================
 
