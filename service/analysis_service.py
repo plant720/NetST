@@ -326,6 +326,12 @@ class AnalysisService:
                         timeout=600
                     )
 
+                stderr_text = process.stderr
+                if isinstance(stderr_text, bytes):
+                    stderr_text = stderr_text.decode('utf-8', errors='replace')
+                if stderr_text and stderr_text.strip():
+                    self._log(f"MAFFT: {stderr_text.strip()}")
+
                 if (process.returncode == 0
                         and os.path.isfile(output_file)
                         and os.path.getsize(output_file) > 0):
@@ -380,6 +386,12 @@ class AnalysisService:
                 try:
                     cmd = base_args + extra_args
                     process = subprocess.run(cmd, capture_output=True, timeout=600)
+
+                    for stream_bytes, label in ((process.stdout, "MUSCLE"), (process.stderr, "MUSCLE")):
+                        if stream_bytes:
+                            text = stream_bytes.decode('utf-8', errors='replace').strip()
+                            if text:
+                                self._log(f"{label}: {text}")
 
                     if (process.returncode == 0
                             and os.path.isfile(output_file)

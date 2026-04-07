@@ -647,6 +647,10 @@ class MainForm(MainWindowUI):
         if result.haplotype_ready:
             self.show_haplotype_tab(result.output_path, result.prefix)
 
+        # Always end on the Network tab after building a haplotype network.
+        if result.success:
+            self.switch_to_tab('network')
+
         self.set_progress(0)
         self.set_status("Ready")
 
@@ -806,6 +810,10 @@ class MainForm(MainWindowUI):
         if result.haplotype_ready:
             self.show_haplotype_tab(result.output_path, result.prefix)
 
+        # Always end on the Haplotype tab after haplotype calculation.
+        if result.haplotype_ready:
+            self.switch_to_tab('haplotype')
+
     # ==================== Tools Functions ====================
 
     def _set_language(self, lang: str):
@@ -862,16 +870,26 @@ class MainForm(MainWindowUI):
         self._show_netst_help()
 
     def _show_tcsbu_help(self):
-        """Open TCS-BU help PDF using the system default viewer."""
-        from PyQt6.QtGui import QDesktopServices
+        """Display TCS-BU help PDF in an internal viewer dialog."""
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout
         from PyQt6.QtCore import QUrl
 
         pdf_path = os.path.join(self.current_directory, "statics", "docs", "tcsbu.pdf")
-        if os.path.isfile(pdf_path):
-            QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
-        else:
+        if not os.path.isfile(pdf_path):
             QMessageBox.warning(self, "TCS-BU Help",
                                 f"TCS-BU help PDF not found:\n{pdf_path}")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("TCS-BU Help")
+        dlg.resize(960, 720)
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(0, 0, 0, 0)
+        view = QWebEngineView()
+        view.setUrl(QUrl.fromLocalFile(pdf_path))
+        layout.addWidget(view)
+        dlg.exec()
 
     def _show_netst_help(self):
         """Render and display the NetST Markdown help document in the Network tab."""
