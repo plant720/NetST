@@ -40,8 +40,6 @@ class LanguageManager:
             'menu_load_sequence': {'cn': '载入序列...', 'en': 'Load Sequence...'},
             'menu_load_table': {'cn': '载入表格...', 'en': 'Load Table...'},
             'menu_add_sequence': {'cn': '增加序列...', 'en': 'Add Sequence...'},
-            'menu_load_gml': {'cn': '载入GML文件...', 'en': 'Load GML...'},
-            'menu_load_html': {'cn': '载入HTML文件...', 'en': 'Load HTML...'},
             'menu_export_table': {'cn': '导出表格...', 'en': 'Export Table...'},
             'menu_export_sequence': {'cn': '导出序列...', 'en': 'Export Sequence...'},
             'menu_exit': {'cn': '退出', 'en': 'Exit'},
@@ -83,9 +81,6 @@ class LanguageManager:
 
             # Tools Menu
             'menu_tools': {'cn': '工具', 'en': 'Tools'},
-            'menu_clean_sequences': {'cn': '清理序列', 'en': 'Clean Sequences'},
-            'menu_sequence_info': {'cn': '获取序列信息', 'en': 'Get Sequence Info'},
-            'menu_date_to_number': {'cn': '日期转换数字', 'en': 'Date to Number'},
             'menu_language': {'cn': '语言 / Language', 'en': 'Language / 语言'},
             'menu_chinese': {'cn': '中文', 'en': '中文 (Chinese)'},
             'menu_english': {'cn': 'English', 'en': 'English'},
@@ -96,8 +91,8 @@ class LanguageManager:
             'menu_help_docs': {'cn': '帮助文档', 'en': 'Help Docs'},
 
             # Tab Names
-            'tab_index':     {'cn': '首页',     'en': 'Index'},
-            'tab_network':   {'cn': '网络视图', 'en': 'Network View'},
+            'tab_index':     {'cn': '首页',     'en': 'Home'},
+            'tab_network':   {'cn': '网络视图', 'en': 'Network'},
             'tab_data':      {'cn': '数据',     'en': 'Data'},
             'tab_haplotype': {'cn': '单倍型',   'en': 'Haplotype'},
             'tab_report':    {'cn': '分析结果', 'en': 'Analysis Report'},
