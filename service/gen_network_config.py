@@ -7,6 +7,7 @@ Integrated as Python module 2026
 """
 
 import csv
+import os
 import random
 
 # Predefined color palettes for 3–10 groups
@@ -119,7 +120,6 @@ def generate_network_config(gml_file: str, hap_file: str, out_prefix: str,
     group_conf_list = _color_group_config(hap_conf_list)
     _write_conf(hap_conf_list, group_conf_list, out_prefix)
 
-    import os
     with open(out_prefix + '.js', 'w', encoding='utf-8') as fp:
         fp.write('var gmlfile = {target: {files: [new File(["')
         fp.write(_file_to_escaped(gml_file))

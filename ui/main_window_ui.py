@@ -305,8 +305,3 @@ class MainWindowUI(QMainWindow):
             return self.output_panel.get_project_prefix()
         return "project"
 
-    # Compatibility property for log_tab
-    @property
-    def log_tab(self):
-        """Compatibility property - returns output_panel"""
-        return self.output_panel

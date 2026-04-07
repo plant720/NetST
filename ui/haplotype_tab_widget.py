@@ -311,17 +311,6 @@ class HaplotypeTabWidget(QWidget):
 
         self._seq_viewer.setUpdatesEnabled(True)
 
-    # ── Utility ───────────────────────────────────────────────────────────────
-
-    def _current_hap_order(self) -> List[str]:
-        """Return haplotype names in the current visual row order of _hap_table."""
-        order = [
-            self._hap_table.item(r, 0).text()
-            for r in range(self._hap_table.rowCount())
-            if self._hap_table.item(r, 0)
-        ]
-        return order if order else list(self._hap_sequences.keys())
-
 
 # ── Module-level UI helpers ──────────────────────────────────────────────────
 

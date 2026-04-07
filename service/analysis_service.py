@@ -421,17 +421,6 @@ class AnalysisService:
 
     # ── Haplotype processing ────────────────────────────────────────────────────
 
-    def _parse_analysis_header(self, header: str) -> str:
-        """
-        Parse analysis FASTA header.
-
-        Expected format: name (plain sequence name only)
-
-        Returns:
-            name
-        """
-        return header
-
     def _process_haplotypes(self, aligned_fasta: str, output_prefix: str,
                             taxon_lookup: dict = None) -> Tuple[bool, bool]:
         """
@@ -471,7 +460,6 @@ class AnalysisService:
         try:
             # ── Read aligned FASTA ────────────────────────────────────────────
             sequences: List[Tuple[str, str]] = []
-            # each entry: (name, sequence)
 
             encoding = FileService.detect_encoding(aligned_fasta)
             with open(aligned_fasta, 'r', encoding=encoding) as f:
@@ -485,7 +473,7 @@ class AnalysisService:
                     if line.startswith('>'):
                         if current_header is not None and seq_lines:
                             seq = ''.join(seq_lines).upper()
-                            name = self._parse_analysis_header(current_header)
+                            name = current_header
                             sequences.append((name, seq))
                         current_header = line[1:]
                         seq_lines = []

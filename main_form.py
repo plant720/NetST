@@ -4,11 +4,13 @@ Main Window Business Logic Module
 Implements the main window business logic, inheriting from MainWindowUI base class.
 """
 
+import csv
 import os
 import sys
 from typing import Optional, Dict, Callable
 
 from PyQt6.QtCore import QUrl, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QMessageBox, QInputDialog
 )
@@ -215,8 +217,8 @@ class MainForm(MainWindowUI):
         if os.path.isfile(index_html):
             self.load_main_page(index_html)
 
-        self.log_tab.append_info("Application started")
-        self.log_tab.append_info(f"Working directory: {self.current_directory}")
+        self.output_panel.append_info("Application started")
+        self.output_panel.append_info(f"Working directory: {self.current_directory}")
 
     # ==================== File Operations ====================
 
@@ -233,7 +235,7 @@ class MainForm(MainWindowUI):
             return
 
         try:
-            self.log_tab.append_info(f"Loading: {file_path}")
+            self.output_panel.append_info(f"Loading: {file_path}")
 
             # Get sequence headers for preview
             headers = self.file_service.get_fasta_headers(file_path, limit=100)
@@ -247,7 +249,7 @@ class MainForm(MainWindowUI):
 
             if config is None:
                 # User cancelled
-                self.log_tab.append_info("Load cancelled by user")
+                self.output_panel.append_info("Load cancelled by user")
                 return
 
             # Load sequences (using simple delimiter for initial load)
@@ -265,12 +267,12 @@ class MainForm(MainWindowUI):
             self._update_selected_count()
             self.data_tab.update_counts(total=len(taxons))
 
-            self.log_tab.append_success(f"Loaded {len(taxons)} sequences")
+            self.output_panel.append_success(f"Loaded {len(taxons)} sequences")
             self._check_trait_completeness(taxons)
             self.switch_to_tab('data')
 
         except Exception as e:
-            self.log_tab.append_error(f"Failed to load file: {str(e)}")
+            self.output_panel.append_error(f"Failed to load file: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to load file: {str(e)}")
 
     def _add_sequence(self):
@@ -284,7 +286,7 @@ class MainForm(MainWindowUI):
             return
 
         try:
-            self.log_tab.append_info(f"Adding sequences from: {file_path}")
+            self.output_panel.append_info(f"Adding sequences from: {file_path}")
 
             # Get sequence headers for preview
             headers = self.file_service.get_fasta_headers(file_path, limit=100)
@@ -298,15 +300,10 @@ class MainForm(MainWindowUI):
 
             if config is None:
                 # User cancelled
-                self.log_tab.append_info("Add sequence cancelled by user")
+                self.output_panel.append_info("Add sequence cancelled by user")
                 return
 
-            # Get current max ID
-            current_max_id = 0
-            for i in range(self.table_model.rowCount()):
-                taxon = self.table_model.get_taxon(i)
-                if taxon and taxon.id > current_max_id:
-                    current_max_id = taxon.id
+            current_max_id = max((t.id for t in self.table_model.get_all_taxons()), default=0)
 
             # Load sequences
             taxons = self.file_service.load_fasta_file(file_path, delimiter="|")
@@ -319,11 +316,11 @@ class MainForm(MainWindowUI):
             self._update_selected_count()
             self.data_tab.update_counts(total=self.table_model.rowCount())
 
-            self.log_tab.append_success(f"Added {len(taxons)} sequences")
+            self.output_panel.append_success(f"Added {len(taxons)} sequences")
             self._check_trait_completeness(taxons)
 
         except Exception as e:
-            self.log_tab.append_error(f"Failed to add sequences: {str(e)}")
+            self.output_panel.append_error(f"Failed to add sequences: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to add sequences: {str(e)}")
 
     def _export_sequence(self):
@@ -350,10 +347,10 @@ class MainForm(MainWindowUI):
                 self.file_service.export_to_fasta(
                     file_path, self.table_model.get_all_taxons(), delimiter
                 )
-                self.log_tab.append_success(f"Sequences exported to: {file_path}")
+                self.output_panel.append_success(f"Sequences exported to: {file_path}")
                 QMessageBox.information(self, "Success", "Export completed!")
             except Exception as e:
-                self.log_tab.append_error(f"Failed to export: {str(e)}")
+                self.output_panel.append_error(f"Failed to export: {str(e)}")
                 QMessageBox.critical(self, "Error", f"Failed to export: {str(e)}")
 
     def _load_csv_traits(self):
@@ -369,8 +366,6 @@ class MainForm(MainWindowUI):
         6. If traits are already present, ask the user whether to overwrite them.
         7. Apply the new trait values to the table model.
         """
-        import csv
-
         # Step 1 – Sequence must be loaded first
         if self.table_model.rowCount() < 1:
             QMessageBox.warning(self, "Warning", "Please load a sequence file first before importing traits!")
@@ -413,7 +408,7 @@ class MainForm(MainWindowUI):
 
             mapping = CsvTraitsImportDialog.get_column_mapping(headers, preview_rows, self)
             if mapping is None:
-                self.log_tab.append_info("CSV trait import cancelled by user")
+                self.output_panel.append_info("CSV trait import cancelled by user")
                 return
 
             name_col = mapping['name_col']
@@ -437,10 +432,7 @@ class MainForm(MainWindowUI):
                 csv_trait_map[seq_name] = (discrete, continuous)
 
             # Step 5 – Validate names
-            loaded_names = {
-                self.table_model.get_taxon(i).name
-                for i in range(self.table_model.rowCount())
-            }
+            loaded_names = {t.name for t in self.table_model.get_all_taxons()}
             csv_names = set(csv_trait_map.keys())
 
             missing_in_csv = loaded_names - csv_names      # loaded but not in CSV
@@ -480,7 +472,7 @@ class MainForm(MainWindowUI):
                     QMessageBox.StandardButton.No
                 )
                 if reply != QMessageBox.StandardButton.Yes:
-                    self.log_tab.append_info("CSV trait import cancelled – existing traits kept")
+                    self.output_panel.append_info("CSV trait import cancelled – existing traits kept")
                     return
 
             # Step 7 – Apply traits to model
@@ -508,14 +500,14 @@ class MainForm(MainWindowUI):
                 )
                 self.table_model.dataChanged.emit(top_left, bottom_right)
 
-            self.log_tab.append_success(
+            self.output_panel.append_success(
                 f"Traits imported from CSV: {updated} sequences updated"
             )
             self._check_trait_completeness(self.table_model.get_all_taxons())
             self.switch_to_tab('data')
 
         except Exception as e:
-            self.log_tab.append_error(f"Failed to import CSV traits: {str(e)}")
+            self.output_panel.append_error(f"Failed to import CSV traits: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to import CSV traits:\n{str(e)}")
 
     # ==================== Data Selection ====================
@@ -575,15 +567,15 @@ class MainForm(MainWindowUI):
         # Warn if selected data lacks traits that affect visualization
         has_discrete = any(t.discrete_traits.strip() for t in selected)
         has_continuous = any(
-            t.continuous_traits.strip() not in ("", "0") and self._is_numeric(t.continuous_traits)
+            t.continuous_traits.strip() not in ("", "0") and t.is_valid_continuous_traits()
             for t in selected
         )
         if not has_discrete:
-            self.log_tab.append_warning(
+            self.output_panel.append_warning(
                 "所选数据无离散性状（Discrete Traits），可视化将使用默认分组（Default），无法进行分组可视化"
             )
         if not has_continuous:
-            self.log_tab.append_info(
+            self.output_panel.append_info(
                 "所选数据无有效连续性状（Continuous Traits），将仅生成基础单倍型网络图，无法进行双性状可视化"
             )
 
@@ -595,9 +587,9 @@ class MainForm(MainWindowUI):
         if os.path.isfile(waiting_page):
             self.web_view_main.setUrl(QUrl.fromLocalFile(waiting_page))
 
-        self.log_tab.append_info(f"Starting {network_type} network analysis...")
-        self.log_tab.append_info(f"Project: {prefix}")
-        self.log_tab.append_info(f"Output directory: {output_path}")
+        self.output_panel.append_info(f"Starting {network_type} network analysis...")
+        self.output_panel.append_info(f"Project: {prefix}")
+        self.output_panel.append_info(f"Output directory: {output_path}")
         self.set_status("Analyzing...")
 
         self.analysis_worker = AnalysisWorker(
@@ -605,7 +597,7 @@ class MainForm(MainWindowUI):
             extra_args=extra_args or []
         )
         self.analysis_worker.progress.connect(self.set_progress)
-        self.analysis_worker.log.connect(self.log_tab.append_info)
+        self.analysis_worker.log.connect(self.output_panel.append_info)
         self.analysis_worker.finished.connect(self._on_analysis_finished)
         self.analysis_worker.start()
 
@@ -620,19 +612,19 @@ class MainForm(MainWindowUI):
         index_html = os.path.join(self.current_directory, "statics", "tcsbu", "index.html")
 
         if result.success:
-            self.log_tab.append_success("Analysis completed!")
+            self.output_panel.append_success("Analysis completed!")
             js_file = os.path.join(result.output_path, f"{result.prefix}.js")
             if os.path.isfile(js_file):
                 self._pending_js = self._build_network_js_injection(
                     js_file, result.has_continuous_traits
                 )
-                self.log_tab.append_info("Loading network visualization…")
+                self.output_panel.append_info("Loading network visualization…")
             # Reload index.html to reset tcsBU state, then inject data via loadFinished handler.
             if os.path.isfile(index_html):
                 self.web_view_main.setUrl(QUrl.fromLocalFile(index_html))
             self.switch_to_tab('network')
         else:
-            self.log_tab.append_error(f"Analysis failed: {result.error_message}")
+            self.output_panel.append_error(f"Analysis failed: {result.error_message}")
             QMessageBox.critical(self, "Error", f"Analysis failed: {result.error_message}")
             # Return to index.html (reset state, no pending JS)
             if os.path.isfile(index_html):
@@ -661,7 +653,7 @@ class MainForm(MainWindowUI):
         js = self._pending_js
         self._pending_js = None
         if not ok:
-            self.log_tab.append_warning("Network view page failed to load; visualization not injected.")
+            self.output_panel.append_warning("Network view page failed to load; visualization not injected.")
             return
         # Delay slightly to let tcsBU's $(document).ready() and w2ui layout fully initialise.
         QTimer.singleShot(300, lambda: self.web_view_main.page().runJavaScript(js))
@@ -725,14 +717,14 @@ class MainForm(MainWindowUI):
             return
 
         tool_label = "MAFFT" if config.tool == "mafft" else "MUSCLE"
-        self.log_tab.append_info(
+        self.output_panel.append_info(
             f"Starting {tool_label} multiple sequence alignment "
             f"({len(selected)} sequences)...")
         self.set_status("Aligning...")
 
         self.alignment_worker = AlignmentWorker(
             self.analysis_service, selected, output_path, prefix, config)
-        self.alignment_worker.log.connect(self.log_tab.append_info)
+        self.alignment_worker.log.connect(self.output_panel.append_info)
         self.alignment_worker.finished.connect(self._on_alignment_finished)
         self.alignment_worker.start()
 
@@ -740,11 +732,11 @@ class MainForm(MainWindowUI):
         """Handle standalone alignment completion."""
         self.set_status("Ready")
         if result.success:
-            self.log_tab.append_success(
+            self.output_panel.append_success(
                 f"Alignment completed → {result.output_file}")
             self.show_alignment_tab(result.output_file)
         else:
-            self.log_tab.append_error(
+            self.output_panel.append_error(
                 f"Alignment failed: {result.error_message}")
             QMessageBox.critical(
                 self, "Alignment Failed",
@@ -778,7 +770,7 @@ class MainForm(MainWindowUI):
             return
 
         tool_label = "MAFFT" if config.tool == "mafft" else "MUSCLE"
-        self.log_tab.append_info(
+        self.output_panel.append_info(
             f"Starting haplotype calculation with {tool_label} alignment "
             f"({len(selected)} sequences)...")
         self.set_status("Calculating haplotypes...")
@@ -786,7 +778,7 @@ class MainForm(MainWindowUI):
         self.haplotype_worker = HaplotypeWorker(
             self.analysis_service, selected, output_path, prefix, config)
         self.haplotype_worker.progress.connect(self.set_progress)
-        self.haplotype_worker.log.connect(self.log_tab.append_info)
+        self.haplotype_worker.log.connect(self.output_panel.append_info)
         self.haplotype_worker.finished.connect(self._on_haplotype_calculation_finished)
         self.haplotype_worker.start()
 
@@ -796,9 +788,9 @@ class MainForm(MainWindowUI):
         self.set_status("Ready")
 
         if result.success:
-            self.log_tab.append_success("Haplotype calculation completed!")
+            self.output_panel.append_success("Haplotype calculation completed!")
         else:
-            self.log_tab.append_error(
+            self.output_panel.append_error(
                 f"Haplotype calculation failed: {result.error_message}")
             QMessageBox.critical(
                 self, "Error",
@@ -871,9 +863,6 @@ class MainForm(MainWindowUI):
 
     def _show_tcsbu_help(self):
         """Open TCS-BU help PDF with the system default PDF viewer."""
-        from PyQt6.QtGui import QDesktopServices
-        from PyQt6.QtCore import QUrl
-
         pdf_path = os.path.join(self.current_directory, "statics", "docs", "tcsbu.pdf")
         if not os.path.isfile(pdf_path):
             QMessageBox.warning(self, "TCS-BU Help",
@@ -883,9 +872,6 @@ class MainForm(MainWindowUI):
 
     def _show_netst_help(self):
         """Open NetST help PDF with the system default PDF viewer."""
-        from PyQt6.QtGui import QDesktopServices
-        from PyQt6.QtCore import QUrl
-
         pdf_path = os.path.join(self.current_directory, "statics", "docs", "netst.pdf")
         if not os.path.isfile(pdf_path):
             QMessageBox.warning(self, "NetST Help",
@@ -903,22 +889,14 @@ class MainForm(MainWindowUI):
             for t in taxons
         )
         if not has_discrete:
-            self.log_tab.append_warning(
+            self.output_panel.append_warning(
                 "数据中无离散性状（Discrete Traits），将无法进行分组（Group）可视化"
             )
         if not has_continuous:
-            self.log_tab.append_info(
+            self.output_panel.append_info(
                 "数据中无有效连续性状（Continuous Traits），将无法进行双性状可视化"
             )
 
-    @staticmethod
-    def _is_numeric(value: str) -> bool:
-        """Check if string is numeric."""
-        try:
-            float(value)
-            return True
-        except (ValueError, TypeError):
-            return False
 
 
 def main():

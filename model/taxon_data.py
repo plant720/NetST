@@ -29,7 +29,7 @@ class TaxonData:
     @property
     def sequence_length(self) -> int:
         """Returns the length of the sequence."""
-        return len(self.sequence) if self.sequence else 0
+        return len(self.sequence)
     
     def is_valid_continuous_traits(self) -> bool:
         """Validates that continuous traits is numeric."""

@@ -194,12 +194,6 @@ class TaxonTableModel(QAbstractTableModel):
                 [Qt.ItemDataRole.CheckStateRole]
             )
     
-    def get_full_sequence(self, row: int) -> str:
-        """Get full sequence for a taxon (not truncated)."""
-        if 0 <= row < len(self._data):
-            return self._data[row].sequence
-        return ""
-    
     def validate_for_analysis(self) -> tuple[bool, Optional[str]]:
         """Validate all data before analysis."""
         for taxon in self._data:
