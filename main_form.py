@@ -14,12 +14,13 @@ from PyQt6.QtWidgets import (
 )
 
 from model.taxon_table_model import TaxonTableModel
-from service.analysis_service import AnalysisService, AnalysisResult
+from service.analysis_service import AnalysisService, AnalysisResult, AlignmentResult
 from service.file_service import FileService
 from ui import MainWindowUI
 from ui.language_manager import lang_manager
 from ui.standardization_dialog import StandardizationDialog
 from ui.haplotype_network_dialog import HaplotypeNetworkDialog
+from ui.sequence_alignment_dialog import SequenceAlignmentDialog, SequenceAlignmentConfig
 
 # Fix path issues - ensure current directory is in Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -70,6 +71,28 @@ class AnalysisWorker(QThread):
         self.finished.emit(result)
 
 
+class AlignmentWorker(QThread):
+    """Worker thread for running standalone sequence alignment in the background."""
+
+    finished = pyqtSignal(object)   # AlignmentResult
+    log = pyqtSignal(str)
+
+    def __init__(self, analysis_service: AnalysisService, taxons: list,
+                 output_path: str, prefix: str, config: SequenceAlignmentConfig):
+        super().__init__()
+        self.analysis_service = analysis_service
+        self.taxons = taxons
+        self.output_path = output_path
+        self.prefix = prefix
+        self.config = config
+
+    def run(self):
+        self.analysis_service.set_log_callback(lambda m: self.log.emit(m))
+        result = self.analysis_service.run_alignment(
+            self.taxons, self.output_path, self.prefix, self.config)
+        self.finished.emit(result)
+
+
 class MainForm(MainWindowUI):
     """
     Main Window Business Logic Class
@@ -97,8 +120,9 @@ class MainForm(MainWindowUI):
         # Data model
         self.table_model = TaxonTableModel()
 
-        # Worker thread reference
+        # Worker thread references
         self.analysis_worker: Optional[AnalysisWorker] = None
+        self.alignment_worker: Optional[AlignmentWorker] = None
 
         # Pending JavaScript to inject after the next successful page load in web_view_main.
         # Set by _on_analysis_finished; consumed by _on_web_view_load_finished.
@@ -135,17 +159,8 @@ class MainForm(MainWindowUI):
             # Analysis Menu
             'build_haplotype_network': self._build_haplotype_network,
 
-            # MAFFT alignment
-            'mafft_auto': lambda: self._run_mafft_alignment("--auto"),
-            'mafft_fftns1': lambda: self._run_mafft_alignment("--retree 1"),
-            'mafft_fftns2': lambda: self._run_mafft_alignment("--retree 2"),
-            'mafft_ginsi': lambda: self._run_mafft_alignment("--globalpair --maxiterate 1000"),
-            'mafft_linsi': lambda: self._run_mafft_alignment("--localpair --maxiterate 1000"),
-            'mafft_einsi': lambda: self._run_mafft_alignment("--genafpair --maxiterate 1000"),
-
-            # MUSCLE alignment
-            'muscle_ppp': lambda: self._run_muscle_alignment("ppp"),
-            'muscle_super5': lambda: self._run_muscle_alignment("super5"),
+            # Multiple Sequence Alignment (unified MAFFT + MUSCLE dialog)
+            'run_msa': self._run_sequence_alignment,
 
             # Network analysis
             'network_visualization': self._network_visualization,
@@ -493,15 +508,58 @@ class MainForm(MainWindowUI):
 
     # ==================== Alignment Functions ====================
 
-    def _run_mafft_alignment(self, method: str):
-        """Run MAFFT alignment."""
-        self.log_tab.append_info(f"MAFFT alignment with method: {method}")
-        QMessageBox.information(self, "Info", "MAFFT alignment - to be implemented")
+    def _run_sequence_alignment(self):
+        """Show Multiple Sequence Alignment dialog then run the selected aligner."""
+        if self.table_model.rowCount() < 1:
+            QMessageBox.warning(self, "Warning", "Please load data first!")
+            return
 
-    def _run_muscle_alignment(self, method: str):
-        """Run MUSCLE alignment."""
-        self.log_tab.append_info(f"MUSCLE alignment with method: {method}")
-        QMessageBox.information(self, "Info", "MUSCLE alignment - to be implemented")
+        selected = self.table_model.get_selected_taxons()
+        if not selected:
+            QMessageBox.warning(self, "Warning", "Please select sequences first!")
+            return
+
+        config = SequenceAlignmentDialog.get_alignment_config(self)
+        if config is None:
+            return
+
+        output_path = self.get_output_path()
+        if not output_path:
+            QMessageBox.warning(self, "Warning", "Please set output directory first!")
+            return
+
+        prefix = self.get_project_prefix()
+        if not prefix:
+            QMessageBox.warning(self, "Warning", "Please enter a project name!")
+            return
+
+        tool_label = "MAFFT" if config.tool == "mafft" else "MUSCLE"
+        self.log_tab.append_info(
+            f"Starting {tool_label} multiple sequence alignment "
+            f"({len(selected)} sequences)...")
+        self.set_status("Aligning...")
+
+        self.alignment_worker = AlignmentWorker(
+            self.analysis_service, selected, output_path, prefix, config)
+        self.alignment_worker.log.connect(self.log_tab.append_info)
+        self.alignment_worker.finished.connect(self._on_alignment_finished)
+        self.alignment_worker.start()
+
+    def _on_alignment_finished(self, result: AlignmentResult):
+        """Handle standalone alignment completion."""
+        self.set_status("Ready")
+        if result.success:
+            self.log_tab.append_success(
+                f"Alignment completed → {result.output_file}")
+            QMessageBox.information(
+                self, "Alignment Complete",
+                f"Alignment finished successfully.\n\nOutput: {result.output_file}")
+        else:
+            self.log_tab.append_error(
+                f"Alignment failed: {result.error_message}")
+            QMessageBox.critical(
+                self, "Alignment Failed",
+                f"Alignment failed:\n{result.error_message}")
 
     # ==================== Analysis Functions ====================
 

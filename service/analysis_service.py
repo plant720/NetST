@@ -17,6 +17,14 @@ from service.gen_network_config import generate_network_config
 
 
 @dataclass
+class AlignmentResult:
+    """Result of a standalone alignment operation."""
+    success: bool
+    output_file: str = ""
+    error_message: Optional[str] = None
+
+
+@dataclass
 class AnalysisResult:
     """Result of an analysis operation."""
     prefix: str          # project name / file prefix
@@ -213,17 +221,69 @@ class AnalysisService:
         first_length = len(taxons[0].sequence)
         return all(len(t.sequence) == first_length for t in taxons)
 
+    def run_alignment(self, taxons: List[TaxonData], output_path: str, prefix: str,
+                      config) -> "AlignmentResult":
+        """
+        Run a standalone multiple sequence alignment (without full network analysis).
+
+        Args:
+            taxons:      Selected sequences to align
+            output_path: Directory for output files
+            prefix:      Project name used as file name prefix
+            config:      SequenceAlignmentConfig with tool + parameter settings
+
+        Returns:
+            AlignmentResult with success flag and output file path
+        """
+        FileService.ensure_directory(output_path)
+        input_fasta  = os.path.join(output_path, f"{prefix}.fasta")
+        output_fasta = os.path.join(output_path, f"{prefix}_aln.fasta")
+
+        try:
+            self.file_service.write_analysis_fasta(input_fasta, taxons)
+            self._log(f"Input FASTA written: {input_fasta}")
+
+            if config.tool == "muscle":
+                extra_args = config.to_muscle_extra_args()
+                self._log(f"Running MUSCLE with args: {extra_args}")
+                ok = self._run_muscle_alignment(input_fasta, output_fasta,
+                                                extra_args=extra_args)
+                tool_name = "MUSCLE"
+            else:
+                method_args = config.to_mafft_method_args()
+                add_inputorder = not config.mafft_reorder
+                self._log(f"Running MAFFT with args: {method_args}")
+                ok = self._run_mafft_alignment(input_fasta, output_fasta,
+                                               method_args=method_args,
+                                               add_inputorder=add_inputorder)
+                tool_name = "MAFFT"
+
+            if ok:
+                self._log(f"{tool_name} alignment succeeded → {output_fasta}")
+                return AlignmentResult(success=True, output_file=output_fasta)
+            else:
+                return AlignmentResult(
+                    success=False,
+                    error_message=f"{tool_name} alignment failed or binary not found")
+
+        except Exception as e:
+            self._log(f"Alignment error: {e}")
+            return AlignmentResult(success=False, error_message=str(e))
+
     def _run_mafft_alignment(self, input_file: str, output_file: str,
-                              method_args: List[str] = None) -> bool:
+                              method_args: List[str] = None,
+                              add_inputorder: bool = True) -> bool:
         """
         Run MAFFT multiple sequence alignment.
 
         Tries platform-specific lib binary first, then falls back to system mafft.
 
         Args:
-            input_file: Input FASTA file path
-            output_file: Output aligned FASTA file path
-            method_args: MAFFT algorithm arguments (default: ['--retree', '2'])
+            input_file:      Input FASTA file path
+            output_file:     Output aligned FASTA file path
+            method_args:     MAFFT algorithm/option arguments (default: ['--retree', '2'])
+            add_inputorder:  Prepend --inputorder flag (default: True).
+                             Set to False when method_args already contains --reorder.
 
         Returns:
             True if alignment succeeded
@@ -248,9 +308,11 @@ class AnalysisService:
 
         for mafft_cmd, work_dir in candidates:
             try:
+                order_flag = ["--inputorder"] if add_inputorder else []
+                cmd = [mafft_cmd] + order_flag + method_args + [input_file]
                 with open(output_file, 'w') as out_f:
                     process = subprocess.run(
-                        [mafft_cmd, "--inputorder"] + method_args + [input_file],
+                        cmd,
                         cwd=work_dir,
                         stdout=out_f,
                         stderr=subprocess.PIPE,
@@ -282,17 +344,22 @@ class AnalysisService:
 
         return False
 
-    def _run_muscle_alignment(self, input_file: str, output_file: str) -> bool:
+    def _run_muscle_alignment(self, input_file: str, output_file: str,
+                               extra_args: List[str] = None) -> bool:
         """
-        Run MUSCLE alignment as fallback when MAFFT is unavailable.
+        Run MUSCLE alignment.
 
         Args:
-            input_file: Input FASTA file path
+            input_file:  Input FASTA file path
             output_file: Output aligned FASTA file path
+            extra_args:  Additional MUSCLE options (e.g. ['-diags', '-maxiters', '8'])
 
         Returns:
             True if alignment succeeded
         """
+        if extra_args is None:
+            extra_args = []
+
         candidates = [
             os.path.join(self.lib_path, "muscle3"),
             os.path.join(self.lib_path, "muscle"),
@@ -301,12 +368,13 @@ class AnalysisService:
         ]
 
         for muscle_cmd in candidates:
-            for args in (
+            for base_args in (
                 [muscle_cmd, "-align", input_file, "-output", output_file],  # muscle5
                 [muscle_cmd, "-in",    input_file, "-out",    output_file],  # muscle3
             ):
                 try:
-                    process = subprocess.run(args, capture_output=True, timeout=600)
+                    cmd = base_args + extra_args
+                    process = subprocess.run(cmd, capture_output=True, timeout=600)
 
                     if (process.returncode == 0
                             and os.path.isfile(output_file)

@@ -85,19 +85,8 @@ class MenuBarBuilder:
         analysis_menu.addAction(self._create_action('menu_build_haplotype_network', 'build_haplotype_network'))
         analysis_menu.addSeparator()
         
-        # MAFFT submenu
-        mafft_menu = analysis_menu.addMenu(lang_manager.get('menu_mafft'))
-        mafft_menu.addAction(self._create_action('menu_mafft_auto', 'mafft_auto'))
-        mafft_menu.addAction(self._create_action('menu_mafft_fftns1', 'mafft_fftns1'))
-        mafft_menu.addAction(self._create_action('menu_mafft_fftns2', 'mafft_fftns2'))
-        mafft_menu.addAction(self._create_action('menu_mafft_ginsi', 'mafft_ginsi'))
-        mafft_menu.addAction(self._create_action('menu_mafft_linsi', 'mafft_linsi'))
-        mafft_menu.addAction(self._create_action('menu_mafft_einsi', 'mafft_einsi'))
-        
-        # MUSCLE submenu
-        muscle_menu = analysis_menu.addMenu(lang_manager.get('menu_muscle'))
-        muscle_menu.addAction(self._create_action('menu_muscle_ppp', 'muscle_ppp'))
-        muscle_menu.addAction(self._create_action('menu_muscle_super5', 'muscle_super5'))
+        # Multiple Sequence Alignment (unified MAFFT + MUSCLE dialog)
+        analysis_menu.addAction(self._create_action('menu_msa', 'run_msa'))
         
         analysis_menu.addSeparator()
         

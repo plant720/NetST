@@ -71,6 +71,47 @@ class LanguageManager:
             'menu_population_analysis': {'cn': '群体信息统计', 'en': 'Population Statistics'},
             'menu_trait_analysis': {'cn': '性状关联分析', 'en': 'Trait Association'},
 
+            # Multiple Sequence Alignment menu item
+            'menu_msa': {'cn': '多序列比对...', 'en': 'Multiple Sequence Alignment...'},
+
+            # Multiple Sequence Alignment dialog
+            'dlg_msa_title':       {'cn': '多序列比对', 'en': 'Multiple Sequence Alignment'},
+            'dlg_msa_select':      {'cn': '算法:', 'en': 'Algorithm:'},
+            'dlg_msa_parameters':  {'cn': '参数设置', 'en': 'Parameters'},
+            'dlg_msa_options':     {'cn': '选项', 'en': 'Options'},
+
+            # MAFFT tab
+            'dlg_msa_mafft_algorithm':      {'cn': '比对算法', 'en': 'Algorithm'},
+            'dlg_msa_mafft_op':             {'cn': '空位开启罚分 (--op):', 'en': 'Gap Open Penalty (--op):'},
+            'dlg_msa_mafft_op_tip':         {'cn': '空位开启罚分（默认: 1.53）', 'en': 'Gap opening penalty (default: 1.53)'},
+            'dlg_msa_mafft_ep':             {'cn': '偏移量 (--ep):', 'en': 'Offset (--ep):'},
+            'dlg_msa_mafft_ep_tip':         {'cn': '偏移量（类似空位延伸罚分，默认: 0.0）', 'en': 'Offset (works like gap extension penalty, default: 0.0)'},
+            'dlg_msa_mafft_maxiterate':     {'cn': '最大迭代次数 (--maxiterate):', 'en': 'Max Iterations (--maxiterate):'},
+            'dlg_msa_mafft_maxiterate_tip': {'cn': '最大迭代精化次数（0 = 使用算法默认值）', 'en': 'Maximum iterative refinement cycles (0 = algorithm default)'},
+            'dlg_msa_mafft_maxiterate_preset_tip': {'cn': '此算法预设已固定为 1000 次', 'en': 'Fixed at 1000 for this algorithm preset'},
+            'dlg_msa_mafft_thread':         {'cn': '线程数 (--thread):', 'en': 'Threads (--thread):'},
+            'dlg_msa_mafft_thread_tip':     {'cn': '线程数（-1 = 自动检测，默认: -1）', 'en': 'Number of threads (-1 = auto-detect, default: -1)'},
+            'dlg_msa_mafft_clustalout':     {'cn': 'Clustal 输出格式 (--clustalout)', 'en': 'Clustal output format (--clustalout)'},
+            'dlg_msa_mafft_clustalout_tip': {'cn': '以 Clustal 格式输出，而非 FASTA', 'en': 'Output in Clustal format instead of FASTA'},
+            'dlg_msa_mafft_reorder':        {'cn': '按比对顺序输出 (--reorder)', 'en': 'Reorder output by alignment (--reorder)'},
+            'dlg_msa_mafft_reorder_tip':    {'cn': '按比对顺序输出序列（默认: 输入顺序）', 'en': 'Output sequences in alignment order (default: input order)'},
+            'dlg_msa_mafft_quiet':          {'cn': '安静模式 (--quiet)', 'en': 'Quiet mode (--quiet)'},
+            'dlg_msa_mafft_quiet_tip':      {'cn': '不报告进度信息', 'en': 'Do not report progress'},
+            'dlg_msa_mafft_dash':           {'cn': '添加结构信息 (--dash)', 'en': 'Add structural information (--dash)'},
+            'dlg_msa_mafft_dash_tip':       {'cn': '添加结构信息（Rozewicki 等人）', 'en': 'Add structural information (Rozewicki et al.)'},
+
+            # MUSCLE tab
+            'dlg_msa_muscle_maxiters':      {'cn': '最大迭代次数 (-maxiters):', 'en': 'Max Iterations (-maxiters):'},
+            'dlg_msa_muscle_maxiters_tip':  {'cn': '最大迭代次数（默认: 16）', 'en': 'Maximum number of iterations (default: 16)'},
+            'dlg_msa_muscle_maxhours':      {'cn': '最长运行时间小时 (-maxhours):', 'en': 'Max Hours (-maxhours):'},
+            'dlg_msa_muscle_maxhours_tip':  {'cn': '最长运行时间（小时，0.0 = 不限制，默认: 不限制）', 'en': 'Maximum time in hours (0.0 = no limit, default: no limit)'},
+            'dlg_msa_muscle_format':        {'cn': '输出格式:', 'en': 'Output Format:'},
+            'dlg_msa_muscle_format_tip':    {'cn': '比对输出格式（默认: FASTA）', 'en': 'Output alignment format (default: FASTA)'},
+            'dlg_msa_muscle_diags':         {'cn': '查找对角线 (-diags)', 'en': 'Find diagonals (-diags)'},
+            'dlg_msa_muscle_diags_tip':     {'cn': '启用对角线查找（对相似序列更快）', 'en': 'Enable diagonal finding (faster for similar sequences)'},
+            'dlg_msa_muscle_quiet':         {'cn': '安静模式 (-quiet)', 'en': 'Quiet mode (-quiet)'},
+            'dlg_msa_muscle_quiet_tip':     {'cn': '不向 stderr 写入进度信息', 'en': 'Do not write progress messages to stderr'},
+
             # Build Haplotype Network dialog
             'dlg_haplonet_title':        {'cn': '构建单倍型网络', 'en': 'Build Haplotype Network'},
             'dlg_haplonet_algorithm':    {'cn': '算法选择', 'en': 'Algorithm'},
