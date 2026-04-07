@@ -13,7 +13,7 @@ from typing import Optional
 from PyQt6.QtGui import QColor, QTextCursor, QFont
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
-    QPushButton, QLabel, QLineEdit, QFrame, QFileDialog, QSizePolicy
+    QPushButton, QLabel, QLineEdit, QFrame, QFileDialog
 )
 
 
@@ -43,8 +43,6 @@ class OutputPanel(QWidget):
         self.btn_open: Optional[QPushButton] = None
         self.btn_change: Optional[QPushButton] = None
         self.hint_label: Optional[QLabel] = None
-        self.btn_toggle_log: Optional[QPushButton] = None
-        self.log_frame: Optional[QFrame] = None
 
         # Default output path
         self.output_path = os.path.join(os.path.expanduser("~"), "HaplotypeOutput")
@@ -62,8 +60,8 @@ class OutputPanel(QWidget):
         layout.addWidget(output_frame)
 
         # Log section
-        self.log_frame = self._create_log_section()
-        layout.addWidget(self.log_frame, 1)  # Stretch factor 1
+        log_frame = self._create_log_section()
+        layout.addWidget(log_frame, 1)  # Stretch factor 1
 
     def _create_output_section(self) -> QFrame:
         """Create output folder section"""
@@ -120,27 +118,10 @@ class OutputPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(5)
 
-        # Header row: label + toggle button
-        header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
-
+        # Hint label
         self.hint_label = QLabel("Logs")
         self.hint_label.setStyleSheet("color: #666666;")
-        header_layout.addWidget(self.hint_label)
-
-        header_layout.addStretch()
-
-        self.btn_toggle_log = QPushButton("▼")
-        self.btn_toggle_log.setFixedSize(20, 20)
-        self.btn_toggle_log.setToolTip("Collapse log")
-        self.btn_toggle_log.setStyleSheet(
-            "QPushButton { border: none; color: #666666; font-size: 10px; }"
-            "QPushButton:hover { color: #333333; }"
-        )
-        self.btn_toggle_log.clicked.connect(self._toggle_log)
-        header_layout.addWidget(self.btn_toggle_log)
-
-        layout.addLayout(header_layout)
+        layout.addWidget(self.hint_label)
 
         # Log text
         self.log_text = QTextEdit()
@@ -150,23 +131,6 @@ class OutputPanel(QWidget):
         layout.addWidget(self.log_text)
 
         return frame
-
-    def _toggle_log(self):
-        """Toggle log text area visibility."""
-        visible = self.log_text.isVisible()
-        self.log_text.setVisible(not visible)
-        if visible:
-            self.btn_toggle_log.setText("▶")
-            self.btn_toggle_log.setToolTip("Expand log")
-            self.log_frame.setSizePolicy(
-                QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum
-            )
-        else:
-            self.btn_toggle_log.setText("▼")
-            self.btn_toggle_log.setToolTip("Collapse log")
-            self.log_frame.setSizePolicy(
-                QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
-            )
 
     def _open_output_folder(self):
         """Open output folder in file explorer"""
