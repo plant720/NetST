@@ -162,15 +162,6 @@ class MainForm(MainWindowUI):
             # Multiple Sequence Alignment (unified MAFFT + MUSCLE dialog)
             'run_msa': self._run_sequence_alignment,
 
-            # Network analysis
-            'network_visualization': self._network_visualization,
-            'topology_analysis': self._topology_analysis,
-            'modularity_analysis': self._modularity_analysis,
-            'community_plot': self._community_plot,
-            'sequence_analysis': self._sequence_analysis,
-            'population_analysis': self._run_population_analysis,
-            'trait_analysis': self._run_trait_analysis,
-
             'language_chinese': lambda: self._set_language("cn"),
             'language_english': lambda: self._set_language("en"),
 
@@ -455,6 +446,10 @@ class MainForm(MainWindowUI):
             if os.path.isfile(index_html):
                 self.web_view_main.setUrl(QUrl.fromLocalFile(index_html))
 
+        # Show / refresh the Alignment tab whenever an aligned FASTA was produced.
+        if result.aligned_fasta:
+            self.show_alignment_tab(result.aligned_fasta)
+
         # Show / refresh the Haplotype tab whenever haplotype data was produced,
         # regardless of whether downstream steps (fastHaN, visualization) succeeded.
         if result.haplotype_ready:
@@ -551,52 +546,13 @@ class MainForm(MainWindowUI):
         if result.success:
             self.log_tab.append_success(
                 f"Alignment completed → {result.output_file}")
-            QMessageBox.information(
-                self, "Alignment Complete",
-                f"Alignment finished successfully.\n\nOutput: {result.output_file}")
+            self.show_alignment_tab(result.output_file)
         else:
             self.log_tab.append_error(
                 f"Alignment failed: {result.error_message}")
             QMessageBox.critical(
                 self, "Alignment Failed",
                 f"Alignment failed:\n{result.error_message}")
-
-    # ==================== Analysis Functions ====================
-
-    def _network_visualization(self):
-        """Network visualization."""
-        self.log_tab.append_info("Network visualization")
-        QMessageBox.information(self, "Info", "Network visualization - to be implemented")
-
-    def _topology_analysis(self):
-        """Topology analysis."""
-        self.log_tab.append_info("Topology analysis")
-        QMessageBox.information(self, "Info", "Topology analysis - to be implemented")
-
-    def _modularity_analysis(self):
-        """Modularity analysis."""
-        self.log_tab.append_info("Modularity analysis")
-        QMessageBox.information(self, "Info", "Modularity analysis - to be implemented")
-
-    def _community_plot(self):
-        """Community plot."""
-        self.log_tab.append_info("Community plot")
-        QMessageBox.information(self, "Info", "Community plot - to be implemented")
-
-    def _sequence_analysis(self):
-        """Sequence analysis."""
-        self.log_tab.append_info("Sequence analysis")
-        QMessageBox.information(self, "Info", "Sequence analysis - to be implemented")
-
-    def _run_population_analysis(self):
-        """Run population analysis."""
-        self.log_tab.append_info("Population analysis")
-        QMessageBox.information(self, "Info", "Population analysis - to be implemented")
-
-    def _run_trait_analysis(self):
-        """Run trait association analysis."""
-        self.log_tab.append_info("Trait association analysis")
-        QMessageBox.information(self, "Info", "Trait analysis - to be implemented")
 
     # ==================== Tools Functions ====================
 

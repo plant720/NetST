@@ -37,6 +37,8 @@ class AnalysisResult:
     # True when at least one taxon has a meaningful (non-zero, non-empty) continuous trait.
     # Controls whether traitconf.csv is generated and loaded in the visualization.
     has_continuous_traits: bool = False
+    # Path to the aligned FASTA produced during the analysis (empty if skipped).
+    aligned_fasta: str = ""
 
     def get_visualization_path(self) -> str:
         return os.path.join(self.output_path, f"{self.prefix}.html")
@@ -109,6 +111,7 @@ class AnalysisService:
         # downstream steps (fastHaN, visualization) fail.
         haplotype_ready = False
 
+        produced_aligned_fasta = ""
         try:
             # ── Step 1: Write input FASTA ──────────────────────────────────────
             input_fasta = os.path.join(output_path, f"{prefix}.fasta")
@@ -132,6 +135,9 @@ class AnalysisService:
             else:
                 FileService.safe_copy(input_fasta, aligned_fasta)
                 self._log("Sequences already aligned — skipping alignment step")
+
+            # Track the aligned FASTA so the caller can display it in the Alignment tab.
+            produced_aligned_fasta = aligned_fasta if os.path.isfile(aligned_fasta) else ""
 
             self._update_progress(30)
 
@@ -210,7 +216,8 @@ class AnalysisService:
 
         return AnalysisResult(prefix, success, output_path,
                               haplotype_ready=haplotype_ready,
-                              has_continuous_traits=has_continuous_traits)
+                              has_continuous_traits=has_continuous_traits,
+                              aligned_fasta=produced_aligned_fasta)
 
     # ── Alignment helpers ───────────────────────────────────────────────────────
 
@@ -639,46 +646,6 @@ class AnalysisService:
         )
         with open(html_file, 'w', encoding='utf-8') as f:
             f.write(html)
-
-    # ── Generic executable helper ───────────────────────────────────────────────
-
-    def run_executable(self, exe_name: str, arguments: List[str],
-                       working_dir: str, expected_outputs: List[str] = None) -> bool:
-        """
-        Run an external executable from lib directory.
-
-        Args:
-            exe_name: Name of executable in lib directory
-            arguments: Command line arguments
-            working_dir: Working directory for execution
-            expected_outputs: Optional list of expected output files
-        """
-        try:
-            exe_path = os.path.join(self.lib_path, exe_name)
-            process = subprocess.run(
-                [exe_path] + arguments, cwd=working_dir, capture_output=True)
-
-            if expected_outputs:
-                for output_file in expected_outputs:
-                    if not os.path.isfile(output_file):
-                        return False
-
-            return process.returncode == 0
-        except Exception as e:
-            self._log(f"Executable error: {str(e)}")
-            return False
-
-    def show_in_explorer(self, file_path: str) -> None:
-        """Show file in system file explorer."""
-        try:
-            if self._is_windows():
-                subprocess.run(['explorer', '/select,', file_path])
-            elif self._is_mac():
-                subprocess.run(['open', '-R', file_path])
-            else:
-                subprocess.run(['xdg-open', os.path.dirname(file_path)])
-        except Exception as e:
-            self._log(f"Explorer error: {str(e)}")
 
     # ── Platform helpers ────────────────────────────────────────────────────────
 

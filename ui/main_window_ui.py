@@ -31,6 +31,7 @@ from .data_tab_widget import DataTabWidget
 from .output_panel import OutputPanel
 from .index_tab_widget import IndexTabWidget
 from .haplotype_tab_widget import HaplotypeTabWidget
+from .alignment_tab_widget import AlignmentTabWidget
 
 
 class FallbackWebView(QTextEdit):
@@ -81,6 +82,7 @@ class MainWindowUI(QMainWindow):
         'network': "Network",
         'data': "Data",
         'haplotype': "Haplotype",
+        'alignment': "Alignment",
     }
 
     def __init__(self):
@@ -92,7 +94,8 @@ class MainWindowUI(QMainWindow):
         self.index_tab: Optional[IndexTabWidget] = None
         self.web_view_main: Optional[QWebEngineView] = None
         self.data_tab: Optional[DataTabWidget] = None
-        self.haplotype_tab: Optional[HaplotypeTabWidget] = None  # hidden until first analysis
+        self.haplotype_tab: Optional[HaplotypeTabWidget] = None    # hidden until first analysis
+        self.alignment_tab: Optional[AlignmentTabWidget] = None    # hidden until first alignment
         self.output_panel: Optional[OutputPanel] = None
         self._panel_toggle_btn: Optional[QPushButton] = None
         self._panel_last_width: int = 300
@@ -122,14 +125,6 @@ class MainWindowUI(QMainWindow):
         icon_path = os.path.join(self.current_directory, "statics", "icon", "netst.ico")
         if os.path.isfile(icon_path):
             self.setWindowIcon(QIcon(icon_path))
-
-    def _center_on_screen(self):
-        """Center the window on screen"""
-        screen = QApplication.primaryScreen().geometry()
-        window_geometry = self.geometry()
-        x = (screen.width() - window_geometry.width()) // 2
-        y = (screen.height() - window_geometry.height()) // 2
-        self.move(x, y)
 
     def _init_ui(self):
         """Initialize user interface"""
@@ -243,6 +238,7 @@ class MainWindowUI(QMainWindow):
             'network': self.web_view_main,
             'data': self.data_tab,
             'haplotype': self.haplotype_tab,
+            'alignment': self.alignment_tab,
         }
         widget = widget_map.get(tab_name)
         if widget is not None:
@@ -265,6 +261,18 @@ class MainWindowUI(QMainWindow):
 
         # Switch focus to the haplotype tab so the user notices it
         self.switch_to_tab('haplotype')
+
+    def show_alignment_tab(self, fasta_path: str) -> None:
+        """Create (once) and show the Alignment tab, then load the aligned FASTA.
+
+        Safe to call repeatedly — avoids adding duplicate tabs on re-alignment.
+        """
+        if self.alignment_tab is None:
+            self.alignment_tab = AlignmentTabWidget()
+            self.tab_widget.addTab(self.alignment_tab, self.TAB_NAMES['alignment'])
+
+        self.alignment_tab.load_alignment(fasta_path)
+        self.switch_to_tab('alignment')
 
     def set_status(self, message: str):
         """Set status bar message"""

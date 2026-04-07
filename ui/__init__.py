@@ -14,6 +14,7 @@ from .standardization_dialog import StandardizationDialog, StandardizationConfig
 from .sequence_alignment_dialog import SequenceAlignmentDialog, SequenceAlignmentConfig
 from .index_tab_widget import IndexTabWidget
 from .haplotype_tab_widget import HaplotypeTabWidget
+from .alignment_tab_widget import AlignmentTabWidget
 
 __all__ = [
     'MainWindowUI',
@@ -29,4 +30,5 @@ __all__ = [
     'SequenceAlignmentConfig',
     'IndexTabWidget',
     'HaplotypeTabWidget',
+    'AlignmentTabWidget',
 ]
