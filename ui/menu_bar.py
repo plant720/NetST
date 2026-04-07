@@ -82,6 +82,7 @@ class MenuBarBuilder:
         self.menus['analysis'] = analysis_menu
 
         analysis_menu.addAction(self._create_action('menu_build_haplotype_network', 'build_haplotype_network'))
+        analysis_menu.addAction(self._create_action('menu_calculate_haplotype', 'calculate_haplotype'))
         analysis_menu.addSeparator()
         analysis_menu.addAction(self._create_action('menu_msa', 'run_msa'))
     
@@ -99,9 +100,11 @@ class MenuBarBuilder:
         """Build the Help menu"""
         help_menu = self.menubar.addMenu(lang_manager.get('menu_help'))
         self.menus['help'] = help_menu
-        
+
         help_menu.addAction(self._create_action('menu_about', 'about'))
-        help_menu.addAction(self._create_action('menu_help_docs', 'help_docs'))
+        help_menu.addSeparator()
+        help_menu.addAction(self._create_action('menu_help_tcsbu', 'help_tcsbu'))
+        help_menu.addAction(self._create_action('menu_help_netst', 'help_netst'))
     
     def get_action(self, key: str) -> Optional[QAction]:
         """Get menu action by key"""

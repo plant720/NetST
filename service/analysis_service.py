@@ -579,6 +579,98 @@ class AnalysisService:
             self._log(traceback.format_exc())
             return False, False
 
+    def run_haplotype_calculation(self, taxons: List[TaxonData], output_path: str,
+                                   prefix: str, config) -> AnalysisResult:
+        """
+        Run MSA then calculate haplotypes without building a network.
+
+        Workflow:
+          1. Write input FASTA
+          2. Align with the tool chosen in config (MAFFT or MUSCLE)
+          3. Process haplotypes: identify unique sequences, write supporting files
+
+        Args:
+            taxons:      Selected sequences
+            output_path: Directory for output files
+            prefix:      Project name used as file name prefix
+            config:      SequenceAlignmentConfig with tool + parameter settings
+
+        Returns:
+            AnalysisResult with haplotype_ready=True on success
+        """
+        FileService.ensure_directory(output_path)
+        haplotype_ready = False
+        produced_aligned_fasta = ""
+
+        try:
+            # ── Step 1: Write input FASTA ──────────────────────────────────────
+            input_fasta = os.path.join(output_path, f"{prefix}.fasta")
+            self.file_service.write_analysis_fasta(input_fasta, taxons)
+            self._update_progress(10)
+
+            # ── Step 2: Alignment ──────────────────────────────────────────────
+            aligned_fasta = os.path.join(output_path, f"{prefix}_aln.fasta")
+            needs_alignment = not self._are_sequences_aligned(taxons)
+
+            if needs_alignment:
+                if config.tool == "muscle":
+                    extra_args = config.to_muscle_extra_args()
+                    self._log("Running MUSCLE alignment...")
+                    aligned = self._run_muscle_alignment(input_fasta, aligned_fasta,
+                                                         extra_args=extra_args)
+                    if not aligned:
+                        self._log("MUSCLE failed, trying MAFFT...")
+                        aligned = self._run_mafft_alignment(input_fasta, aligned_fasta)
+                else:
+                    method_args = config.to_mafft_method_args()
+                    add_inputorder = not config.mafft_reorder
+                    self._log("Running MAFFT alignment...")
+                    aligned = self._run_mafft_alignment(input_fasta, aligned_fasta,
+                                                        method_args=method_args,
+                                                        add_inputorder=add_inputorder)
+                    if not aligned:
+                        self._log("MAFFT failed, trying MUSCLE...")
+                        aligned = self._run_muscle_alignment(input_fasta, aligned_fasta)
+
+                if not aligned:
+                    return AnalysisResult(prefix, False, output_path,
+                                          "Sequence alignment failed")
+            else:
+                FileService.safe_copy(input_fasta, aligned_fasta)
+                self._log("Sequences already aligned — skipping alignment step")
+
+            produced_aligned_fasta = aligned_fasta if os.path.isfile(aligned_fasta) else ""
+            self._update_progress(50)
+
+            # ── Step 3: Ensure UTF-8 ───────────────────────────────────────────
+            FileService.ensure_utf8(aligned_fasta)
+
+            # ── Step 4: Process haplotypes ─────────────────────────────────────
+            file_suffix = os.path.join(output_path, prefix)
+            taxon_lookup = {t.name: (t.continuous_traits, t.discrete_traits) for t in taxons}
+            self._log("Processing haplotypes...")
+            hap_ok, has_continuous_traits = self._process_haplotypes(
+                aligned_fasta, file_suffix, taxon_lookup)
+
+            if not hap_ok:
+                return AnalysisResult(prefix, False, output_path,
+                                      "Haplotype processing failed")
+
+            haplotype_ready = True
+            self._update_progress(100)
+            self._log("Haplotype calculation finished.")
+
+            return AnalysisResult(prefix, True, output_path,
+                                  haplotype_ready=haplotype_ready,
+                                  has_continuous_traits=has_continuous_traits,
+                                  aligned_fasta=produced_aligned_fasta)
+
+        except Exception as e:
+            self._log(f"Haplotype calculation error: {str(e)}")
+            self._log(traceback.format_exc())
+            return AnalysisResult(prefix, False, output_path, str(e),
+                                  haplotype_ready=haplotype_ready)
+
     # ── Visualization helpers ───────────────────────────────────────────────────
 
     def _generate_visualization(self, prefix: str, output_path: str,
