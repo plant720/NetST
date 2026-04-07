@@ -75,8 +75,8 @@ class MainWindowUI(QMainWindow):
     DEFAULT_WINDOW_POSITION = (100, 100)
     
     TAB_NAMES = {
-        'index':     "Index",
-        'network':   "Network View",
+        'index':     "Home",
+        'network':   "Network",
         'data':      "Data",
         'haplotype': "Haplotype",
     }
@@ -144,11 +144,11 @@ class MainWindowUI(QMainWindow):
         self.tab_widget = QTabWidget()
         left_layout.addWidget(self.tab_widget)
         
-        # Create tabs (order: Index first, then Network, then Data)
+        # Create tabs (order: Home, Data, Network)
         # Haplotype tab is NOT added here — it appears only after a successful analysis.
         self._create_index_tab()
-        self._create_network_tab()
         self._create_data_tab()
+        self._create_network_tab()
         
         splitter.addWidget(left_widget)
         

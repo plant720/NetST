@@ -72,9 +72,6 @@ class MenuBarBuilder:
         file_menu.addAction(self._create_action('menu_load_sequence', 'load_sequence'))
         file_menu.addAction(self._create_action('menu_add_sequence', 'add_sequence'))
         file_menu.addSeparator()
-        file_menu.addAction(self._create_action('menu_load_gml', 'load_gml'))
-        file_menu.addAction(self._create_action('menu_load_html', 'load_html'))
-        file_menu.addSeparator()
         file_menu.addAction(self._create_action('menu_export_sequence', 'export_fasta'))
         file_menu.addSeparator()
         file_menu.addAction(self._create_action('menu_exit', 'exit'))
@@ -126,13 +123,6 @@ class MenuBarBuilder:
         """Build the Tools menu"""
         tools_menu = self.menubar.addMenu(lang_manager.get('menu_tools'))
         self.menus['tools'] = tools_menu
-        
-        tools_menu.addAction(self._create_action('menu_clean_sequences', 'clean_sequences'))
-        tools_menu.addSeparator()
-        tools_menu.addAction(self._create_action('menu_sequence_info', 'sequence_info'))
-        tools_menu.addSeparator()
-        tools_menu.addAction(self._create_action('menu_date_to_number', 'date_to_number'))
-        tools_menu.addSeparator()
         
         # Language submenu
         language_menu = tools_menu.addMenu(lang_manager.get('menu_language'))
