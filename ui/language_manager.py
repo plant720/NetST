@@ -51,9 +51,7 @@ class LanguageManager:
 
             # Analysis Menu
             'menu_analysis': {'cn': '分析', 'en': 'Analysis'},
-            'menu_msn_network': {'cn': 'MSN单倍型网络', 'en': 'MSN Haplotype Network'},
-            'menu_mjn_network': {'cn': 'MJN单倍型网络', 'en': 'MJN Haplotype Network'},
-            'menu_tcs_network': {'cn': 'TCS单倍型网络', 'en': 'TCS Haplotype Network'},
+            'menu_build_haplotype_network': {'cn': '构建单倍型网络...', 'en': 'Build Haplotype Network...'},
             'menu_mafft': {'cn': '序列比对-MAFFT', 'en': 'Alignment-MAFFT'},
             'menu_mafft_auto': {'cn': 'Auto (自动选择)', 'en': 'Auto (Automatic)'},
             'menu_mafft_fftns1': {'cn': 'FFT-NS-1 (极快但粗糙)', 'en': 'FFT-NS-1 (Very Fast)'},
@@ -72,6 +70,22 @@ class LanguageManager:
             'menu_sequence_analysis': {'cn': '序列分析', 'en': 'Sequence Analysis'},
             'menu_population_analysis': {'cn': '群体信息统计', 'en': 'Population Statistics'},
             'menu_trait_analysis': {'cn': '性状关联分析', 'en': 'Trait Association'},
+
+            # Build Haplotype Network dialog
+            'dlg_haplonet_title':        {'cn': '构建单倍型网络', 'en': 'Build Haplotype Network'},
+            'dlg_haplonet_algorithm':    {'cn': '算法选择', 'en': 'Algorithm'},
+            'dlg_haplonet_select':       {'cn': '选择算法:', 'en': 'Select:'},
+            'dlg_haplonet_params':       {'cn': '参数设置', 'en': 'Parameters'},
+            'dlg_haplonet_threads':      {'cn': '线程数 (-t):', 'en': 'Threads (-t):'},
+            'dlg_haplonet_threads_tip':  {'cn': '并行线程数（默认: 8）', 'en': 'Number of parallel threads (default: 8)'},
+            'dlg_haplonet_ambiguous':    {'cn': '屏蔽模糊碱基 (-a):', 'en': 'Mask ambiguous bases (-a):'},
+            'dlg_haplonet_ambiguous_tip':{'cn': '标记含模糊碱基的位点：勾选=屏蔽(1)，不勾选=忽略(0)', 'en': 'Mark ambiguous-base sites: checked = mask (1), unchecked = ignore (0)'},
+            'dlg_haplonet_merge':        {'cn': '合并中间顶点 (-m):', 'en': 'Merge intermediate vertices (-m):'},
+            'dlg_haplonet_merge_tip':    {'cn': '合并中间顶点：勾选=合并(1)，不勾选=保留(0)', 'en': 'Merge intermediate vertices: checked = merge (1), unchecked = keep (0)'},
+            'dlg_haplonet_epsilon':      {'cn': 'Epsilon (-e):', 'en': 'Epsilon (-e):'},
+            'dlg_haplonet_epsilon_tip':  {'cn': '网络构建的 epsilon 值（默认: 0）', 'en': 'Epsilon value for network construction (default: 0)'},
+            'btn_ok':     {'cn': '确定', 'en': 'OK'},
+            'btn_cancel': {'cn': '取消', 'en': 'Cancel'},
 
             # View Menu
             'menu_view': {'cn': '浏览', 'en': 'View'},

@@ -68,7 +68,8 @@ class AnalysisService:
     # ── Main analysis entry point ───────────────────────────────────────────────
 
     def run_network_analysis(self, network_type: str, taxons: List[TaxonData],
-                             output_path: str, prefix: str) -> AnalysisResult:
+                             output_path: str, prefix: str,
+                             extra_args: List[str] = None) -> AnalysisResult:
         """
         Run haplotype network analysis.
 
@@ -76,20 +77,23 @@ class AnalysisService:
           1. Write input FASTA
           2. Align with MAFFT (or MUSCLE fallback) if sequences have different lengths
           3. Process haplotypes: identify unique sequences, write PHYLIP + supporting files
-          4. Call fastHaN to build the network (msn / mjn / modified_tcs)
+          4. Call fastHaN to build the network (original_tcs / modified_tcs / msn / mjn)
           5. Generate visualization via GenNetworkConfig2
 
         All output files are named  <output_path>/<prefix>_*.
 
         Args:
-            network_type: One of "modified_tcs", "mjn", "msn"
+            network_type: One of "original_tcs", "modified_tcs", "mjn", "msn"
             taxons: List of selected taxons
             output_path: Directory for output files
             prefix: Project name used as output file name prefix
+            extra_args: Additional CLI arguments passed to fastHaN (e.g. ['-t', '4', '-e', '1'])
 
         Returns:
             AnalysisResult with prefix and success status
         """
+        if extra_args is None:
+            extra_args = []
         FileService.ensure_directory(output_path)
 
         # Tracks whether _process_haplotypes() wrote its output files.
@@ -154,10 +158,10 @@ class AnalysisService:
 
             success = True
             try:
-                self._log(
-                    f"Running: {exe_path} {network_type} -i {seq_phy_file} -o {file_suffix}")
+                cmd = [exe_path, network_type, "-i", seq_phy_file] + extra_args + ["-o", file_suffix]
+                self._log(f"Running: {' '.join(cmd)}")
                 process = subprocess.run(
-                    [exe_path, network_type, "-i", seq_phy_file, "-o", file_suffix],
+                    cmd,
                     cwd=output_path,
                     capture_output=True,
                     text=True
