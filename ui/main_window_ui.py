@@ -134,7 +134,10 @@ class MainWindowUI(QMainWindow):
         main_layout.setContentsMargins(5, 5, 5, 5)
         main_layout.setSpacing(0)
 
-        # Left side: Tab widget (takes all remaining space)
+        # Splitter for resizable left/right panels
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Left side: Tab widget
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -148,9 +151,22 @@ class MainWindowUI(QMainWindow):
         self._create_data_tab()
         self._create_network_tab()
 
-        main_layout.addWidget(left_widget, 1)
+        self._splitter.addWidget(left_widget)
 
-        # Narrow toggle strip between content and output panel
+        # Right side: Output panel
+        self.output_panel = OutputPanel()
+        self.output_panel.setMinimumWidth(180)
+        self.output_panel.setMaximumWidth(500)
+        self._splitter.addWidget(self.output_panel)
+
+        # Right panel cannot be fully collapsed via splitter handle
+        self._splitter.setCollapsible(0, False)
+        self._splitter.setCollapsible(1, False)
+        self._splitter.setSizes([1100, 300])
+
+        main_layout.addWidget(self._splitter, 1)
+
+        # Narrow toggle strip to the right of the splitter (always visible)
         self._panel_toggle_btn = QPushButton("◀")
         self._panel_toggle_btn.setFixedWidth(18)
         self._panel_toggle_btn.setToolTip("Collapse output panel")
@@ -166,23 +182,21 @@ class MainWindowUI(QMainWindow):
         self._panel_toggle_btn.clicked.connect(self._toggle_output_panel)
         main_layout.addWidget(self._panel_toggle_btn)
 
-        # Right side: Output panel
-        self.output_panel = OutputPanel()
-        self.output_panel.setFixedWidth(300)
-        main_layout.addWidget(self.output_panel)
-
         # Create status bar
         self.status_bar_widget = StatusBarWidget(self)
 
     def _toggle_output_panel(self):
-        """Show or hide the entire output panel."""
+        """Show or hide the entire output panel via the splitter."""
         if self.output_panel.isVisible():
-            self._panel_last_width = self.output_panel.width()
+            self._panel_last_width = self._splitter.sizes()[1]
             self.output_panel.setVisible(False)
             self._panel_toggle_btn.setText("▶")
             self._panel_toggle_btn.setToolTip("Expand output panel")
         else:
             self.output_panel.setVisible(True)
+            total = sum(self._splitter.sizes())
+            restore = self._panel_last_width or 300
+            self._splitter.setSizes([total - restore, restore])
             self._panel_toggle_btn.setText("◀")
             self._panel_toggle_btn.setToolTip("Collapse output panel")
     
