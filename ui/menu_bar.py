@@ -80,31 +80,10 @@ class MenuBarBuilder:
         """Build the Analysis menu"""
         analysis_menu = self.menubar.addMenu(lang_manager.get('menu_analysis'))
         self.menus['analysis'] = analysis_menu
-        
-        # Haplotype Network
+
         analysis_menu.addAction(self._create_action('menu_build_haplotype_network', 'build_haplotype_network'))
         analysis_menu.addSeparator()
-        
-        # Multiple Sequence Alignment (unified MAFFT + MUSCLE dialog)
         analysis_menu.addAction(self._create_action('menu_msa', 'run_msa'))
-        
-        analysis_menu.addSeparator()
-        
-        # Network Analysis
-        analysis_menu.addAction(self._create_action('menu_network_visualization', 'network_visualization'))
-        analysis_menu.addAction(self._create_action('menu_topology_analysis', 'topology_analysis'))
-        
-        # Community Detection submenu
-        community_menu = analysis_menu.addMenu(lang_manager.get('menu_community_detection'))
-        community_menu.addAction(self._create_action('menu_modularity_analysis', 'modularity_analysis'))
-        community_menu.addAction(self._create_action('menu_community_plot', 'community_plot'))
-        
-        analysis_menu.addSeparator()
-        
-        # Statistical Analysis
-        analysis_menu.addAction(self._create_action('menu_sequence_analysis', 'sequence_analysis'))
-        analysis_menu.addAction(self._create_action('menu_population_analysis', 'population_analysis'))
-        analysis_menu.addAction(self._create_action('menu_trait_analysis', 'trait_analysis'))
     
     def _build_tools_menu(self):
         """Build the Tools menu"""
