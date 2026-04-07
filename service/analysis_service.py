@@ -27,7 +27,7 @@ class AlignmentResult:
 @dataclass
 class AnalysisResult:
     """Result of an analysis operation."""
-    prefix: str          # project name / file prefix
+    prefix: str  # project name / file prefix
     success: bool
     output_path: str = ""
     error_message: Optional[str] = None
@@ -236,7 +236,7 @@ class AnalysisService:
             AlignmentResult with success flag and output file path
         """
         FileService.ensure_directory(output_path)
-        input_fasta  = os.path.join(output_path, f"{prefix}.fasta")
+        input_fasta = os.path.join(output_path, f"{prefix}.fasta")
         output_fasta = os.path.join(output_path, f"{prefix}_aln.fasta")
 
         try:
@@ -271,8 +271,8 @@ class AnalysisService:
             return AlignmentResult(success=False, error_message=str(e))
 
     def _run_mafft_alignment(self, input_file: str, output_file: str,
-                              method_args: List[str] = None,
-                              add_inputorder: bool = True) -> bool:
+                             method_args: List[str] = None,
+                             add_inputorder: bool = True) -> bool:
         """
         Run MAFFT multiple sequence alignment.
 
@@ -297,8 +297,8 @@ class AnalysisService:
             mafft_dir = os.path.join(self.lib_path, "mafft-win")
             candidates.append((os.path.join(mafft_dir, "mafft.bat"), mafft_dir))
         elif self._is_mac():
-            mafft_dir = os.path.join(self.lib_path, "mafft-mac", "mafftdir", "bin")
-            candidates.append((os.path.join(mafft_dir, "mafft"), mafft_dir))
+            mafft_dir = os.path.join(self.lib_path, "mafft-mac")
+            candidates.append((os.path.join(mafft_dir, "mafft.bat"), mafft_dir))
         else:
             linux_lib_mafft = os.path.join(self.lib_path, "mafft")
             if os.path.isfile(linux_lib_mafft):
@@ -345,7 +345,7 @@ class AnalysisService:
         return False
 
     def _run_muscle_alignment(self, input_file: str, output_file: str,
-                               extra_args: List[str] = None) -> bool:
+                              extra_args: List[str] = None) -> bool:
         """
         Run MUSCLE alignment.
 
@@ -363,14 +363,12 @@ class AnalysisService:
         candidates = [
             os.path.join(self.lib_path, "muscle3"),
             os.path.join(self.lib_path, "muscle"),
-            "muscle3",
-            "muscle",
         ]
 
         for muscle_cmd in candidates:
             for base_args in (
-                [muscle_cmd, "-align", input_file, "-output", output_file],  # muscle5
-                [muscle_cmd, "-in",    input_file, "-out",    output_file],  # muscle3
+                    [muscle_cmd, "-align", input_file, "-output", output_file],  # muscle5
+                    [muscle_cmd, "-in", input_file, "-out", output_file],  # muscle3
             ):
                 try:
                     cmd = base_args + extra_args
@@ -416,7 +414,7 @@ class AnalysisService:
         return header
 
     def _process_haplotypes(self, aligned_fasta: str, output_prefix: str,
-                             taxon_lookup: dict = None) -> Tuple[bool, bool]:
+                            taxon_lookup: dict = None) -> Tuple[bool, bool]:
         """
         Process aligned FASTA sequences into haplotypes and write all required files.
 
@@ -487,9 +485,9 @@ class AnalysisService:
             seq_len = len(sequences[0][1])
 
             # ── Identify unique haplotypes ────────────────────────────────────
-            seq_to_hap: dict = {}     # sequence_str  → hap_name
+            seq_to_hap: dict = {}  # sequence_str  → hap_name
             hap_sequences: dict = {}  # hap_name      → sequence_str
-            hap_info: dict = {}       # hap_name      → [(name, cont, disc)]
+            hap_info: dict = {}  # hap_name      → [(name, cont, disc)]
             hap_counter = 0
 
             for name, seq in sequences:
@@ -577,7 +575,7 @@ class AnalysisService:
     # ── Visualization helpers ───────────────────────────────────────────────────
 
     def _generate_visualization(self, prefix: str, output_path: str,
-                                 has_continuous_traits: bool = False) -> bool:
+                                has_continuous_traits: bool = False) -> bool:
         """Generate visualization files from GML network output."""
         try:
             gml_file = os.path.join(output_path, f"{prefix}.gml")
