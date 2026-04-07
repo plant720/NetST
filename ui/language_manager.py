@@ -73,6 +73,8 @@ class LanguageManager:
 
             # Multiple Sequence Alignment menu item
             'menu_msa': {'cn': '多序列比对...', 'en': 'Multiple Sequence Alignment...'},
+            # Calculate Haplotype menu item
+            'menu_calculate_haplotype': {'cn': '计算单倍型...', 'en': 'Calculate Haplotype...'},
 
             # Multiple Sequence Alignment dialog
             'dlg_msa_title':       {'cn': '多序列比对', 'en': 'Multiple Sequence Alignment'},
@@ -144,6 +146,8 @@ class LanguageManager:
             'menu_help': {'cn': '帮助', 'en': 'Help'},
             'menu_about': {'cn': '关于', 'en': 'About'},
             'menu_help_docs': {'cn': '帮助文档', 'en': 'Help Docs'},
+            'menu_help_tcsbu': {'cn': 'TCS-BU 帮助文档', 'en': 'TCS-BU Help'},
+            'menu_help_netst': {'cn': 'NetST 帮助文档', 'en': 'NetST Help'},
 
             # Tab Names
             'tab_index':     {'cn': '首页',     'en': 'Home'},

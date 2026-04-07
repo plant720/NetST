@@ -93,6 +93,30 @@ class AlignmentWorker(QThread):
         self.finished.emit(result)
 
 
+class HaplotypeWorker(QThread):
+    """Worker thread for MSA + haplotype calculation (no network construction)."""
+
+    finished = pyqtSignal(object)   # AnalysisResult
+    progress = pyqtSignal(int)
+    log = pyqtSignal(str)
+
+    def __init__(self, analysis_service: AnalysisService, taxons: list,
+                 output_path: str, prefix: str, config: SequenceAlignmentConfig):
+        super().__init__()
+        self.analysis_service = analysis_service
+        self.taxons = taxons
+        self.output_path = output_path
+        self.prefix = prefix
+        self.config = config
+
+    def run(self):
+        self.analysis_service.set_progress_callback(lambda v: self.progress.emit(v))
+        self.analysis_service.set_log_callback(lambda m: self.log.emit(m))
+        result = self.analysis_service.run_haplotype_calculation(
+            self.taxons, self.output_path, self.prefix, self.config)
+        self.finished.emit(result)
+
+
 class MainForm(MainWindowUI):
     """
     Main Window Business Logic Class
@@ -123,6 +147,7 @@ class MainForm(MainWindowUI):
         # Worker thread references
         self.analysis_worker: Optional[AnalysisWorker] = None
         self.alignment_worker: Optional[AlignmentWorker] = None
+        self.haplotype_worker: Optional[HaplotypeWorker] = None
 
         # Pending JavaScript to inject after the next successful page load in web_view_main.
         # Set by _on_analysis_finished; consumed by _on_web_view_load_finished.
@@ -158,6 +183,7 @@ class MainForm(MainWindowUI):
 
             # Analysis Menu
             'build_haplotype_network': self._build_haplotype_network,
+            'calculate_haplotype': self._calculate_haplotype,
 
             # Multiple Sequence Alignment (unified MAFFT + MUSCLE dialog)
             'run_msa': self._run_sequence_alignment,
@@ -168,6 +194,8 @@ class MainForm(MainWindowUI):
             # Help Menu
             'about': self._show_about,
             'help_docs': self._show_help,
+            'help_tcsbu': self._show_tcsbu_help,
+            'help_netst': self._show_netst_help,
         }
 
     def _setup_connections(self):
@@ -554,6 +582,66 @@ class MainForm(MainWindowUI):
                 self, "Alignment Failed",
                 f"Alignment failed:\n{result.error_message}")
 
+    # ==================== Haplotype Calculation ====================
+
+    def _calculate_haplotype(self):
+        """Show MSA dialog, run alignment + haplotype calculation, display in Haplotype tab."""
+        if self.table_model.rowCount() < 1:
+            QMessageBox.warning(self, "Warning", "Please load data first!")
+            return
+
+        selected = self.table_model.get_selected_taxons()
+        if not selected:
+            QMessageBox.warning(self, "Warning", "Please select sequences first!")
+            return
+
+        config = SequenceAlignmentDialog.get_alignment_config(self)
+        if config is None:
+            return
+
+        output_path = self.get_output_path()
+        if not output_path:
+            QMessageBox.warning(self, "Warning", "Please set output directory first!")
+            return
+
+        prefix = self.get_project_prefix()
+        if not prefix:
+            QMessageBox.warning(self, "Warning", "Please enter a project name!")
+            return
+
+        tool_label = "MAFFT" if config.tool == "mafft" else "MUSCLE"
+        self.log_tab.append_info(
+            f"Starting haplotype calculation with {tool_label} alignment "
+            f"({len(selected)} sequences)...")
+        self.set_status("Calculating haplotypes...")
+
+        self.haplotype_worker = HaplotypeWorker(
+            self.analysis_service, selected, output_path, prefix, config)
+        self.haplotype_worker.progress.connect(self.set_progress)
+        self.haplotype_worker.log.connect(self.log_tab.append_info)
+        self.haplotype_worker.finished.connect(self._on_haplotype_calculation_finished)
+        self.haplotype_worker.start()
+
+    def _on_haplotype_calculation_finished(self, result: AnalysisResult):
+        """Handle haplotype calculation completion."""
+        self.set_progress(0)
+        self.set_status("Ready")
+
+        if result.success:
+            self.log_tab.append_success("Haplotype calculation completed!")
+        else:
+            self.log_tab.append_error(
+                f"Haplotype calculation failed: {result.error_message}")
+            QMessageBox.critical(
+                self, "Error",
+                f"Haplotype calculation failed:\n{result.error_message}")
+
+        if result.aligned_fasta:
+            self.show_alignment_tab(result.aligned_fasta)
+
+        if result.haplotype_ready:
+            self.show_haplotype_tab(result.output_path, result.prefix)
+
     # ==================== Tools Functions ====================
 
     def _set_language(self, lang: str):
@@ -606,14 +694,140 @@ class MainForm(MainWindowUI):
         )
 
     def _show_help(self):
-        """Show help documentation."""
-        help_html = os.path.join(self.current_directory, "statics", "help.html")
+        """Show help documentation (legacy entry point)."""
+        self._show_netst_help()
 
-        if os.path.isfile(help_html):
-            self.load_main_page(help_html)
-            self.switch_to_tab('network')
+    def _show_tcsbu_help(self):
+        """Open TCS-BU help PDF using the system default viewer."""
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+
+        pdf_path = os.path.join(self.current_directory, "statics", "docs", "tcsbu.pdf")
+        if os.path.isfile(pdf_path):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
         else:
-            QMessageBox.information(self, "Help", "Help documentation is being written...")
+            QMessageBox.warning(self, "TCS-BU Help",
+                                f"TCS-BU help PDF not found:\n{pdf_path}")
+
+    def _show_netst_help(self):
+        """Render and display the NetST Markdown help document in the Network tab."""
+        md_path = os.path.join(self.current_directory, "statics", "docs", "netst.md")
+        if not os.path.isfile(md_path):
+            QMessageBox.information(self, "NetST Help",
+                                    "NetST help documentation not found.")
+            return
+
+        try:
+            with open(md_path, 'r', encoding='utf-8') as fh:
+                md_text = fh.read()
+            html_body = self._md_to_html(md_text)
+            html = (
+                "<!DOCTYPE html><html><head>"
+                "<meta charset='UTF-8'>"
+                "<style>"
+                "body{font-family:Arial,sans-serif;margin:30px 60px;color:#222;line-height:1.7;}"
+                "h1{color:#2c6fad;border-bottom:2px solid #2c6fad;padding-bottom:6px;}"
+                "h2{color:#3a7dc9;margin-top:28px;border-bottom:1px solid #ccd;padding-bottom:4px;}"
+                "h3{color:#4a8ed9;margin-top:20px;}"
+                "pre{background:#f4f4f4;padding:12px;border-radius:5px;overflow-x:auto;}"
+                "code{background:#f0f0f0;padding:1px 4px;border-radius:3px;font-size:0.92em;}"
+                "ul{padding-left:22px;}li{margin-bottom:4px;}"
+                "hr{border:none;border-top:1px solid #ddd;margin:20px 0;}"
+                "table{border-collapse:collapse;width:100%;margin:10px 0;}"
+                "th,td{border:1px solid #ccc;padding:6px 12px;text-align:left;}"
+                "th{background:#e8eef5;}"
+                "</style></head><body>"
+                + html_body
+                + "</body></html>"
+            )
+            # Write to a temporary HTML file so the WebEngine can load it
+            tmp_html = os.path.join(self.current_directory, "statics", "docs", "_netst_help.html")
+            with open(tmp_html, 'w', encoding='utf-8') as fh:
+                fh.write(html)
+            self.load_main_page(tmp_html)
+            self.switch_to_tab('network')
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load NetST help:\n{e}")
+
+    @staticmethod
+    def _md_to_html(md_text: str) -> str:
+        """Convert simple Markdown to HTML (no external dependencies)."""
+        import re
+        import html as html_module
+
+        lines = md_text.split('\n')
+        output: list = []
+        in_code = False
+        in_list = False
+
+        def process_inline(text: str) -> str:
+            text = html_module.escape(text)
+            text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+            text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
+            text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+            return text
+
+        for line in lines:
+            # Code fence toggle
+            if line.startswith('```'):
+                if in_list:
+                    output.append('</ul>')
+                    in_list = False
+                if in_code:
+                    output.append('</pre>')
+                    in_code = False
+                else:
+                    output.append('<pre>')
+                    in_code = True
+                continue
+
+            if in_code:
+                output.append(html_module.escape(line))
+                continue
+
+            stripped = line.strip()
+
+            # Close open list on blank line or block element
+            def _close_list():
+                nonlocal in_list
+                if in_list:
+                    output.append('</ul>')
+                    in_list = False
+
+            if not stripped:
+                _close_list()
+                output.append('')
+                continue
+
+            if stripped in ('---', '***', '___'):
+                _close_list()
+                output.append('<hr>')
+                continue
+
+            if stripped.startswith('### '):
+                _close_list()
+                output.append(f'<h3>{process_inline(stripped[4:])}</h3>')
+            elif stripped.startswith('## '):
+                _close_list()
+                output.append(f'<h2>{process_inline(stripped[3:])}</h2>')
+            elif stripped.startswith('# '):
+                _close_list()
+                output.append(f'<h1>{process_inline(stripped[2:])}</h1>')
+            elif stripped.startswith('- ') or stripped.startswith('* '):
+                if not in_list:
+                    output.append('<ul>')
+                    in_list = True
+                output.append(f'<li>{process_inline(stripped[2:])}</li>')
+            else:
+                _close_list()
+                output.append(f'<p>{process_inline(stripped)}</p>')
+
+        if in_list:
+            output.append('</ul>')
+        if in_code:
+            output.append('</pre>')
+
+        return '\n'.join(output)
 
     # ==================== Helper Methods ====================
 
