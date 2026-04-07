@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QGroupBox, QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox,
     QPushButton, QLabel, QFrame, QTabWidget, QWidget, QSizePolicy,
 )
-from PyQt6.QtCore import Qt
 
 from .language_manager import lang_manager
 
@@ -26,25 +25,25 @@ from .language_manager import lang_manager
 class SequenceAlignmentConfig:
     """Parameters chosen by the user for a standalone alignment run."""
 
-    tool: str = "mafft"          # "mafft" or "muscle"
+    tool: str = "mafft"  # "mafft" or "muscle"
 
     # ── MAFFT options ──────────────────────────────────────────────────────
-    mafft_algorithm: str = "auto"   # auto | retree1 | retree2 | linsi | ginsi | einsi
-    mafft_op: float = 1.53          # --op  gap opening penalty
-    mafft_ep: float = 0.0           # --ep  offset (gap extension-like)
-    mafft_maxiterate: int = 0       # --maxiterate  (0 = disabled / use algorithm default)
-    mafft_thread: int = -1          # --thread  (-1 = auto)
-    mafft_clustalout: bool = False   # --clustalout
-    mafft_reorder: bool = False      # --reorder  (default: input order)
-    mafft_quiet: bool = False        # --quiet
-    mafft_dash: bool = False         # --dash
+    mafft_algorithm: str = "auto"  # auto | retree1 | retree2 | linsi | ginsi | einsi
+    mafft_op: float = 1.53  # --op  gap opening penalty
+    mafft_ep: float = 0.0  # --ep  offset (gap extension-like)
+    mafft_maxiterate: int = 0  # --maxiterate  (0 = disabled / use algorithm default)
+    mafft_thread: int = -1  # --thread  (-1 = auto)
+    mafft_clustalout: bool = False  # --clustalout
+    mafft_reorder: bool = False  # --reorder  (default: input order)
+    mafft_quiet: bool = False  # --quiet
+    mafft_dash: bool = False  # --dash
 
     # ── MUSCLE options ─────────────────────────────────────────────────────
-    muscle_maxiters: int = 16        # -maxiters
-    muscle_maxhours: float = 0.0     # -maxhours  (0.0 = no limit)
-    muscle_diags: bool = False        # -diags
+    muscle_maxiters: int = 16  # -maxiters
+    muscle_maxhours: float = 0.0  # -maxhours  (0.0 = no limit)
+    muscle_diags: bool = False  # -diags
     muscle_output_format: str = "fasta"  # fasta | html | msf | clw | clwstrict
-    muscle_quiet: bool = False        # -quiet
+    muscle_quiet: bool = False  # -quiet
 
     # ── MAFFT arg builders ─────────────────────────────────────────────────
 
@@ -55,12 +54,12 @@ class SequenceAlignmentConfig:
         (it is added by default unless mafft_reorder is True).
         """
         _alg_map = {
-            "auto":    ["--auto"],
+            "auto": ["--auto"],
             "retree1": ["--retree", "1"],
             "retree2": ["--retree", "2"],
-            "linsi":   ["--localpair",  "--maxiterate", "1000"],
-            "ginsi":   ["--globalpair", "--maxiterate", "1000"],
-            "einsi":   ["--genafpair",  "--maxiterate", "1000"],
+            "linsi": ["--localpair", "--maxiterate", "1000"],
+            "ginsi": ["--globalpair", "--maxiterate", "1000"],
+            "einsi": ["--genafpair", "--maxiterate", "1000"],
         }
         args: List[str] = list(_alg_map.get(self.mafft_algorithm, ["--auto"]))
 
@@ -100,9 +99,9 @@ class SequenceAlignmentConfig:
         if self.muscle_maxhours > 0.0:
             args += ["-maxhours", str(round(self.muscle_maxhours, 4))]
         _fmt_map = {
-            "html":      "-html",
-            "msf":       "-msf",
-            "clw":       "-clw",
+            "html": "-html",
+            "msf": "-msf",
+            "clw": "-clw",
             "clwstrict": "-clwstrict",
         }
         if self.muscle_output_format in _fmt_map:
@@ -117,19 +116,19 @@ class SequenceAlignmentConfig:
 # ---------------------------------------------------------------------------
 
 _MAFFT_ALGORITHMS = [
-    ("auto",    "Auto (automatic selection)"),
+    ("auto", "Auto (automatic selection)"),
     ("retree1", "FFT-NS-1 (very fast)"),
     ("retree2", "FFT-NS-2 (fast, default)"),
-    ("linsi",   "L-INS-i (local pair, most accurate, slow)"),
-    ("ginsi",   "G-INS-i (global pair, slow)"),
-    ("einsi",   "E-INS-i (long indel regions, slow)"),
+    ("linsi", "L-INS-i (local pair, most accurate, slow)"),
+    ("ginsi", "G-INS-i (global pair, slow)"),
+    ("einsi", "E-INS-i (long indel regions, slow)"),
 ]
 
 _MUSCLE_OUTPUT_FORMATS = [
-    ("fasta",     "FASTA (default)"),
-    ("html",      "HTML (-html)"),
-    ("msf",       "GCG MSF (-msf)"),
-    ("clw",       "CLUSTALW (-clw)"),
+    ("fasta", "FASTA (default)"),
+    ("html", "HTML (-html)"),
+    ("msf", "GCG MSF (-msf)"),
+    ("clw", "CLUSTALW (-clw)"),
     ("clwstrict", "CLUSTALW strict header (-clwstrict)"),
 ]
 
@@ -170,7 +169,7 @@ class SequenceAlignmentDialog(QDialog):
 
         # ── Tool tabs ───────────────────────────────────────────────────
         self._tabs = QTabWidget()
-        self._tabs.addTab(self._build_mafft_tab(),  "MAFFT")
+        self._tabs.addTab(self._build_mafft_tab(), "MAFFT")
         self._tabs.addTab(self._build_muscle_tab(), "MUSCLE")
         root.addWidget(self._tabs)
 

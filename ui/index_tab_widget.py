@@ -6,16 +6,15 @@ All display content is centralized in _INFO so it can be updated in one place.
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTextBrowser
 
-
 # ── Centralised content ─────────────────────────────────────────────────────
 # Edit this dict to update any text shown on the Index tab.
 
 _INFO = {
-    "name":    "NetST — Haplotype Network Analysis Tool",
+    "name": "NetST — Haplotype Network Analysis Tool",
     "version": "2.0.0",
-    "author":  "Plant720 Lab",              # ← replace with real author / team
-    "contact": "—",                          # ← replace with real e-mail / URL
-    "repo":    "https://github.com/plant720/netst-py",
+    "author": "Plant720 Lab",  # ← replace with real author / team
+    "contact": "—",  # ← replace with real e-mail / URL
+    "repo": "https://github.com/plant720/netst-py",
     "description": (
         "NetST is a comprehensive software platform for constructing and analyzing "
         "haplotype networks from DNA/RNA sequence data. "
@@ -23,10 +22,10 @@ _INFO = {
         "D3.js-based visualization interface."
     ),
     "modules": [
-        ("Network View",  "Interactive visualization of the haplotype network graph."),
-        ("Data",          "Load, preview, and select input sequences for analysis."),
-        ("Haplotype",     "Tabular summary of haplotypes and sequence assignments "
-                          "(appears after the first successful analysis)."),
+        ("Network View", "Interactive visualization of the haplotype network graph."),
+        ("Data", "Load, preview, and select input sequences for analysis."),
+        ("Haplotype", "Tabular summary of haplotypes and sequence assignments "
+                      "(appears after the first successful analysis)."),
     ],
     "workflow": [
         "Load your FASTA sequence file via <b>File → Load Sequence</b>.",

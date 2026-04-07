@@ -5,18 +5,15 @@ Dialog for selecting which CSV columns map to sequence name,
 discrete traits, and continuous traits when importing trait data.
 """
 
-import csv
-import io
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QGroupBox, QLabel, QComboBox, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QSizePolicy
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
 
 from .language_manager import lang_manager
 
@@ -30,10 +27,10 @@ class CsvTraitsImportDialog(QDialog):
     """
 
     def __init__(
-        self,
-        headers: List[str],
-        preview_rows: List[List[str]],
-        parent=None,
+            self,
+            headers: List[str],
+            preview_rows: List[List[str]],
+            parent=None,
     ):
         super().__init__(parent)
         self._headers = headers
@@ -128,6 +125,7 @@ class CsvTraitsImportDialog(QDialog):
           'discrete_col'   – index of discrete traits column, or None
           'continuous_col' – index of continuous traits column, or None
         """
+
         def _index(combo: QComboBox, has_none: bool) -> Optional[int]:
             text = combo.currentText()
             if has_none and text == _NONE_OPTION:
@@ -149,9 +147,9 @@ class CsvTraitsImportDialog(QDialog):
 
     @staticmethod
     def get_column_mapping(
-        headers: List[str],
-        preview_rows: List[List[str]],
-        parent=None,
+            headers: List[str],
+            preview_rows: List[List[str]],
+            parent=None,
     ) -> Optional[Dict[str, Optional[int]]]:
         """
         Show the dialog and return the column mapping, or None if cancelled.

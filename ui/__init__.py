@@ -4,17 +4,17 @@ UI Module - User Interface Components Package
 Contains all PyQt6 UI component classes, separating UI design from business logic.
 """
 
+from .alignment_tab_widget import AlignmentTabWidget
+from .data_tab_widget import DataTabWidget
+from .haplotype_tab_widget import HaplotypeTabWidget
+from .index_tab_widget import IndexTabWidget
+from .language_manager import LanguageManager, lang_manager
 from .main_window_ui import MainWindowUI
 from .menu_bar import MenuBarBuilder
-from .status_bar import StatusBarWidget
-from .data_tab_widget import DataTabWidget
 from .output_panel import OutputPanel
-from .language_manager import LanguageManager, lang_manager
-from .standardization_dialog import StandardizationDialog, StandardizationConfig
 from .sequence_alignment_dialog import SequenceAlignmentDialog, SequenceAlignmentConfig
-from .index_tab_widget import IndexTabWidget
-from .haplotype_tab_widget import HaplotypeTabWidget
-from .alignment_tab_widget import AlignmentTabWidget
+from .standardization_dialog import StandardizationDialog, StandardizationConfig
+from .status_bar import StatusBarWidget
 
 __all__ = [
     'MainWindowUI',

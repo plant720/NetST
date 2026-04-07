@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
-    QApplication, QTextEdit, QSplitter, QPushButton
+    QTextEdit, QSplitter, QPushButton
 )
 
 # Safe WebEngine import with fallback
@@ -94,8 +94,8 @@ class MainWindowUI(QMainWindow):
         self.index_tab: Optional[IndexTabWidget] = None
         self.web_view_main: Optional[QWebEngineView] = None
         self.data_tab: Optional[DataTabWidget] = None
-        self.haplotype_tab: Optional[HaplotypeTabWidget] = None    # hidden until first analysis
-        self.alignment_tab: Optional[AlignmentTabWidget] = None    # hidden until first alignment
+        self.haplotype_tab: Optional[HaplotypeTabWidget] = None  # hidden until first analysis
+        self.alignment_tab: Optional[AlignmentTabWidget] = None  # hidden until first alignment
         self.output_panel: Optional[OutputPanel] = None
         self._panel_toggle_btn: Optional[QPushButton] = None
         self._panel_last_width: int = 300
@@ -304,4 +304,3 @@ class MainWindowUI(QMainWindow):
         if self.output_panel:
             return self.output_panel.get_project_prefix()
         return "project"
-

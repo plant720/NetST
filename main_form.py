@@ -19,11 +19,11 @@ from model.taxon_table_model import TaxonTableModel
 from service.analysis_service import AnalysisService, AnalysisResult, AlignmentResult
 from service.file_service import FileService
 from ui import MainWindowUI
-from ui.language_manager import lang_manager
-from ui.standardization_dialog import StandardizationDialog
-from ui.haplotype_network_dialog import HaplotypeNetworkDialog
-from ui.sequence_alignment_dialog import SequenceAlignmentDialog, SequenceAlignmentConfig
 from ui.csv_traits_import_dialog import CsvTraitsImportDialog
+from ui.haplotype_network_dialog import HaplotypeNetworkDialog
+from ui.language_manager import lang_manager
+from ui.sequence_alignment_dialog import SequenceAlignmentDialog, SequenceAlignmentConfig
+from ui.standardization_dialog import StandardizationDialog
 
 # Fix path issues - ensure current directory is in Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -77,7 +77,7 @@ class AnalysisWorker(QThread):
 class AlignmentWorker(QThread):
     """Worker thread for running standalone sequence alignment in the background."""
 
-    finished = pyqtSignal(object)   # AlignmentResult
+    finished = pyqtSignal(object)  # AlignmentResult
     log = pyqtSignal(str)
 
     def __init__(self, analysis_service: AnalysisService, taxons: list,
@@ -99,7 +99,7 @@ class AlignmentWorker(QThread):
 class HaplotypeWorker(QThread):
     """Worker thread for MSA + haplotype calculation (no network construction)."""
 
-    finished = pyqtSignal(object)   # AnalysisResult
+    finished = pyqtSignal(object)  # AnalysisResult
     progress = pyqtSignal(int)
     log = pyqtSignal(str)
 
@@ -428,15 +428,16 @@ class MainForm(MainWindowUI):
                 if not seq_name:
                     continue
                 discrete = row[discrete_col].strip() if discrete_col is not None and discrete_col < len(row) else ""
-                continuous = row[continuous_col].strip() if continuous_col is not None and continuous_col < len(row) else "0"
+                continuous = row[continuous_col].strip() if continuous_col is not None and continuous_col < len(
+                    row) else "0"
                 csv_trait_map[seq_name] = (discrete, continuous)
 
             # Step 5 – Validate names
             loaded_names = {t.name for t in self.table_model.get_all_taxons()}
             csv_names = set(csv_trait_map.keys())
 
-            missing_in_csv = loaded_names - csv_names      # loaded but not in CSV
-            extra_in_csv = csv_names - loaded_names        # in CSV but not loaded
+            missing_in_csv = loaded_names - csv_names  # loaded but not in CSV
+            extra_in_csv = csv_names - loaded_names  # in CSV but not loaded
 
             if missing_in_csv or extra_in_csv:
                 msg_lines = ["Sequence name mismatch detected:\n"]
@@ -672,8 +673,8 @@ class MainForm(MainWindowUI):
         # Check whether groupconf has any real entries (non-empty file means named groups exist)
         groupconf_path = js_file.replace('.js', '_groupconf.csv')
         has_named_groups = (
-            os.path.isfile(groupconf_path) and
-            os.path.getsize(groupconf_path) > 0
+                os.path.isfile(groupconf_path) and
+                os.path.getsize(groupconf_path) > 0
         )
 
         lines = [prefix_js, ""]
@@ -823,7 +824,7 @@ class MainForm(MainWindowUI):
         # Update tab names using widget references so indices don't need to be hard-coded
         for widget, lang_key in [
             (self.web_view_main, 'tab_network'),
-            (self.data_tab,      'tab_data'),
+            (self.data_tab, 'tab_data'),
         ]:
             idx = self.tab_widget.indexOf(widget)
             if idx >= 0:
@@ -896,7 +897,6 @@ class MainForm(MainWindowUI):
             self.output_panel.append_info(
                 "数据中无有效连续性状（Continuous Traits），将无法进行双性状可视化"
             )
-
 
 
 def main():

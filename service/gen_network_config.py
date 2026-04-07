@@ -103,7 +103,7 @@ def _file_to_escaped(file_name: str) -> str:
 
 
 def generate_network_config(gml_file: str, hap_file: str, out_prefix: str,
-                             has_continuous_traits: bool = False) -> None:
+                            has_continuous_traits: bool = False) -> None:
     """
     Main entry point replacing the GenNetworkConfig2 executable.
 

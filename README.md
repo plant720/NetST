@@ -67,14 +67,14 @@ The project adopts a clear layered architecture, separating UI design from busin
 
 Responsible for creating and laying out all UI components, without any business logic.
 
-| 组件 / Component | 描述 / Description |
-|------------------|---------------------|
-| `MainWindowUI` | 主窗口UI基类，定义窗口布局和组件 |
-| `MenuBarBuilder` | 菜单栏构建器，参考VB.NET原始设计 |
-| `ToolBarBuilder` | 工具栏构建器 |
-| `StatusBarWidget` | 状态栏组件（进度条+状态文本） |
-| `DataTabWidget` | 数据表格标签页（表格视图+工具栏） |
-| `LogTabWidget` | 日志标签页（日志显示+辅助信息面板） |
+| 组件 / Component    | 描述 / Description    |
+|-------------------|---------------------|
+| `MainWindowUI`    | 主窗口UI基类，定义窗口布局和组件   |
+| `MenuBarBuilder`  | 菜单栏构建器，参考VB.NET原始设计 |
+| `ToolBarBuilder`  | 工具栏构建器              |
+| `StatusBarWidget` | 状态栏组件（进度条+状态文本）     |
+| `DataTabWidget`   | 数据表格标签页（表格视图+工具栏）   |
+| `LogTabWidget`    | 日志标签页（日志显示+辅助信息面板）  |
 
 ### 业务逻辑层 / Business Logic Layer (`main_form.py`)
 
@@ -90,73 +90,79 @@ Inherits from UI base class, implements all business functions:
 
 ### 数据模型层 / Model Layer (`model/`)
 
-| 类 / Class | 描述 / Description |
-|------------|---------------------|
-| `TaxonData` | 单个序列/分类单元的数据类 |
+| 类 / Class         | 描述 / Description |
+|-------------------|------------------|
+| `TaxonData`       | 单个序列/分类单元的数据类    |
 | `TaxonTableModel` | Qt表格模型，用于数据显示和编辑 |
 
 ### 服务层 / Service Layer (`service/`)
 
-| 服务 / Service | 描述 / Description |
-|----------------|---------------------|
-| `FileService` | 文件读写服务（FASTA/CSV） |
-| `AnalysisService` | 分析功能服务（网络构建等） |
+| 服务 / Service      | 描述 / Description  |
+|-------------------|-------------------|
+| `FileService`     | 文件读写服务（FASTA/CSV） |
+| `AnalysisService` | 分析功能服务（网络构建等）     |
 
 ## 菜单设计 / Menu Design
 
 菜单设计参考VB.NET原始版本：
 
 ### 文件菜单 / File Menu (文件(&F))
+
 | 菜单项 / Menu Item | 快捷键 / Shortcut | 功能 / Function |
-|--------------------|-------------------|------------------|
-| 载入序列 | Ctrl+O | 从FASTA文件载入序列 |
-| 载入表格 | Ctrl+Shift+O | 从CSV文件载入数据 |
-| 增加序列 | - | 添加更多序列数据 |
-| 导出表格 | Ctrl+S | 保存数据到CSV |
-| 导出序列 | - | 导出为FASTA格式 |
-| 退出 | Ctrl+Q | 退出程序 |
+|-----------------|----------------|---------------|
+| 载入序列            | Ctrl+O         | 从FASTA文件载入序列  |
+| 载入表格            | Ctrl+Shift+O   | 从CSV文件载入数据    |
+| 增加序列            | -              | 添加更多序列数据      |
+| 导出表格            | Ctrl+S         | 保存数据到CSV      |
+| 导出序列            | -              | 导出为FASTA格式    |
+| 退出              | Ctrl+Q         | 退出程序          |
 
 ### 编辑菜单 / Edit Menu (编辑(&E))
+
 | 菜单项 / Menu Item | 快捷键 / Shortcut | 功能 / Function |
-|--------------------|-------------------|------------------|
-| 全选 | Ctrl+A | 选择所有序列 |
-| 清除选择 | - | 取消所有选择 |
+|-----------------|----------------|---------------|
+| 全选              | Ctrl+A         | 选择所有序列        |
+| 清除选择            | -              | 取消所有选择        |
 
 ### 分析菜单 / Analysis Menu (分析(&A))
+
 | 菜单项 / Menu Item | 功能 / Function |
-|--------------------|------------------|
-| MSN单倍型网络 | 构建最小生成网络 |
-| MJN单倍型网络 | 构建中间连接网络 |
-| TCS单倍型网络 | 构建TCS网络 |
-| 序列比对-MAFFT | MAFFT序列比对子菜单 |
-| 序列比对-MUSCLE | MUSCLE序列比对子菜单 |
-| 网络图可视化 | 可视化网络图 |
-| 拓扑结构分析 | 分析网络拓扑 |
-| 社区检测 | 社区检测分析子菜单 |
-| 序列分析 | 序列统计分析 |
-| 群体信息统计 | 群体遗传多样性分析 |
-| 性状关联分析 | 单倍型-性状关联分析 |
+|-----------------|---------------|
+| MSN单倍型网络        | 构建最小生成网络      |
+| MJN单倍型网络        | 构建中间连接网络      |
+| TCS单倍型网络        | 构建TCS网络       |
+| 序列比对-MAFFT      | MAFFT序列比对子菜单  |
+| 序列比对-MUSCLE     | MUSCLE序列比对子菜单 |
+| 网络图可视化          | 可视化网络图        |
+| 拓扑结构分析          | 分析网络拓扑        |
+| 社区检测            | 社区检测分析子菜单     |
+| 序列分析            | 序列统计分析        |
+| 群体信息统计          | 群体遗传多样性分析     |
+| 性状关联分析          | 单倍型-性状关联分析    |
 
 ### 浏览菜单 / View Menu (浏览(&V))
+
 | 菜单项 / Menu Item | 快捷键 / Shortcut | 功能 / Function |
-|--------------------|-------------------|------------------|
-| 前进 | Alt+Right | 浏览器前进 |
-| 后退 | Alt+Left | 浏览器后退 |
-| 分析记录 | - | 查看历史分析记录 |
+|-----------------|----------------|---------------|
+| 前进              | Alt+Right      | 浏览器前进         |
+| 后退              | Alt+Left       | 浏览器后退         |
+| 分析记录            | -              | 查看历史分析记录      |
 
 ### 工具菜单 / Tools Menu (工具(&T))
-| 菜单项 / Menu Item | 功能 / Function |
-|--------------------|------------------|
-| 清理序列 | 清理无效字符 |
-| 获取序列信息 | 显示序列详细信息 |
-| 日期转换数字 | 日期格式转数值 |
-| 语言 | 语言切换（中文/English） |
+
+| 菜单项 / Menu Item | 功能 / Function    |
+|-----------------|------------------|
+| 清理序列            | 清理无效字符           |
+| 获取序列信息          | 显示序列详细信息         |
+| 日期转换数字          | 日期格式转数值          |
+| 语言              | 语言切换（中文/English） |
 
 ### 帮助菜单 / Help Menu (帮助(&H))
+
 | 菜单项 / Menu Item | 快捷键 / Shortcut | 功能 / Function |
-|--------------------|-------------------|------------------|
-| 关于 | - | 显示关于信息 |
-| 帮助文档 | F1 | 显示帮助文档 |
+|-----------------|----------------|---------------|
+| 关于              | -              | 显示关于信息        |
+| 帮助文档            | F1             | 显示帮助文档        |
 
 ## 安装和运行 / Installation and Running
 
