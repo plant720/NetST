@@ -21,6 +21,7 @@ from ui.language_manager import lang_manager
 from ui.standardization_dialog import StandardizationDialog
 from ui.haplotype_network_dialog import HaplotypeNetworkDialog
 from ui.sequence_alignment_dialog import SequenceAlignmentDialog, SequenceAlignmentConfig
+from ui.csv_traits_import_dialog import CsvTraitsImportDialog
 
 # Fix path issues - ensure current directory is in Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -178,6 +179,7 @@ class MainForm(MainWindowUI):
             # File Menu
             'load_sequence': self._load_sequence,
             'add_sequence': self._add_sequence,
+            'load_csv_traits': self._load_csv_traits,
             'export_fasta': self._export_sequence,
             'exit': self.close,
 
@@ -353,6 +355,168 @@ class MainForm(MainWindowUI):
             except Exception as e:
                 self.log_tab.append_error(f"Failed to export: {str(e)}")
                 QMessageBox.critical(self, "Error", f"Failed to export: {str(e)}")
+
+    def _load_csv_traits(self):
+        """Import discrete / continuous traits from a CSV file.
+
+        Workflow:
+        1. Require that sequences have been loaded first.
+        2. Let the user pick a CSV file.
+        3. Read the CSV headers and first few rows; show a column-mapping dialog.
+        4. Read all data rows using the chosen column indices.
+        5. Validate that every sequence name in the loaded table appears in the
+           CSV (and vice-versa).  Report any mismatches as an error and abort.
+        6. If traits are already present, ask the user whether to overwrite them.
+        7. Apply the new trait values to the table model.
+        """
+        import csv
+
+        # Step 1 – Sequence must be loaded first
+        if self.table_model.rowCount() < 1:
+            QMessageBox.warning(self, "Warning", "Please load a sequence file first before importing traits!")
+            return
+
+        # Step 2 – Choose CSV file
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load CSV Traits File",
+            "",
+            "CSV Files (*.csv);;All Files (*.*)"
+        )
+        if not file_path:
+            return
+
+        try:
+            # Step 3 – Read CSV and show column-mapping dialog
+            encoding = self.file_service.detect_encoding(file_path)
+            with open(file_path, 'r', encoding=encoding, errors='replace', newline='') as fh:
+                reader = csv.reader(fh)
+                all_rows = [row for row in reader if any(cell.strip() for cell in row)]
+
+            if not all_rows:
+                QMessageBox.warning(self, "Warning", "The CSV file is empty!")
+                return
+
+            headers = all_rows[0]
+            data_rows = all_rows[1:]
+
+            if not headers:
+                QMessageBox.warning(self, "Warning", "The CSV file has no header row!")
+                return
+
+            if not data_rows:
+                QMessageBox.warning(self, "Warning", "The CSV file contains no data rows!")
+                return
+
+            # Show at most 5 rows in the preview
+            preview_rows = data_rows[:5]
+
+            mapping = CsvTraitsImportDialog.get_column_mapping(headers, preview_rows, self)
+            if mapping is None:
+                self.log_tab.append_info("CSV trait import cancelled by user")
+                return
+
+            name_col = mapping['name_col']
+            discrete_col = mapping['discrete_col']
+            continuous_col = mapping['continuous_col']
+
+            if name_col is None:
+                QMessageBox.critical(self, "Error", "Sequence Name column must be selected!")
+                return
+
+            # Step 4 – Build lookup: csv_name -> (discrete, continuous)
+            csv_trait_map: dict = {}
+            for row in data_rows:
+                if name_col >= len(row):
+                    continue
+                seq_name = row[name_col].strip()
+                if not seq_name:
+                    continue
+                discrete = row[discrete_col].strip() if discrete_col is not None and discrete_col < len(row) else ""
+                continuous = row[continuous_col].strip() if continuous_col is not None and continuous_col < len(row) else "0"
+                csv_trait_map[seq_name] = (discrete, continuous)
+
+            # Step 5 – Validate names
+            loaded_names = {
+                self.table_model.get_taxon(i).name
+                for i in range(self.table_model.rowCount())
+            }
+            csv_names = set(csv_trait_map.keys())
+
+            missing_in_csv = loaded_names - csv_names      # loaded but not in CSV
+            extra_in_csv = csv_names - loaded_names        # in CSV but not loaded
+
+            if missing_in_csv or extra_in_csv:
+                msg_lines = ["Sequence name mismatch detected:\n"]
+                if missing_in_csv:
+                    msg_lines.append("Sequences in data table NOT found in CSV:")
+                    for n in sorted(missing_in_csv):
+                        msg_lines.append(f"  • {n}")
+                if extra_in_csv:
+                    if missing_in_csv:
+                        msg_lines.append("")
+                    msg_lines.append("Names in CSV NOT found in data table:")
+                    for n in sorted(extra_in_csv):
+                        msg_lines.append(f"  • {n}")
+                QMessageBox.critical(self, "Name Mismatch Error", "\n".join(msg_lines))
+                return
+
+            # Step 6 – Ask whether to overwrite if traits already exist
+            has_existing_discrete = any(
+                self.table_model.get_taxon(i).discrete_traits.strip()
+                for i in range(self.table_model.rowCount())
+            )
+            has_existing_continuous = any(
+                self.table_model.get_taxon(i).continuous_traits.strip() not in ("", "0")
+                for i in range(self.table_model.rowCount())
+            )
+            if has_existing_discrete or has_existing_continuous:
+                reply = QMessageBox.question(
+                    self,
+                    "Update Traits",
+                    "Trait data already exists for some sequences.\n"
+                    "Do you want to overwrite the existing traits with the CSV data?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    self.log_tab.append_info("CSV trait import cancelled – existing traits kept")
+                    return
+
+            # Step 7 – Apply traits to model
+            updated = 0
+            for i in range(self.table_model.rowCount()):
+                taxon = self.table_model.get_taxon(i)
+                if taxon is None:
+                    continue
+                traits = csv_trait_map.get(taxon.name)
+                if traits is None:
+                    continue
+                discrete, continuous = traits
+                if discrete_col is not None:
+                    taxon.discrete_traits = discrete
+                if continuous_col is not None:
+                    taxon.continuous_traits = continuous if continuous else "0"
+                updated += 1
+
+            # Notify the view that data changed
+            if self.table_model.rowCount() > 0:
+                top_left = self.table_model.index(0, 0)
+                bottom_right = self.table_model.index(
+                    self.table_model.rowCount() - 1,
+                    self.table_model.columnCount() - 1
+                )
+                self.table_model.dataChanged.emit(top_left, bottom_right)
+
+            self.log_tab.append_success(
+                f"Traits imported from CSV: {updated} sequences updated"
+            )
+            self._check_trait_completeness(self.table_model.get_all_taxons())
+            self.switch_to_tab('data')
+
+        except Exception as e:
+            self.log_tab.append_error(f"Failed to import CSV traits: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to import CSV traits:\n{str(e)}")
 
     # ==================== Data Selection ====================
 

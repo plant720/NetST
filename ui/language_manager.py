@@ -39,10 +39,19 @@ class LanguageManager:
             'menu_file': {'cn': '文件', 'en': 'File'},
             'menu_load_sequence': {'cn': '载入序列...', 'en': 'Load Sequence...'},
             'menu_load_table': {'cn': '载入表格...', 'en': 'Load Table...'},
+            'menu_load_csv_traits': {'cn': '导入CSV性状...', 'en': 'Load CSV Traits...'},
             'menu_add_sequence': {'cn': '增加序列...', 'en': 'Add Sequence...'},
             'menu_export_table': {'cn': '导出表格...', 'en': 'Export Table...'},
             'menu_export_sequence': {'cn': '导出序列...', 'en': 'Export Sequence...'},
             'menu_exit': {'cn': '退出', 'en': 'Exit'},
+
+            # CSV Traits Import Dialog
+            'dlg_csv_title':    {'cn': '从CSV导入性状', 'en': 'Import Traits from CSV'},
+            'dlg_csv_mapping':  {'cn': '列映射', 'en': 'Column Mapping'},
+            'dlg_csv_seq_name': {'cn': '序列名称列:', 'en': 'Sequence Name Column:'},
+            'dlg_csv_discrete': {'cn': '离散性状列:', 'en': 'Discrete Traits Column:'},
+            'dlg_csv_continuous': {'cn': '连续性状列:', 'en': 'Continuous Traits Column:'},
+            'dlg_csv_preview':  {'cn': '数据预览（前几行）', 'en': 'Data Preview (first rows)'},
 
             # Edit Menu
             'menu_edit': {'cn': '编辑', 'en': 'Edit'},
