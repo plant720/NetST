@@ -82,9 +82,7 @@ class MenuBarBuilder:
         self.menus['analysis'] = analysis_menu
         
         # Haplotype Network
-        analysis_menu.addAction(self._create_action('menu_msn_network', 'network_msn'))
-        analysis_menu.addAction(self._create_action('menu_mjn_network', 'network_mjn'))
-        analysis_menu.addAction(self._create_action('menu_tcs_network', 'network_tcs'))
+        analysis_menu.addAction(self._create_action('menu_build_haplotype_network', 'build_haplotype_network'))
         analysis_menu.addSeparator()
         
         # MAFFT submenu

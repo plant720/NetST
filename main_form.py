@@ -19,6 +19,7 @@ from service.file_service import FileService
 from ui import MainWindowUI
 from ui.language_manager import lang_manager
 from ui.standardization_dialog import StandardizationDialog
+from ui.haplotype_network_dialog import HaplotypeNetworkDialog
 
 # Fix path issues - ensure current directory is in Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -47,13 +48,15 @@ class AnalysisWorker(QThread):
     log = pyqtSignal(str)
 
     def __init__(self, analysis_service: AnalysisService, network_type: str,
-                 taxons: list, output_path: str, prefix: str):
+                 taxons: list, output_path: str, prefix: str,
+                 extra_args: list = None):
         super().__init__()
         self.analysis_service = analysis_service
         self.network_type = network_type
         self.taxons = taxons
         self.output_path = output_path
         self.prefix = prefix
+        self.extra_args = extra_args or []
 
     def run(self):
         """Execute analysis task in child thread."""
@@ -61,7 +64,8 @@ class AnalysisWorker(QThread):
         self.analysis_service.set_log_callback(lambda m: self.log.emit(m))
 
         result = self.analysis_service.run_network_analysis(
-            self.network_type, self.taxons, self.output_path, self.prefix
+            self.network_type, self.taxons, self.output_path, self.prefix,
+            extra_args=self.extra_args
         )
         self.finished.emit(result)
 
@@ -129,9 +133,7 @@ class MainForm(MainWindowUI):
             'exit': self.close,
 
             # Analysis Menu
-            'network_msn': lambda: self._run_network_analysis("msn"),
-            'network_mjn': lambda: self._run_network_analysis("mjn"),
-            'network_tcs': lambda: self._run_network_analysis("modified_tcs"),
+            'build_haplotype_network': self._build_haplotype_network,
 
             # MAFFT alignment
             'mafft_auto': lambda: self._run_mafft_alignment("--auto"),
@@ -338,7 +340,14 @@ class MainForm(MainWindowUI):
 
     # ==================== Network Analysis ====================
 
-    def _run_network_analysis(self, network_type: str):
+    def _build_haplotype_network(self):
+        """Show algorithm/parameter dialog, then run the selected network analysis."""
+        config = HaplotypeNetworkDialog.get_network_config(self)
+        if config is None:
+            return
+        self._run_network_analysis(config.algorithm, extra_args=config.to_extra_args())
+
+    def _run_network_analysis(self, network_type: str, extra_args: list = None):
         """Run haplotype network analysis."""
         if self.table_model.rowCount() < 1:
             QMessageBox.warning(self, "Warning", "Please load data first!")
@@ -394,7 +403,8 @@ class MainForm(MainWindowUI):
         self.set_status("Analyzing...")
 
         self.analysis_worker = AnalysisWorker(
-            self.analysis_service, network_type, selected, output_path, prefix
+            self.analysis_service, network_type, selected, output_path, prefix,
+            extra_args=extra_args or []
         )
         self.analysis_worker.progress.connect(self.set_progress)
         self.analysis_worker.log.connect(self.log_tab.append_info)
