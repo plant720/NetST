@@ -135,16 +135,11 @@ class OutputPanel(QWidget):
     def _open_output_folder(self):
         """Open output folder in file explorer"""
         path = self.output_path_edit.text()
-
-        # Create folder if not exists
-        if not os.path.exists(path):
-            try:
-                os.makedirs(path)
-            except Exception:
-                pass
-
-        # Open in file explorer
-        if os.path.exists(path):
+        try:
+            os.makedirs(path, exist_ok=True)
+        except Exception:
+            pass
+        if os.path.isdir(path):
             if sys.platform == 'win32':
                 os.startfile(path)
             elif sys.platform == 'darwin':
@@ -215,10 +210,6 @@ class OutputPanel(QWidget):
     def clear_log(self):
         """Clear log content"""
         self.log_text.clear()
-
-    def get_log_content(self) -> str:
-        """Get log content"""
-        return self.log_text.toPlainText()
 
     def update_language(self):
         """Update interface language"""

@@ -55,19 +55,15 @@ class FileService:
             for line in f:
                 line = line.strip()
                 if line.startswith('>'):
-                    # Save previous sequence if exists
                     if current_header is not None and sequence_lines:
                         taxon_id += 1
                         sequence = ''.join(sequence_lines)
                         taxon = self._parse_fasta_header(taxon_id, current_header, sequence, delimiter)
                         taxons.append(taxon)
                         sequence_lines = []
-                    
-                    current_header = line[1:]  # Remove '>'
+                    current_header = line[1:]
                 elif line:
                     sequence_lines.append(line)
-            
-            # Don't forget the last sequence
             if current_header is not None and sequence_lines:
                 taxon_id += 1
                 sequence = ''.join(sequence_lines)
@@ -76,13 +72,14 @@ class FileService:
         
         return taxons
     
+    @staticmethod
+    def _clean_fasta_header(header: str) -> str:
+        """Sanitize a raw FASTA header (strip characters that break downstream parsers)."""
+        return header.replace(',', '_').replace('"', '').replace("'", "").replace('=', '_')
+
     def _parse_fasta_header(self, taxon_id: int, header: str, sequence: str, delimiter: str) -> TaxonData:
         """Parse FASTA header and create TaxonData."""
-        # Clean header: replace problematic characters
-        clean_header = header.replace(',', '_').replace('"', '').replace("'", "").replace('=', '_')
-        
-        taxon = TaxonData(id=taxon_id, name=clean_header, sequence=sequence)
-        return taxon
+        return TaxonData(id=taxon_id, name=self._clean_fasta_header(header), sequence=sequence)
     
     def load_csv_file(self, file_path: str) -> List[TaxonData]:
         """
@@ -99,16 +96,13 @@ class FileService:
         
         with open(file_path, 'r', encoding=encoding, newline='') as f:
             reader = csv.reader(f)
-            
-            # Skip header
             try:
                 next(reader)
             except StopIteration:
                 return taxons
-            
             taxon_id = 0
             for row in reader:
-                if not row or not any(row):  # Skip empty rows
+                if not row or not any(row):
                     continue
                 
                 taxon_id += 1
@@ -137,11 +131,7 @@ class FileService:
         """
         with open(file_path, 'w', encoding='utf-8', newline='') as f:
             writer = csv.writer(f)
-            
-            # Write header
             writer.writerow(['ID', 'Name', 'Sequence', 'Discrete Traits', 'Continuous Traits'])
-
-            # Write data
             for taxon in taxons:
                 writer.writerow([
                     taxon.id,
@@ -184,11 +174,6 @@ class FileService:
         shutil.copy2(source, destination)
     
     @staticmethod
-    def file_exists(file_path: str) -> bool:
-        """Check if file exists."""
-        return os.path.isfile(file_path)
-    
-    @staticmethod
     def ensure_directory(dir_path: str) -> None:
         """Ensure directory exists, create if not."""
         Path(dir_path).mkdir(parents=True, exist_ok=True)
@@ -212,8 +197,7 @@ class FileService:
             for line in f:
                 line = line.strip()
                 if line.startswith('>'):
-                    # Clean header like VB.NET does
-                    header = line[1:].replace(',', '_').replace('"', '').replace("'", "").replace('=', '_')
+                    header = self._clean_fasta_header(line[1:])
                     headers.append(header)
                     count += 1
                     if count >= limit:

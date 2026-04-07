@@ -61,12 +61,10 @@ class DataTabWidget(QWidget):
         toolbar_layout = QHBoxLayout(toolbar_frame)
         toolbar_layout.setContentsMargins(5, 3, 5, 3)
         
-        # Select All button
         self.btn_select_all = QPushButton("Select All")
         self.btn_select_all.clicked.connect(self._on_select_all)
         toolbar_layout.addWidget(self.btn_select_all)
-        
-        # Deselect All button
+
         self.btn_deselect_all = QPushButton("Deselect All")
         self.btn_deselect_all.clicked.connect(self._on_deselect_all)
         toolbar_layout.addWidget(self.btn_deselect_all)
@@ -169,13 +167,6 @@ class DataTabWidget(QWidget):
     def get_table_view(self) -> QTableView:
         """Get table view object"""
         return self.table_view
-    
-    def refresh(self):
-        """Refresh table display"""
-        model = self.table_view.model()
-        if model:
-            model.layoutChanged.emit()
-        self._apply_column_widths()
     
     def update_language(self):
         """Update interface language"""

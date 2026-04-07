@@ -54,16 +54,7 @@ class StatusBarWidget:
             self.progress_bar.setVisible(False)
             self.progress_bar.setValue(0)
     
-    def show_progress(self):
-        """Show progress bar"""
-        self.progress_bar.setVisible(True)
-    
-    def hide_progress(self):
-        """Hide progress bar"""
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setValue(0)
-    
     def reset(self):
         """Reset status bar to initial state"""
         self.set_status("Ready")
-        self.hide_progress()
+        self.set_progress(0)
