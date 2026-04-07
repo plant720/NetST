@@ -68,9 +68,11 @@ class MenuBarBuilder:
         """Build the File menu"""
         file_menu = self.menubar.addMenu(lang_manager.get('menu_file'))
         self.menus['file'] = file_menu
-        
+
         file_menu.addAction(self._create_action('menu_load_sequence', 'load_sequence'))
         file_menu.addAction(self._create_action('menu_add_sequence', 'add_sequence'))
+        file_menu.addSeparator()
+        file_menu.addAction(self._create_action('menu_load_csv_traits', 'load_csv_traits'))
         file_menu.addSeparator()
         file_menu.addAction(self._create_action('menu_export_sequence', 'export_fasta'))
         file_menu.addSeparator()
@@ -82,9 +84,9 @@ class MenuBarBuilder:
         self.menus['analysis'] = analysis_menu
 
         analysis_menu.addAction(self._create_action('menu_build_haplotype_network', 'build_haplotype_network'))
-        analysis_menu.addAction(self._create_action('menu_calculate_haplotype', 'calculate_haplotype'))
         analysis_menu.addSeparator()
         analysis_menu.addAction(self._create_action('menu_msa', 'run_msa'))
+        analysis_menu.addAction(self._create_action('menu_calculate_haplotype', 'calculate_haplotype'))
     
     def _build_tools_menu(self):
         """Build the Tools menu"""
