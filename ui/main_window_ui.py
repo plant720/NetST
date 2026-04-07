@@ -11,7 +11,7 @@ from typing import Optional, Dict, Callable
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
-    QApplication, QTextEdit, QSplitter
+    QApplication, QTextEdit, QSplitter, QPushButton
 )
 
 # Safe WebEngine import with fallback
@@ -92,7 +92,9 @@ class MainWindowUI(QMainWindow):
         self.data_tab: Optional[DataTabWidget] = None
         self.haplotype_tab: Optional[HaplotypeTabWidget] = None  # hidden until first analysis
         self.output_panel: Optional[OutputPanel] = None
-        
+        self._panel_toggle_btn: Optional[QPushButton] = None
+        self._panel_last_width: int = 300
+
         # UI builders
         self.menu_builder: Optional[MenuBarBuilder] = None
         self.status_bar_widget: Optional[StatusBarWidget] = None
@@ -127,42 +129,62 @@ class MainWindowUI(QMainWindow):
         """Initialize user interface"""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
+
         main_layout = QHBoxLayout(central_widget)
         main_layout.setContentsMargins(5, 5, 5, 5)
-        main_layout.setSpacing(5)
-        
-        # Create splitter for resizable panels
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        main_layout.addWidget(splitter)
-        
-        # Left side: Tab widget
+        main_layout.setSpacing(0)
+
+        # Left side: Tab widget (takes all remaining space)
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.tab_widget = QTabWidget()
         left_layout.addWidget(self.tab_widget)
-        
+
         # Create tabs (order: Home, Data, Network)
         # Haplotype tab is NOT added here — it appears only after a successful analysis.
         self._create_index_tab()
         self._create_data_tab()
         self._create_network_tab()
-        
-        splitter.addWidget(left_widget)
-        
+
+        main_layout.addWidget(left_widget, 1)
+
+        # Narrow toggle strip between content and output panel
+        self._panel_toggle_btn = QPushButton("◀")
+        self._panel_toggle_btn.setFixedWidth(18)
+        self._panel_toggle_btn.setToolTip("Collapse output panel")
+        self._panel_toggle_btn.setStyleSheet(
+            "QPushButton {"
+            "  border: none;"
+            "  background: #e0e0e0;"
+            "  color: #555;"
+            "  font-size: 10px;"
+            "}"
+            "QPushButton:hover { background: #c8c8c8; }"
+        )
+        self._panel_toggle_btn.clicked.connect(self._toggle_output_panel)
+        main_layout.addWidget(self._panel_toggle_btn)
+
         # Right side: Output panel
         self.output_panel = OutputPanel()
-        self.output_panel.setMinimumWidth(200)
-        self.output_panel.setMaximumWidth(350)
-        splitter.addWidget(self.output_panel)
-        
-        # Set splitter sizes (left: 80%, right: 20%)
-        splitter.setSizes([1100, 300])
-        
+        self.output_panel.setFixedWidth(300)
+        main_layout.addWidget(self.output_panel)
+
         # Create status bar
         self.status_bar_widget = StatusBarWidget(self)
+
+    def _toggle_output_panel(self):
+        """Show or hide the entire output panel."""
+        if self.output_panel.isVisible():
+            self._panel_last_width = self.output_panel.width()
+            self.output_panel.setVisible(False)
+            self._panel_toggle_btn.setText("▶")
+            self._panel_toggle_btn.setToolTip("Expand output panel")
+        else:
+            self.output_panel.setVisible(True)
+            self._panel_toggle_btn.setText("◀")
+            self._panel_toggle_btn.setToolTip("Collapse output panel")
     
     def _create_index_tab(self):
         """Create the Index (welcome) tab — always the first tab."""
