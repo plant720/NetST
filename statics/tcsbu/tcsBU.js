@@ -433,11 +433,26 @@ $(function () {
         var v = parseInt(tc, 16);
         var t = (v - 8) / 239;
         var r, g, b;
-        var h = function(n) { return ('0' + Math.round(n).toString(16)).slice(-2); };
-        if (mode === 0) { r = g = b = v; }
-        else if (mode === 1) { r = 155 + 100 * t; g = 28 + 137 * t; b = 28 + 137 * t; }   // crimson → coral
-        else if (mode === 2) { r = 22  + 112 * t; g = 101 + 138 * t; b = 52  + 120 * t; }  // forest → mint
-        else if (mode === 3) { r = 30  + 117 * t; g = 58  + 139 * t; b = 138 + 115 * t; }  // navy → sky
+        var h = function (n) {
+            return ('0' + Math.round(n).toString(16)).slice(-2);
+        };
+        if (mode === 0) {
+            r = g = b = v;
+        } else if (mode === 1) {
+            r = 155 + 100 * t;
+            g = 28 + 137 * t;
+            b = 28 + 137 * t;
+        }   // crimson → coral
+        else if (mode === 2) {
+            r = 22 + 112 * t;
+            g = 101 + 138 * t;
+            b = 52 + 120 * t;
+        }  // forest → mint
+        else if (mode === 3) {
+            r = 30 + 117 * t;
+            g = 58 + 139 * t;
+            b = 138 + 115 * t;
+        }  // navy → sky
         return '#' + h(r) + h(g) + h(b);
     }
 
@@ -468,15 +483,21 @@ $(function () {
             svg.select('#' + lid).style({'stroke': '#FF0000', 'stroke-width': linewidth * 3});
         });
         Object.keys(labelLink).forEach(function (lid) {
-            var ldata = linkList.find(function (l) { return l.id === lid; });
+            var ldata = linkList.find(function (l) {
+                return l.id === lid;
+            });
             if (!ldata) return;
             svg.select('#' + lid)
                 .each(function () {
                     var el = d3.select(this.parentNode);
                     el.append('text')
                         .attr('class', 'link-label-info')
-                        .attr('x', function () { return (ldata.source.x + ldata.target.x) / 2; })
-                        .attr('y', function () { return (ldata.source.y + ldata.target.y) / 2; })
+                        .attr('x', function () {
+                            return (ldata.source.x + ldata.target.x) / 2;
+                        })
+                        .attr('y', function () {
+                            return (ldata.source.y + ldata.target.y) / 2;
+                        })
                         .attr('text-anchor', 'middle')
                         .attr('dy', '-4px')
                         .text(labelLink[lid])
@@ -954,7 +975,7 @@ $(function () {
                 items: [{
                     type: 'button', id: 'load_haplotypes', text: 'Load', icon: 'icon-folder-open'
                 }, {type: 'button', id: 'save_haplotypes', text: 'Save', icon: 'icon-file-save'}
-                    ], onClick: function (e) {
+                ], onClick: function (e) {
                     switch (e.target) {
                         case 'load_haplotypes':
                             if (w2ui.haplotypes.records.length === 0) {
@@ -1126,12 +1147,12 @@ $(function () {
 
                 // Drag — same pattern as group legend
                 var drag = d3.behavior.drag()
-                    .on('drag', function(d) {
+                    .on('drag', function (d) {
                         d.x += d3.event.dx;
                         d.y += d3.event.dy;
                         d3.select(this).attr('transform', 'translate(' + [d.x, d.y] + ')');
                     })
-                    .on('dragstart', function() {
+                    .on('dragstart', function () {
                         d3.event.sourceEvent.stopPropagation();
                     });
                 legendG.call(drag);
@@ -1187,164 +1208,168 @@ $(function () {
         $('#layout').w2layout({
             name: 'Layout', padding: 0, panels: [
                 {type: 'top', size: 40, resizable: false, style: style},
-                {type: 'left', size: 350, maxSize: 350, resizable: true, title: 'Data', style: style, tabs: {
-                    name: 'tabs',
-                    active: 'tab1',
-                    tabs: [{id: 'tab2', text: 'Groups'}, {id: 'tab1', text: 'Haplotypes'},{id: 'tab3', text: 'Traits'},],
-                    onClick: function (id) {
-                        switch (id.target) {
-                            case 'tab1':
-                                w2ui.Layout.content('left', haplotypes);
-                                break;
-                            case 'tab2':
-                                w2ui.Layout.content('left', groups);
-                                break;
-                            case 'tab3':
-                                w2ui.Layout.content('left', characters);
-                                break;
+                {
+                    type: 'left', size: 350, maxSize: 350, resizable: true, title: 'Data', style: style, tabs: {
+                        name: 'tabs',
+                        active: 'tab1',
+                        tabs: [{id: 'tab2', text: 'Groups'}, {id: 'tab1', text: 'Haplotypes'}, {
+                            id: 'tab3',
+                            text: 'Traits'
+                        },],
+                        onClick: function (id) {
+                            switch (id.target) {
+                                case 'tab1':
+                                    w2ui.Layout.content('left', haplotypes);
+                                    break;
+                                case 'tab2':
+                                    w2ui.Layout.content('left', groups);
+                                    break;
+                                case 'tab3':
+                                    w2ui.Layout.content('left', characters);
+                                    break;
+                            }
                         }
-                    }
 
-                }
-            }, {type: 'right', size: 280, resizable: false, title: 'Haplotype Network Info', style: style}, {
-                type: 'main', size: '100%', overflow: 'hidden', style: style, toolbar: {
-                    items: [{
-                        id: 'btn-svgsave', type: 'button', text: 'Save SVG', icon: 'icon-file-svg', disabled: true
-                    }, //{ id: 'btn-pdfsave', type: 'button', text: 'Save PDF', icon: 'icon-file-pdf-o', disabled: true },
-                        {type: 'break'}, {
-                            id: 'btn-zoomin',
-                            class: 'zoom-btn',
-                            type: 'button',
-                            text: 'Zoom In',
-                            icon: 'icon-zoom-in',
-                            disabled: true
-                        }, {
-                            id: 'btn-zoomout',
-                            class: 'zoom-btn',
-                            type: 'button',
-                            text: 'Zoom Out',
-                            icon: 'icon-zoom-out',
-                            disabled: true
-                        }, {type: 'break'}, {
-                            id: 'btn-delnode',
-                            type: 'check',
-                            text: 'Delete Node',
-                            icon: 'icon-delete-node',
-                            disabled: true,
-                            checked: false
-                        }, {
-                            id: 'btn-dellink',
-                            type: 'check',
-                            text: 'Delete Link',
-                            icon: 'icon-delete-link',
-                            disabled: true,
-                            checked: false
-                        }, {type: 'break'}, {
-                            id: 'btn-outline',
-                            type: 'check',
-                            text: 'Outline',
-                            icon: 'icon-outline',
-                            disabled: true,
-                            checked: false
-                        }, {
-                            id: 'btn-time',
-                            type: 'menu',
-                            text: 'Circle Center',
-                            icon: 'icon-circles-2',
-                            disabled: true,
-                            items: [{text: 'Gray', typeid: "0"}, {text: 'Red', typeid: "1"}, {
-                                text: 'Green', typeid: "2"
-                            }, {text: 'Blue', typeid: "3"}]
-                        }, {
-                            id: 'btn-style',
-                            type: 'menu',
-                            text: 'Style',
-                            icon: 'icon-cross-4',
-                            disabled: true,
-                            items: [{text: 'Dual-Trait', styleid: "0"}, {text: 'Category', styleid: "1"}, {
-                                text: 'Continuous', styleid: "2"
-                            },]
-                        }, {type: 'break'}, {
-                            id: 'btn-legend',
-                            type: 'check',
-                            text: 'Legend',
-                            icon: 'icon-legend',
-                            disabled: true,
-                            checked: false
-                        },
-                        // Buttons for toggling haplotype labels and link-distance annotations.
-                        {
-                            id: 'btn-haplotype',
-                            type: 'check',
-                            text: 'Haplotype',
-                            icon: 'icon-label',
-                            disabled: true,
-                            checked: false
-                        }, {
-                            id: 'btn-distance',
-                            type: 'check',
-                            text: 'Distance',
-                            icon: 'icon-label',
-                            disabled: true,
-                            checked: false
-                        }, {type: 'break'}, {
-                            id: 'btn-advanced',
-                            type: 'button',
-                            text: 'Advanced',
-                            icon: 'icon-advanced',
-                            disabled: true
-                        },], onClick: function (e) {
-                        var target = e.target;
-                        switch (target) {
-                            case 'btn-dellink':
-                                deletelink = !e.item.checked;
-                                break;
-                            case 'btn-delnode':
-                                deletenode = !e.item.checked;
-                                break;
-                            case 'btn-svgsave':
-                                saveSVG();
-                                break;
-                            case 'btn-outline':
-                                outlinenodes = !e.item.checked;
-                                if (svg) updateSVG();
-                                break;
-                            case 'btn-zoomin':
-                                zoomByFactor(1.2);
-                                break;
-                            case 'btn-zoomout':
-                                zoomByFactor(0.8);
-                                break;
-                            case 'btn-legend':
-                                insertLegend();
-                                break;
-                            case 'btn-haplotype':
-                                insertHaplotype();
-                                break;
-                            case 'btn-distance':
-                                insertDistance()
-                                break;
-                            case 'btn-advanced':
-                                openAdvancedSettings();
-                                break;
-                            default:
-                                if (target.indexOf('btn-time:') !== -1) {
-                                    typeid = parseInt(e.subItem.typeid);
+                    }
+                }, {type: 'right', size: 280, resizable: false, title: 'Haplotype Network Info', style: style}, {
+                    type: 'main', size: '100%', overflow: 'hidden', style: style, toolbar: {
+                        items: [{
+                            id: 'btn-svgsave', type: 'button', text: 'Save SVG', icon: 'icon-file-svg', disabled: true
+                        }, //{ id: 'btn-pdfsave', type: 'button', text: 'Save PDF', icon: 'icon-file-pdf-o', disabled: true },
+                            {type: 'break'}, {
+                                id: 'btn-zoomin',
+                                class: 'zoom-btn',
+                                type: 'button',
+                                text: 'Zoom In',
+                                icon: 'icon-zoom-in',
+                                disabled: true
+                            }, {
+                                id: 'btn-zoomout',
+                                class: 'zoom-btn',
+                                type: 'button',
+                                text: 'Zoom Out',
+                                icon: 'icon-zoom-out',
+                                disabled: true
+                            }, {type: 'break'}, {
+                                id: 'btn-delnode',
+                                type: 'check',
+                                text: 'Delete Node',
+                                icon: 'icon-delete-node',
+                                disabled: true,
+                                checked: false
+                            }, {
+                                id: 'btn-dellink',
+                                type: 'check',
+                                text: 'Delete Link',
+                                icon: 'icon-delete-link',
+                                disabled: true,
+                                checked: false
+                            }, {type: 'break'}, {
+                                id: 'btn-outline',
+                                type: 'check',
+                                text: 'Outline',
+                                icon: 'icon-outline',
+                                disabled: true,
+                                checked: false
+                            }, {
+                                id: 'btn-time',
+                                type: 'menu',
+                                text: 'Circle Center',
+                                icon: 'icon-circles-2',
+                                disabled: true,
+                                items: [{text: 'Gray', typeid: "0"}, {text: 'Red', typeid: "1"}, {
+                                    text: 'Green', typeid: "2"
+                                }, {text: 'Blue', typeid: "3"}]
+                            }, {
+                                id: 'btn-style',
+                                type: 'menu',
+                                text: 'Style',
+                                icon: 'icon-cross-4',
+                                disabled: true,
+                                items: [{text: 'Dual-Trait', styleid: "0"}, {text: 'Category', styleid: "1"}, {
+                                    text: 'Continuous', styleid: "2"
+                                },]
+                            }, {type: 'break'}, {
+                                id: 'btn-legend',
+                                type: 'check',
+                                text: 'Legend',
+                                icon: 'icon-legend',
+                                disabled: true,
+                                checked: false
+                            },
+                            // Buttons for toggling haplotype labels and link-distance annotations.
+                            {
+                                id: 'btn-haplotype',
+                                type: 'check',
+                                text: 'Haplotype',
+                                icon: 'icon-label',
+                                disabled: true,
+                                checked: false
+                            }, {
+                                id: 'btn-distance',
+                                type: 'check',
+                                text: 'Distance',
+                                icon: 'icon-label',
+                                disabled: true,
+                                checked: false
+                            }, {type: 'break'}, {
+                                id: 'btn-advanced',
+                                type: 'button',
+                                text: 'Advanced',
+                                icon: 'icon-advanced',
+                                disabled: true
+                            },], onClick: function (e) {
+                            var target = e.target;
+                            switch (target) {
+                                case 'btn-dellink':
+                                    deletelink = !e.item.checked;
+                                    break;
+                                case 'btn-delnode':
+                                    deletenode = !e.item.checked;
+                                    break;
+                                case 'btn-svgsave':
+                                    saveSVG();
+                                    break;
+                                case 'btn-outline':
+                                    outlinenodes = !e.item.checked;
                                     if (svg) updateSVG();
-                                }
-                                if (target.indexOf('btn-style:') !== -1) {
-                                    var requestedStyle = parseInt(e.subItem.styleid);
-                                    if (!hasTrait && requestedStyle !== 1) {
-                                        w2alert('Please load trait data first before selecting<br>Dual-Trait or Continuous style.', 'Trait data required!');
-                                    } else {
-                                        styleid = requestedStyle;
+                                    break;
+                                case 'btn-zoomin':
+                                    zoomByFactor(1.2);
+                                    break;
+                                case 'btn-zoomout':
+                                    zoomByFactor(0.8);
+                                    break;
+                                case 'btn-legend':
+                                    insertLegend();
+                                    break;
+                                case 'btn-haplotype':
+                                    insertHaplotype();
+                                    break;
+                                case 'btn-distance':
+                                    insertDistance()
+                                    break;
+                                case 'btn-advanced':
+                                    openAdvancedSettings();
+                                    break;
+                                default:
+                                    if (target.indexOf('btn-time:') !== -1) {
+                                        typeid = parseInt(e.subItem.typeid);
                                         if (svg) updateSVG();
                                     }
-                                }
-                        }
+                                    if (target.indexOf('btn-style:') !== -1) {
+                                        var requestedStyle = parseInt(e.subItem.styleid);
+                                        if (!hasTrait && requestedStyle !== 1) {
+                                            w2alert('Please load trait data first before selecting<br>Dual-Trait or Continuous style.', 'Trait data required!');
+                                        } else {
+                                            styleid = requestedStyle;
+                                            if (svg) updateSVG();
+                                        }
+                                    }
+                            }
+                        },
                     },
-                },
-            }
+                }
                 //{ type: 'bottom', size: 30, resizable: false, style: style, content: 'Start'}
             ],
         });
@@ -2010,7 +2035,9 @@ $(function () {
             maxTime = Number.NEGATIVE_INFINITY;
             nodeList.forEach(function (node) {
                 if (node.nodestyle !== 1) return;
-                var seqs = node.name.split('\n').filter(function (s) { return s.trim() !== ''; });
+                var seqs = node.name.split('\n').filter(function (s) {
+                    return s.trim() !== '';
+                });
                 seqs.forEach(function (seq) {
                     var t = traitMap[seq.trim()];
                     if (t !== undefined) {
@@ -2048,11 +2075,15 @@ $(function () {
             nodeList.forEach(function (node) {
                 node.timeProportions = [];
                 if (node.nodestyle !== 1) return;
-                var seqs = node.name.split('\n').filter(function (s) { return s.trim() !== ''; });
+                var seqs = node.name.split('\n').filter(function (s) {
+                    return s.trim() !== '';
+                });
                 seqs.forEach(function (seq) {
                     var t = traitMap[seq.trim()];
                     if (t === undefined) return; // seqname not in traitconf
-                    var existing = node.timeProportions.find(function (tp) { return tp.time === t; });
+                    var existing = node.timeProportions.find(function (tp) {
+                        return tp.time === t;
+                    });
                     if (existing) {
                         existing.value += 1;
                     } else {
@@ -2084,7 +2115,6 @@ $(function () {
         fileInput.value = "";
         reader.readAsText(file);
     }
-
 
 
     /*
@@ -2217,7 +2247,9 @@ $(function () {
                         }
                     });
                 } else {
-                    nodeList.forEach(function (node) { node.hap = null; });
+                    nodeList.forEach(function (node) {
+                        node.hap = null;
+                    });
                 }
 
                 hapconfLoaded = true;
@@ -2276,7 +2308,6 @@ $(function () {
             w2alert('FileSaver.js is not supported! Use a modern browser...<br>' + 'FileSaver.js is supported by Firefox 20+, Chrome, Chrome<br>' + 'for Android, IE 10+, Opera 15+ and Safari 6.1+', 'FileSave.js is unsupported!');
         }
     }
-
 
 
     /*
@@ -2562,7 +2593,9 @@ $(function () {
             }
 
             Object.keys(labelLink).forEach(function (lid) {
-                var ldata = linkList.find(function (l) { return l.id === lid; });
+                var ldata = linkList.find(function (l) {
+                    return l.id === lid;
+                });
                 if (!ldata) return;
                 var linkEl = svg.select('#' + lid);
                 if (!linkEl.empty()) {
@@ -2614,7 +2647,9 @@ $(function () {
          * Show node information in the Node Info right panel.
          */
         function getHaplotypeLabel(node) {
-            var haploNodes = nodeList.filter(function (n) { return n.nodestyle === 1; });
+            var haploNodes = nodeList.filter(function (n) {
+                return n.nodestyle === 1;
+            });
             var idx = haploNodes.indexOf(node);
             return idx >= 0 ? 'H' + (idx + 1) : null;
         }
@@ -2624,14 +2659,18 @@ $(function () {
             // 3-col hapconf: use the hap name stored in node.hap (e.g. "H1")
             if (hapconfColumns === 3 && node.hap) return node.hap;
             // 2-col hapconf or no hapconf: use the first sequence name in the node
-            var names = node.name ? node.name.split('\n').filter(function (s) { return s.trim() !== ''; }) : [];
+            var names = node.name ? node.name.split('\n').filter(function (s) {
+                return s.trim() !== '';
+            }) : [];
             return names.length > 0 ? names[0] : getHaplotypeLabel(node);
         }
 
         function showNodeInfo(node) {
             var isHaplotype = node.nodestyle === 1;
             var haploLabel = getNodeDisplayLabel(node);
-            var names = node.name ? node.name.split('\n').filter(function (s) { return s.trim() !== ''; }) : [];
+            var names = node.name ? node.name.split('\n').filter(function (s) {
+                return s.trim() !== '';
+            }) : [];
 
             var html = '<div style="padding:10px;">';
             // Top: haplotype label
@@ -2649,11 +2688,15 @@ $(function () {
 
             if (isHaplotype) {
                 var freq = 0;
-                node.proportions.forEach(function (p) { freq += p.value; });
+                node.proportions.forEach(function (p) {
+                    freq += p.value;
+                });
                 html += '<tr><td style="color:#666; padding:3px 0; white-space:nowrap;">Frequency:</td>' +
                     '<td style="padding:3px 4px;">' + freq + '</td></tr>';
 
-                var activeGroups = node.proportions.filter(function (p) { return p.value > 0; });
+                var activeGroups = node.proportions.filter(function (p) {
+                    return p.value > 0;
+                });
                 if (activeGroups.length > 0) {
                     html += '<tr><td style="color:#666; padding:3px 0; vertical-align:top; white-space:nowrap;">Groups:</td><td style="padding:3px 4px;">';
                     activeGroups.forEach(function (p) {
@@ -2677,7 +2720,7 @@ $(function () {
                         if (found && found.length > 0) rec = w2ui.haplotypes.records[found[0]];
                     }
                     var seqGroup = rec ? rec.group : null;
-                    var seqTime  = (rec && rec.time !== undefined && !isNaN(rec.time)) ? rec.time : null;
+                    var seqTime = (rec && rec.time !== undefined && !isNaN(rec.time)) ? rec.time : null;
                     var seqColor = rec ? '#' + rec.color : null;
 
                     var tagHtml = '';
@@ -3072,17 +3115,17 @@ $(function () {
         $('#advTextOffset').w2field('float', {min: 0, max: 50, step: 0.5, arrows: false});
 
         $('#adv-apply').on('click', function () {
-            var newRadius    = parseFloat($('#advStandRadius').val());
+            var newRadius = parseFloat($('#advStandRadius').val());
             var newLineWidth = parseFloat($('#advLineWidth').val());
-            var newOuter     = parseFloat($('#advOuterRadiusCoeff').val());
-            var newInner     = parseFloat($('#advInnerRadiusCoeff').val());
+            var newOuter = parseFloat($('#advOuterRadiusCoeff').val());
+            var newInner = parseFloat($('#advInnerRadiusCoeff').val());
             var newTextOffset = parseFloat($('#advTextOffset').val());
 
             var errors = [];
-            if (isNaN(newRadius) || newRadius <= 0)    errors.push('Std. Radius must be > 0.');
+            if (isNaN(newRadius) || newRadius <= 0) errors.push('Std. Radius must be > 0.');
             if (isNaN(newLineWidth) || newLineWidth <= 0) errors.push('Line Width must be > 0.');
-            if (isNaN(newOuter) || newOuter < 1)       errors.push('Outer Radius Coeff must be \u2265 1.');
-            if (isNaN(newInner) || newInner > 1)       errors.push('Inner Radius Coeff must be \u2264 1.');
+            if (isNaN(newOuter) || newOuter < 1) errors.push('Outer Radius Coeff must be \u2265 1.');
+            if (isNaN(newInner) || newInner > 1) errors.push('Inner Radius Coeff must be \u2264 1.');
             if (isNaN(newTextOffset) || newTextOffset < 0) errors.push('Text Offset must be \u2265 0.');
 
             var $err = $('#adv-layout-error');
@@ -3100,15 +3143,19 @@ $(function () {
                 standardRadius = newRadius;
                 nodeList.forEach(function (node) {
                     node.radius = node.radius * scale;
-                    node.proportions.forEach(function (p) { p.radius = p.radius * scale; });
-                    node.timeProportions.forEach(function (p) { if (p.radius) p.radius = p.radius * scale; });
+                    node.proportions.forEach(function (p) {
+                        p.radius = p.radius * scale;
+                    });
+                    node.timeProportions.forEach(function (p) {
+                        if (p.radius) p.radius = p.radius * scale;
+                    });
                 });
             }
 
-            linewidth        = newLineWidth;
+            linewidth = newLineWidth;
             outerRadiusCoeff = newOuter;
             innerRadiusCoeff = newInner;
-            textOffset       = newTextOffset;
+            textOffset = newTextOffset;
 
             updateSVG();
             $('#advanced-settings-overlay').hide();
@@ -3127,7 +3174,7 @@ $(function () {
 
         $('#help').click(function () {
             $().w2popup({
-                url: 'docs/help.html', title: 'tcsBU HELP', width: 800, height: 500,
+                url: 'help.html', title: 'tcsBU HELP', width: 800, height: 500,
             });
         });
     } else {
