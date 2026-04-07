@@ -9,6 +9,7 @@ import os
 from typing import Optional, Dict, Callable
 
 from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QApplication, QTextEdit, QSplitter, QPushButton
@@ -117,6 +118,10 @@ class MainWindowUI(QMainWindow):
         x, y = self.DEFAULT_WINDOW_POSITION
         width, height = self.DEFAULT_WINDOW_SIZE
         self.setGeometry(x, y, width, height)
+
+        icon_path = os.path.join(self.current_directory, "statics", "icon", "netst.ico")
+        if os.path.isfile(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
     def _center_on_screen(self):
         """Center the window on screen"""
