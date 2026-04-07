@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 # Safe WebEngine import with fallback
 try:
     from PyQt6.QtWebEngineWidgets import QWebEngineView
+
     WEBENGINE_AVAILABLE = True
 except ImportError:
     WEBENGINE_AVAILABLE = False
@@ -33,19 +34,19 @@ from .haplotype_tab_widget import HaplotypeTabWidget
 
 class FallbackWebView(QTextEdit):
     """Fallback widget when WebEngine is not available"""
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
         self.setText("WebEngine not available\n\n"
                      "Please install PyQt6-WebEngine:\npip install PyQt6-WebEngine")
-    
+
     def setUrl(self, url):
         self.setText(f"URL: {url.toString() if hasattr(url, 'toString') else url}")
-    
+
     def back(self):
         pass
-    
+
     def forward(self):
         pass
 
@@ -69,15 +70,15 @@ class MainWindowUI(QMainWindow):
     | Status Bar                                        |
     +--------------------------------------------------+
     """
-    
+
     DEFAULT_WINDOW_TITLE = "Haplotype Network Analysis Tool"
     DEFAULT_WINDOW_SIZE = (1400, 900)
     DEFAULT_WINDOW_POSITION = (100, 100)
-    
+
     TAB_NAMES = {
-        'index':     "Home",
-        'network':   "Network",
-        'data':      "Data",
+        'index': "Home",
+        'network': "Network",
+        'data': "Data",
         'haplotype': "Haplotype",
     }
 
@@ -98,25 +99,25 @@ class MainWindowUI(QMainWindow):
         # UI builders
         self.menu_builder: Optional[MenuBarBuilder] = None
         self.status_bar_widget: Optional[StatusBarWidget] = None
-        
+
         # Application directory
         self.current_directory = os.path.dirname(os.path.abspath(__file__))
         self.current_directory = os.path.dirname(self.current_directory)
-        
+
         # Language setting
         self.language = "en"
-        
+
         # Initialize UI
         self._init_window()
         self._init_ui()
-    
+
     def _init_window(self):
         """Initialize window basic properties"""
         self.setWindowTitle(self.DEFAULT_WINDOW_TITLE)
         x, y = self.DEFAULT_WINDOW_POSITION
         width, height = self.DEFAULT_WINDOW_SIZE
         self.setGeometry(x, y, width, height)
-    
+
     def _center_on_screen(self):
         """Center the window on screen"""
         screen = QApplication.primaryScreen().geometry()
@@ -124,7 +125,7 @@ class MainWindowUI(QMainWindow):
         x = (screen.width() - window_geometry.width()) // 2
         y = (screen.height() - window_geometry.height()) // 2
         self.move(x, y)
-    
+
     def _init_ui(self):
         """Initialize user interface"""
         central_widget = QWidget()
@@ -167,7 +168,7 @@ class MainWindowUI(QMainWindow):
         main_layout.addWidget(self._splitter, 1)
 
         # Narrow toggle strip to the right of the splitter (always visible)
-        self._panel_toggle_btn = QPushButton("◀")
+        self._panel_toggle_btn = QPushButton("▶")
         self._panel_toggle_btn.setFixedWidth(18)
         self._panel_toggle_btn.setToolTip("Collapse output panel")
         self._panel_toggle_btn.setStyleSheet(
@@ -190,16 +191,16 @@ class MainWindowUI(QMainWindow):
         if self.output_panel.isVisible():
             self._panel_last_width = self._splitter.sizes()[1]
             self.output_panel.setVisible(False)
-            self._panel_toggle_btn.setText("▶")
+            self._panel_toggle_btn.setText("◀")
             self._panel_toggle_btn.setToolTip("Expand output panel")
         else:
             self.output_panel.setVisible(True)
             total = sum(self._splitter.sizes())
             restore = self._panel_last_width or 300
             self._splitter.setSizes([total - restore, restore])
-            self._panel_toggle_btn.setText("◀")
+            self._panel_toggle_btn.setText("▶")
             self._panel_toggle_btn.setToolTip("Collapse output panel")
-    
+
     def _create_index_tab(self):
         """Create the Index (welcome) tab — always the first tab."""
         self.index_tab = IndexTabWidget()
@@ -212,19 +213,19 @@ class MainWindowUI(QMainWindow):
             self.web_view_main.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         else:
             self.web_view_main = FallbackWebView()
-        
+
         self.tab_widget.addTab(self.web_view_main, self.TAB_NAMES['network'])
-    
+
     def _create_data_tab(self):
         """Create data tab"""
         self.data_tab = DataTabWidget()
         self.tab_widget.addTab(self.data_tab, self.TAB_NAMES['data'])
-    
+
     def setup_menus(self, callbacks: Dict[str, Callable]):
         """Setup menu bar"""
         self.menu_builder = MenuBarBuilder(self)
         self.menu_builder.build(callbacks)
-    
+
     def load_main_page(self, html_path: str):
         """Load main network view page"""
         if os.path.isfile(html_path):
@@ -233,9 +234,9 @@ class MainWindowUI(QMainWindow):
     def switch_to_tab(self, tab_name: str):
         """Switch to the named tab using widget references (robust against index changes)."""
         widget_map = {
-            'index':     self.index_tab,
-            'network':   self.web_view_main,
-            'data':      self.data_tab,
+            'index': self.index_tab,
+            'network': self.web_view_main,
+            'data': self.data_tab,
             'haplotype': self.haplotype_tab,
         }
         widget = widget_map.get(tab_name)
@@ -259,26 +260,26 @@ class MainWindowUI(QMainWindow):
 
         # Switch focus to the haplotype tab so the user notices it
         self.switch_to_tab('haplotype')
-    
+
     def set_status(self, message: str):
         """Set status bar message"""
         if self.status_bar_widget:
             self.status_bar_widget.set_status(message)
-    
+
     def set_progress(self, value: int):
         """Set progress bar value (0-100)"""
         if self.status_bar_widget:
             self.status_bar_widget.set_progress(value)
-    
+
     def append_log(self, message: str, level: str = 'INFO'):
         """Append log message"""
         if self.output_panel:
             self.output_panel.append_log(message, level)
-    
+
     def get_current_directory(self) -> str:
         """Get application directory"""
         return self.current_directory
-    
+
     def get_output_path(self) -> str:
         """Get output path"""
         if self.output_panel:
