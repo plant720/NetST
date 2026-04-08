@@ -155,9 +155,6 @@ class MainForm(MainWindowUI):
         self._setup_menus()
         self._setup_connections()
 
-        # Delayed loading of initial pages
-        QTimer.singleShot(100, self._load_initial_pages)
-
     def _init_components(self):
         """Initialize components."""
         self.data_tab.set_model(self.table_model)
@@ -200,9 +197,14 @@ class MainForm(MainWindowUI):
         """Setup signal connections."""
         self.table_model.dataChanged.connect(self._update_selected_count)
         self.data_tab.selection_changed.connect(self._update_selected_count)
-        # Connect WebEngine loadFinished so we can inject data JS after each analysis.
+        # WebEngine signals are connected in _after_webview_init() once the real
+        # QWebEngineView has been lazily created (after the window is shown).
+
+    def _after_webview_init(self):
+        """Connect WebEngine signals and load initial pages once QWebEngineView is ready."""
         if hasattr(self.web_view_main, 'loadFinished'):
             self.web_view_main.loadFinished.connect(self._on_web_view_load_finished)
+        self._load_initial_pages()
 
     def _load_initial_pages(self):
         """Load initial HTML pages."""

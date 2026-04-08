@@ -8,7 +8,7 @@ separating UI design from business logic.
 import os
 from typing import Optional, Dict, Callable
 
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QUrl, QTimer
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QTextEdit, QSplitter, QPushButton
@@ -110,6 +110,9 @@ class MainWindowUI(QMainWindow):
         # Language setting
         self.language = "en"
 
+        # Flag to guard single lazy init of QWebEngineView
+        self._webview_initialized = False
+
         # Initialize UI
         self._init_window()
         self._init_ui()
@@ -202,14 +205,61 @@ class MainWindowUI(QMainWindow):
         self.tab_widget.addTab(self.index_tab, self.TAB_NAMES['index'])
 
     def _create_network_tab(self):
-        """Create network view tab"""
+        """Create network view tab.
+
+        When WebEngine is available, a lightweight FallbackWebView placeholder is
+        inserted now (during __init__) to avoid triggering Chromium initialisation
+        before the window is shown.  The real QWebEngineView is swapped in lazily
+        via showEvent → _init_webview_lazy().
+        """
         if WEBENGINE_AVAILABLE:
-            self.web_view_main = QWebEngineView()
-            self.web_view_main.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+            # Placeholder: replaced by QWebEngineView in _init_webview_lazy()
+            self.web_view_main = FallbackWebView()
         else:
             self.web_view_main = FallbackWebView()
 
         self.tab_widget.addTab(self.web_view_main, self.TAB_NAMES['network'])
+
+    # ------------------------------------------------------------------
+    # Lazy QWebEngineView initialisation
+    # ------------------------------------------------------------------
+
+    def showEvent(self, event):
+        """On first show, schedule QWebEngineView creation after the event loop starts."""
+        super().showEvent(event)
+        if WEBENGINE_AVAILABLE and not self._webview_initialized:
+            # singleShot(0) fires after the current show/paint cycle completes,
+            # ensuring the window is fully visible before Chromium initialises.
+            QTimer.singleShot(0, self._init_webview_lazy)
+
+    def _init_webview_lazy(self):
+        """Replace the placeholder with a real QWebEngineView (called once after show)."""
+        if self._webview_initialized or not WEBENGINE_AVAILABLE:
+            return
+        self._webview_initialized = True
+
+        # Record where the placeholder sits so we can restore tab order
+        old_idx = self.tab_widget.indexOf(self.web_view_main)
+
+        real_view = QWebEngineView()
+        real_view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+
+        if old_idx >= 0:
+            self.tab_widget.removeTab(old_idx)
+            self.tab_widget.insertTab(old_idx, real_view, self.TAB_NAMES['network'])
+        else:
+            self.tab_widget.addTab(real_view, self.TAB_NAMES['network'])
+
+        self.web_view_main = real_view
+
+        # Notify subclasses so they can wire up signals and load initial content
+        self._after_webview_init()
+
+    def _after_webview_init(self):
+        """Hook called after QWebEngineView has been lazily created.
+
+        Override in subclasses to connect signals and load initial pages.
+        """
 
     def _create_data_tab(self):
         """Create data tab"""
