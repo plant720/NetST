@@ -25,12 +25,12 @@ from PyQt6.QtWidgets import (
 
 # ── Nucleotide colour scheme  (background, foreground) ──────────────────────
 _BASE_STYLE = {
-    'A': ('#C8E6C9', '#1B5E20'),   # green
-    'T': ('#FFCDD2', '#B71C1C'),   # red
-    'C': ('#BBDEFB', '#0D47A1'),   # blue
-    'G': ('#E1BEE7', '#4A148C'),   # purple
-    '-': ('#F5F5F5', '#9E9E9E'),   # gap – grey
-    'N': ('#FFF9C4', '#E65100'),   # ambiguous – amber
+    'A': ('#C8E6C9', '#1B5E20'),  # green
+    'T': ('#FFCDD2', '#B71C1C'),  # red
+    'C': ('#BBDEFB', '#0D47A1'),  # blue
+    'G': ('#E1BEE7', '#4A148C'),  # purple
+    '-': ('#F5F5F5', '#9E9E9E'),  # gap – grey
+    'N': ('#FFF9C4', '#E65100'),  # ambiguous – amber
 }
 _DEFAULT_STYLE: Tuple[str, str] = ('#FAFAFA', '#333333')
 
@@ -43,7 +43,7 @@ class AlignmentTabWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._sequences: List[Tuple[str, str]] = []   # (name, sequence)
+        self._sequences: List[Tuple[str, str]] = []  # (name, sequence)
         self._display_positions: List[int] = []
         self._setup_ui()
 

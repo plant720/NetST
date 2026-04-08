@@ -5,7 +5,7 @@ Allows the user to select a network algorithm (original_tcs, modified_tcs, msn, 
 and configure the corresponding fastHaN parameters before running the analysis.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, List
 
 from PyQt6.QtWidgets import (
@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QGroupBox, QComboBox, QSpinBox, QCheckBox,
     QPushButton, QLabel, QFrame, QSizePolicy,
 )
-from PyQt6.QtCore import Qt
 
 from .language_manager import lang_manager
 
@@ -25,11 +24,11 @@ from .language_manager import lang_manager
 @dataclass
 class HaplotypeNetworkConfig:
     """Parameters chosen by the user for a fastHaN run."""
-    algorithm: str = "modified_tcs"   # one of: original_tcs / modified_tcs / msn / mjn
-    threads: int = 8                   # -t  (original_tcs, modified_tcs, mjn)
-    ambiguous: int = 0                 # -a  (original_tcs only) 0/1
-    merge: int = 0                     # -m  (original_tcs only) 0/1
-    epsilon: int = 0                   # -e  (msn, mjn)
+    algorithm: str = "modified_tcs"  # one of: original_tcs / modified_tcs / msn / mjn
+    threads: int = 8  # -t  (original_tcs, modified_tcs, mjn)
+    ambiguous: int = 0  # -a  (original_tcs only) 0/1
+    merge: int = 0  # -m  (original_tcs only) 0/1
+    epsilon: int = 0  # -e  (msn, mjn)
 
     def to_extra_args(self) -> List[str]:
         """Build the extra CLI arguments list for fastHaN (excluding -i / -o)."""
@@ -55,10 +54,10 @@ class HaplotypeNetworkConfig:
 
 # Algorithm display labels → fastHaN identifiers
 _ALGORITHMS = [
-    ("original_tcs",  "Original TCS"),
-    ("modified_tcs",  "Modified TCS"),
-    ("msn",           "MSN (Minimum Spanning Network)"),
-    ("mjn",           "MJN (Median-Joining Network)"),
+    ("original_tcs", "Original TCS"),
+    ("modified_tcs", "Modified TCS"),
+    ("msn", "MSN (Minimum Spanning Network)"),
+    ("mjn", "MJN (Median-Joining Network)"),
 ]
 
 
@@ -74,7 +73,7 @@ class HaplotypeNetworkDialog(QDialog):
         super().__init__(parent)
         self._config = HaplotypeNetworkConfig()
         self._build_ui()
-        self._on_algorithm_changed(0)   # initialise parameter visibility
+        self._on_algorithm_changed(0)  # initialise parameter visibility
 
     # ------------------------------------------------------------------
     # UI construction

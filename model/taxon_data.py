@@ -2,14 +2,14 @@
 Data model representing a single taxon/sequence entry.
 Corresponds to the rows in the VB.NET DataGridView.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 
 @dataclass
 class TaxonData:
     """Data model for a single taxon/sequence entry."""
-    
+
     id: int = 0
     name: str = ""
     sequence: str = ""
@@ -18,19 +18,19 @@ class TaxonData:
     quantity: int = 1
     organism: str = ""
     selected: bool = True
-    
+
     @property
     def display_sequence(self) -> str:
         """Returns truncated sequence for display (max 1000 chars)."""
         if self.sequence and len(self.sequence) > 1000:
             return self.sequence[:1000] + "..."
         return self.sequence
-    
+
     @property
     def sequence_length(self) -> int:
         """Returns the length of the sequence."""
         return len(self.sequence) if self.sequence else 0
-    
+
     def is_valid_continuous_traits(self) -> bool:
         """Validates that continuous traits is numeric."""
         try:
@@ -38,7 +38,7 @@ class TaxonData:
             return True
         except (ValueError, TypeError):
             return False
-    
+
     def validate(self) -> tuple[bool, Optional[str]]:
         """
         Validate the taxon data for analysis.
@@ -48,7 +48,7 @@ class TaxonData:
             return False, f"ID: {self.id}, Name: {self.name} - Continuous Traits '{self.continuous_traits}' is not a numerical value."
 
         return True, None
-    
+
     def to_fasta_header(self, delimiter: str = "|") -> str:
         """Generate FASTA header string."""
         parts = [
@@ -61,7 +61,7 @@ class TaxonData:
     def to_analysis_header(self) -> str:
         """Generate header for analysis FASTA file."""
         return f">{self.name}"
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
@@ -74,7 +74,7 @@ class TaxonData:
             'organism': self.organism,
             'selected': self.selected
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'TaxonData':
         """Create TaxonData from dictionary."""
@@ -88,6 +88,6 @@ class TaxonData:
             organism=data.get('organism', ''),
             selected=data.get('selected', True)
         )
-    
+
     def __str__(self) -> str:
         return f"TaxonData(id={self.id}, name='{self.name}', seq_len={self.sequence_length})"

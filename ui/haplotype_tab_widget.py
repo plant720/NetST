@@ -26,12 +26,12 @@ from PyQt6.QtWidgets import (
 
 # ── Nucleotide colour scheme  (background, foreground) ──────────────────────
 _BASE_STYLE: Dict[str, Tuple[str, str]] = {
-    'A': ('#C8E6C9', '#1B5E20'),   # green
-    'T': ('#FFCDD2', '#B71C1C'),   # red
-    'C': ('#BBDEFB', '#0D47A1'),   # blue
-    'G': ('#E1BEE7', '#4A148C'),   # purple
-    '-': ('#F5F5F5', '#9E9E9E'),   # gap – grey
-    'N': ('#FFF9C4', '#E65100'),   # ambiguous – amber
+    'A': ('#C8E6C9', '#1B5E20'),  # green
+    'T': ('#FFCDD2', '#B71C1C'),  # red
+    'C': ('#BBDEFB', '#0D47A1'),  # blue
+    'G': ('#E1BEE7', '#4A148C'),  # purple
+    '-': ('#F5F5F5', '#9E9E9E'),  # gap – grey
+    'N': ('#FFF9C4', '#E65100'),  # ambiguous – amber
 }
 _DEFAULT_STYLE: Tuple[str, str] = ('#FAFAFA', '#333333')
 
@@ -118,7 +118,7 @@ class HaplotypeTabWidget(QWidget):
         bl.setSpacing(2)
         bl.addWidget(_section_header("Sequence → Haplotype Mapping"))
         self._seq_table = _make_table(["Sequence Name", "Haplotype"])
-        bl.addWidget(self._seq_table, 1)   # stretch=1 mirrors the top pane fix
+        bl.addWidget(self._seq_table, 1)  # stretch=1 mirrors the top pane fix
         outer.addWidget(bottom)
 
         # Give roughly equal initial space to both panes
@@ -146,8 +146,8 @@ class HaplotypeTabWidget(QWidget):
 
         Safe to call multiple times — each call fully replaces the previous data.
         """
-        hap_path   = os.path.join(output_path, f"{prefix}_hap_trait.csv")
-        seq_path   = os.path.join(output_path, f"{prefix}_seq.meta.csv")
+        hap_path = os.path.join(output_path, f"{prefix}_hap_trait.csv")
+        seq_path = os.path.join(output_path, f"{prefix}_seq.meta.csv")
         fasta_path = os.path.join(output_path, f"{prefix}_hap.fasta")
 
         hap_count = self._fill_hap_table(hap_path)
@@ -343,11 +343,11 @@ def _make_table(headers: List[str]) -> QTableWidget:
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.setShowGrid(True)
-    table.setSortingEnabled(False)   # column-header click must not sort
+    table.setSortingEnabled(False)  # column-header click must not sort
     h = table.horizontalHeader()
     h.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
     h.setStretchLastSection(True)
-    h.setSectionsClickable(False)    # visually disable the clickable header
+    h.setSectionsClickable(False)  # visually disable the clickable header
     table.verticalHeader().setDefaultSectionSize(24)
     table.verticalHeader().setVisible(False)
     return table

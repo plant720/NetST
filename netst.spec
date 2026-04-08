@@ -57,18 +57,10 @@ a = Analysis(
         'PyQt6.QtWebChannel',
         'PyQt6.QtPrintSupport',
         'PyQt6.sip',
-        # pandas has internal dynamic imports
-        'pandas._libs.tslibs.base',
-        'pandas._libs.tslibs.np_datetime',
-        'pandas._libs.tslibs.nattype',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[
-        'matplotlib', 'scipy', 'IPython', 'tkinter',
-        'PyQt5', 'PySide2', 'PySide6',
-    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

@@ -592,7 +592,7 @@ class AnalysisService:
             return False, False
 
     def run_haplotype_calculation(self, taxons: List[TaxonData], output_path: str,
-                                   prefix: str, config) -> AnalysisResult:
+                                  prefix: str, config) -> AnalysisResult:
         """
         Run MSA then calculate haplotypes without building a network.
 
