@@ -28,18 +28,14 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-# macOS WebEngine GPU crash fix
-# Disable GPU hardware acceleration for WebEngine to fix crashes on Apple Silicon Macs
-# running x86_64 Python via Rosetta
-os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS',
-                      '--no-sandbox '
-                      '--disable-gpu '
-                      '--disable-software-rasterizer '
-                      '--disable-gpu-compositing '
-                      '--disable-gpu-rasterization '
-                      '--disable-gpu-sandbox '
-                      '--in-process-gpu'
-                      )
+# Platform-specific WebEngine flags
+if sys.platform.startswith('win'):
+    # Windows x86_64: disable sandbox for compatibility in restricted environments
+    os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--no-sandbox')
+# macOS arm64 (native Apple Silicon Python): no flags needed.
+# The GPU-disabling flags above were only required when running x86_64 Python
+# through Rosetta, which caused GPU/sandbox crashes.  With native arm64 Python,
+# WebEngine runs correctly without any workarounds.
 
 
 class AnalysisWorker(QThread):
