@@ -13,10 +13,21 @@ Output:
 
 import sys
 import os
+import platform
 from PyInstaller.utils.hooks import collect_data_files
 
 IS_WINDOWS = sys.platform.startswith('win')
 IS_MAC     = sys.platform == 'darwin'
+
+# Target architecture:
+#   macOS  – native arm64 Python (no Rosetta)
+#   Windows – native x86_64 Python
+if IS_MAC:
+    _target_arch = 'arm64'
+elif IS_WINDOWS:
+    _target_arch = 'x86_64'
+else:
+    _target_arch = None   # Linux: let PyInstaller detect
 
 block_cipher = None
 
@@ -89,7 +100,7 @@ exe = EXE(
     upx=True,
     console=False,       # No terminal window (GUI app)
     argv_emulation=False,
-    target_arch=None,
+    target_arch=_target_arch,
     codesign_identity=None,
     entitlements_file=None,
     icon=_icon,
