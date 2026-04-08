@@ -870,9 +870,8 @@ class MainForm(MainWindowUI):
         self._show_netst_help()
 
     def _show_tcsbu_help(self):
-        """Display TCS-BU help PDF in an internal viewer dialog."""
-        from PyQt6.QtWebEngineWidgets import QWebEngineView
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout
+        """Open TCS-BU help PDF with the system default PDF viewer."""
+        from PyQt6.QtGui import QDesktopServices
         from PyQt6.QtCore import QUrl
 
         pdf_path = os.path.join(self.current_directory, "statics", "docs", "tcsbu.pdf")
@@ -880,136 +879,19 @@ class MainForm(MainWindowUI):
             QMessageBox.warning(self, "TCS-BU Help",
                                 f"TCS-BU help PDF not found:\n{pdf_path}")
             return
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle("TCS-BU Help")
-        dlg.resize(960, 720)
-        layout = QVBoxLayout(dlg)
-        layout.setContentsMargins(0, 0, 0, 0)
-        view = QWebEngineView()
-        view.setUrl(QUrl.fromLocalFile(pdf_path))
-        layout.addWidget(view)
-        dlg.exec()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
 
     def _show_netst_help(self):
-        """Render and display the NetST Markdown help document in the Network tab."""
-        md_path = os.path.join(self.current_directory, "statics", "docs", "netst.md")
-        if not os.path.isfile(md_path):
-            QMessageBox.information(self, "NetST Help",
-                                    "NetST help documentation not found.")
+        """Open NetST help PDF with the system default PDF viewer."""
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+
+        pdf_path = os.path.join(self.current_directory, "statics", "docs", "netst.pdf")
+        if not os.path.isfile(pdf_path):
+            QMessageBox.warning(self, "NetST Help",
+                                f"NetST help PDF not found:\n{pdf_path}")
             return
-
-        try:
-            with open(md_path, 'r', encoding='utf-8') as fh:
-                md_text = fh.read()
-            html_body = self._md_to_html(md_text)
-            html = (
-                "<!DOCTYPE html><html><head>"
-                "<meta charset='UTF-8'>"
-                "<style>"
-                "body{font-family:Arial,sans-serif;margin:30px 60px;color:#222;line-height:1.7;}"
-                "h1{color:#2c6fad;border-bottom:2px solid #2c6fad;padding-bottom:6px;}"
-                "h2{color:#3a7dc9;margin-top:28px;border-bottom:1px solid #ccd;padding-bottom:4px;}"
-                "h3{color:#4a8ed9;margin-top:20px;}"
-                "pre{background:#f4f4f4;padding:12px;border-radius:5px;overflow-x:auto;}"
-                "code{background:#f0f0f0;padding:1px 4px;border-radius:3px;font-size:0.92em;}"
-                "ul{padding-left:22px;}li{margin-bottom:4px;}"
-                "hr{border:none;border-top:1px solid #ddd;margin:20px 0;}"
-                "table{border-collapse:collapse;width:100%;margin:10px 0;}"
-                "th,td{border:1px solid #ccc;padding:6px 12px;text-align:left;}"
-                "th{background:#e8eef5;}"
-                "</style></head><body>"
-                + html_body
-                + "</body></html>"
-            )
-            # Write to a temporary HTML file so the WebEngine can load it
-            tmp_html = os.path.join(self.current_directory, "statics", "docs", "_netst_help.html")
-            with open(tmp_html, 'w', encoding='utf-8') as fh:
-                fh.write(html)
-            self.load_main_page(tmp_html)
-            self.switch_to_tab('network')
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load NetST help:\n{e}")
-
-    @staticmethod
-    def _md_to_html(md_text: str) -> str:
-        """Convert simple Markdown to HTML (no external dependencies)."""
-        import re
-        import html as html_module
-
-        lines = md_text.split('\n')
-        output: list = []
-        in_code = False
-        in_list = False
-
-        def process_inline(text: str) -> str:
-            text = html_module.escape(text)
-            text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-            text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
-            text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
-            return text
-
-        for line in lines:
-            # Code fence toggle
-            if line.startswith('```'):
-                if in_list:
-                    output.append('</ul>')
-                    in_list = False
-                if in_code:
-                    output.append('</pre>')
-                    in_code = False
-                else:
-                    output.append('<pre>')
-                    in_code = True
-                continue
-
-            if in_code:
-                output.append(html_module.escape(line))
-                continue
-
-            stripped = line.strip()
-
-            # Close open list on blank line or block element
-            def _close_list():
-                nonlocal in_list
-                if in_list:
-                    output.append('</ul>')
-                    in_list = False
-
-            if not stripped:
-                _close_list()
-                output.append('')
-                continue
-
-            if stripped in ('---', '***', '___'):
-                _close_list()
-                output.append('<hr>')
-                continue
-
-            if stripped.startswith('### '):
-                _close_list()
-                output.append(f'<h3>{process_inline(stripped[4:])}</h3>')
-            elif stripped.startswith('## '):
-                _close_list()
-                output.append(f'<h2>{process_inline(stripped[3:])}</h2>')
-            elif stripped.startswith('# '):
-                _close_list()
-                output.append(f'<h1>{process_inline(stripped[2:])}</h1>')
-            elif stripped.startswith('- ') or stripped.startswith('* '):
-                if not in_list:
-                    output.append('<ul>')
-                    in_list = True
-                output.append(f'<li>{process_inline(stripped[2:])}</li>')
-            else:
-                _close_list()
-                output.append(f'<p>{process_inline(stripped)}</p>')
-
-        if in_list:
-            output.append('</ul>')
-        if in_code:
-            output.append('</pre>')
-
-        return '\n'.join(output)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
 
     # ==================== Helper Methods ====================
 
