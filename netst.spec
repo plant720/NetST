@@ -13,6 +13,7 @@ Output:
 
 import sys
 import os
+import platform
 from PyInstaller.utils.hooks import collect_data_files
 
 IS_WINDOWS = sys.platform.startswith('win')
@@ -27,6 +28,8 @@ elif IS_WINDOWS:
     _target_arch = 'x86_64'
 else:
     _target_arch = None   # Linux: let PyInstaller detect
+
+block_cipher = None
 
 # ── Data files bundled alongside the executable ──────────────────────────────
 datas = [
@@ -58,10 +61,13 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 # ── Platform icon ─────────────────────────────────────────────────────────────
 if IS_WINDOWS:
@@ -96,6 +102,7 @@ exe = EXE(
 coll = COLLECT(
     exe,
     a.binaries,
+    a.zipfiles,
     a.datas,
     strip=False,
     upx=True,
