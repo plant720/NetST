@@ -904,7 +904,8 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "statics", "icon", "netst.ico")
+    _base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    icon_path = os.path.join(_base, "statics", "icon", "netst.ico")
     if os.path.isfile(icon_path):
         from PyQt6.QtGui import QIcon
         app.setWindowIcon(QIcon(icon_path))

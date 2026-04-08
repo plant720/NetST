@@ -6,6 +6,7 @@ separating UI design from business logic.
 """
 
 import os
+import sys
 from typing import Optional, Dict, Callable
 
 from PyQt6.QtCore import Qt, QUrl
@@ -104,9 +105,11 @@ class MainWindowUI(QMainWindow):
         self.menu_builder: Optional[MenuBarBuilder] = None
         self.status_bar_widget: Optional[StatusBarWidget] = None
 
-        # Application directory
-        self.current_directory = os.path.dirname(os.path.abspath(__file__))
-        self.current_directory = os.path.dirname(self.current_directory)
+        # Application directory — works in both normal and PyInstaller-bundled mode
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            self.current_directory = sys._MEIPASS
+        else:
+            self.current_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
         # Language setting
         self.language = "en"
