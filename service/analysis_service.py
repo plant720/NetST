@@ -708,7 +708,7 @@ class AnalysisService:
             return False
 
     def _generate_network_html(self, html_file: str, js_file: str) -> None:
-        """Generate network visualization HTML that uses statics/tcsbu/ resources.
+        """Generate network visualization HTML that uses static/tcsbu/ resources.
 
         The generated HTML embeds the data script (js_file) before tcsBU.js so
         that the auto-load block in tcsBU.js can call loadGraph/loadGroups/
@@ -719,7 +719,7 @@ class AnalysisService:
         """
         from pathlib import Path
 
-        tcsbu_dir = os.path.join(self.root_path, "statics", "tcsbu")
+        tcsbu_dir = os.path.join(self.root_path, "static", "tcsbu")
 
         def fu(name: str) -> str:
             """Return an absolute file:// URL for a tcsbu asset."""

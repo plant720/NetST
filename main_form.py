@@ -32,6 +32,8 @@ if current_dir not in sys.path:
 if sys.platform.startswith('win'):
     # Windows x86_64: disable sandbox for compatibility in restricted environments
     os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--no-sandbox')
+
+
 # macOS arm64 (native Apple Silicon Python): no flags needed.
 # The GPU-disabling flags above were only required when running x86_64 Python
 # through Rosetta, which caused GPU/sandbox crashes.  With native arm64 Python,
@@ -207,7 +209,7 @@ class MainForm(MainWindowUI):
     def _load_initial_pages(self):
         """Load initial HTML pages."""
         # Load the tcsBU interface as the default network tab view.
-        index_html = os.path.join(self.current_directory, "statics", "tcsbu", "index.html")
+        index_html = os.path.join(self.current_directory, "static", "tcsbu", "index.html")
         if os.path.isfile(index_html):
             self.load_main_page(index_html)
 
@@ -588,7 +590,7 @@ class MainForm(MainWindowUI):
         self._pending_js = None
 
         self.switch_to_tab('network')
-        waiting_page = os.path.join(self.current_directory, "statics", self.language, "waiting.html")
+        waiting_page = os.path.join(self.current_directory, "static", self.language, "waiting.html")
         if os.path.isfile(waiting_page):
             self.web_view_main.setUrl(QUrl.fromLocalFile(waiting_page))
 
@@ -614,7 +616,7 @@ class MainForm(MainWindowUI):
         loadHaplotypes / loadTraits functions are called without navigating away
         from index.html.
         """
-        index_html = os.path.join(self.current_directory, "statics", "tcsbu", "index.html")
+        index_html = os.path.join(self.current_directory, "static", "tcsbu", "index.html")
 
         if result.success:
             self.log_tab.append_success("Analysis completed!")
@@ -845,7 +847,7 @@ class MainForm(MainWindowUI):
         self.output_panel.append_info(lang_manager.get('msg_language_changed'))
 
         # Reload main page
-        main_page = os.path.join(self.current_directory, "statics", self.language, "main.html")
+        main_page = os.path.join(self.current_directory, "static", self.language, "main.html")
         if os.path.isfile(main_page):
             self.load_main_page(main_page)
 
@@ -871,7 +873,7 @@ class MainForm(MainWindowUI):
         from PyQt6.QtGui import QDesktopServices
         from PyQt6.QtCore import QUrl
 
-        pdf_path = os.path.join(self.current_directory, "statics", "docs", "tcsbu.pdf")
+        pdf_path = os.path.join(self.current_directory, "static", "docs", "tcsbu.pdf")
         if not os.path.isfile(pdf_path):
             QMessageBox.warning(self, "TCS-BU Help",
                                 f"TCS-BU help PDF not found:\n{pdf_path}")
@@ -883,7 +885,7 @@ class MainForm(MainWindowUI):
         from PyQt6.QtGui import QDesktopServices
         from PyQt6.QtCore import QUrl
 
-        pdf_path = os.path.join(self.current_directory, "statics", "docs", "netst.pdf")
+        pdf_path = os.path.join(self.current_directory, "static", "docs", "netst.pdf")
         if not os.path.isfile(pdf_path):
             QMessageBox.warning(self, "NetST Help",
                                 f"NetST help PDF not found:\n{pdf_path}")
