@@ -1,13 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
-# NetST.spec - PyInstaller 打包配置文件
-# 用法: pyinstaller NetST.spec --noconfirm
-# 输出: dist/NetST.app (macOS 应用程序包)
+# netst-win.spec - PyInstaller Windows 打包配置文件
+# 用法: pyinstaller netst-win.spec --noconfirm
+# 输出: dist/NetST/ 目录（含 NetST.exe）
 
 from PyInstaller.utils.hooks import collect_all
 
 # ======================== 资源与依赖配置 ========================
-# 非代码资源：static(图标/样式等), lib(外部库)
-datas = [('static', 'static'), ('lib/mac_arm64', 'lib/mac_arm64')]
+# 非代码资源：static(图标/样式等), lib/win(Windows 专用外部库)
+datas = [('static', 'static'), ('lib/win', 'lib/win')]
 binaries = []
 hiddenimports = []
 
@@ -24,8 +24,8 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=['rthook_qtwebengine.py'], # 运行时钩子：修正 QtWebEngine 路径
-    excludes=[                               # 排除不需要的 PyQt6 子模块（减小体积）
+    runtime_hooks=[],                       # Windows 无需 QtWebEngine 路径修正钩子
+    excludes=[                              # 排除不需要的 PyQt6 子模块（减小体积）
         'PyQt6.Qt3DCore', 'PyQt6.Qt3DRender', 'PyQt6.QtBluetooth',
         'PyQt6.QtNfc', 'PyQt6.QtSensors', 'PyQt6.QtSerialPort',
         'PyQt6.QtSql', 'PyQt6.QtTest', 'PyQt6.QtRemoteObjects',
@@ -43,16 +43,16 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='NetST',                           # 可执行文件名
+    name='NetST',                           # 可执行文件名（NetST.exe）
     debug=False,
     strip=False,
     upx=True,
     console=False,                          # GUI 应用，不显示终端窗口
     argv_emulation=False,
-    target_arch=None,                       # None = 自动检测 (arm64)
+    target_arch=None,                       # None = 自动检测架构（intel/arm）
     codesign_identity=None,
     entitlements_file=None,
-    icon=['static/icon/netst.icns'],        # 应用图标
+    icon=['static/icon/netst.ico'],         # Windows 应用图标
 )
 
 # 将可执行文件与资源收集到 dist/NetST/ 目录
@@ -64,17 +64,4 @@ coll = COLLECT(
     upx=True,
     upx_exclude=[],
     name='NetST',
-)
-
-# ======================== macOS .app 应用程序包 ========================
-app = BUNDLE(
-    coll,
-    name='NetST.app',
-    icon='static/icon/netst.icns',
-    bundle_identifier='com.netst.app',
-    info_plist={
-        'CFBundleDisplayName': 'NetST',
-        'CFBundleShortVersionString': '1.0.0',
-        'NSHighResolutionCapable': True,    # 支持 Retina 高分屏
-    },
 )

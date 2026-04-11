@@ -161,7 +161,7 @@ class AnalysisService:
             # ── Step 5: Run fastHaN ────────────────────────────────────────────
             self._log(f"Building {network_type} haplotype network with fastHaN...")
             network_executable = self._get_network_executable()
-            exe_path = os.path.join(self.lib_path, network_executable)
+            exe_path = os.path.join(self._get_platform_lib_path(), network_executable)
             seq_phy_file = f"{file_suffix}_seq.phy"
 
             if not os.path.isfile(exe_path):
@@ -301,10 +301,10 @@ class AnalysisService:
         candidates: List[Tuple[str, Optional[str]]] = []
 
         if self._is_windows():
-            mafft_dir = os.path.join(self.lib_path, "mafft-win")
+            mafft_dir = os.path.join(self._get_platform_lib_path(), "mafft-win")
             candidates.append((os.path.join(mafft_dir, "mafft.bat"), mafft_dir))
         elif self._is_mac():
-            mafft_dir = os.path.join(self.lib_path, "mafft-mac_arm64")
+            mafft_dir = os.path.join(self._get_platform_lib_path(), "mafft-mac")
             candidates.append((os.path.join(mafft_dir, "mafft.bat"), mafft_dir))
         else:
             linux_lib_mafft = os.path.join(self.lib_path, "mafft")
@@ -373,10 +373,17 @@ class AnalysisService:
         if extra_args is None:
             extra_args = []
 
-        candidates = [
-            os.path.join(self.lib_path, "muscle3"),
-            os.path.join(self.lib_path, "muscle"),
-        ]
+        platform_lib = self._get_platform_lib_path()
+        if self._is_windows():
+            candidates = [
+                os.path.join(platform_lib, "muscle3.exe"),
+                os.path.join(platform_lib, "muscle.exe"),
+            ]
+        else:
+            candidates = [
+                os.path.join(platform_lib, "muscle3"),
+                os.path.join(platform_lib, "muscle"),
+            ]
 
         for muscle_cmd in candidates:
             for base_args in (
@@ -776,11 +783,27 @@ class AnalysisService:
         else:  # Linux
             candidates = ["fastHaN_linux", "fastHaN"]
 
+        platform_lib = self._get_platform_lib_path()
         for name in candidates:
-            if os.path.isfile(os.path.join(self.lib_path, name)):
+            if os.path.isfile(os.path.join(platform_lib, name)):
                 return name
 
         return candidates[0]
+
+    def _get_platform_lib_path(self) -> str:
+        """Get the platform-specific lib subdirectory path.
+
+        Returns:
+            lib/win       on Windows
+            lib/mac_arm64 on macOS
+            lib/          on Linux (fallback)
+        """
+        if self._is_windows():
+            return os.path.join(self.lib_path, "win")
+        elif self._is_mac():
+            return os.path.join(self.lib_path, "mac_arm64")
+        else:
+            return self.lib_path
 
     @staticmethod
     def _is_windows() -> bool:
