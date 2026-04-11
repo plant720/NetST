@@ -304,7 +304,7 @@ class AnalysisService:
             mafft_dir = os.path.join(self.lib_path, "mafft-win")
             candidates.append((os.path.join(mafft_dir, "mafft.bat"), mafft_dir))
         elif self._is_mac():
-            mafft_dir = os.path.join(self.lib_path, "mafft-mac")
+            mafft_dir = os.path.join(self.lib_path, "mafft-mac_arm64")
             candidates.append((os.path.join(mafft_dir, "mafft.bat"), mafft_dir))
         else:
             linux_lib_mafft = os.path.join(self.lib_path, "mafft")

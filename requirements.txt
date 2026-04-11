@@ -12,3 +12,14 @@ chardet
 
 # 打包
 pyinstaller
+
+# macOS conda环境设置
+#CONDA_SUBDIR=osx-arm64 conda create -n NetST-arm64 python=3.10
+#conda activate NetST-arm64
+#pip install PyQt6 PyQt6-WebEngine pyinstaller chardet
+
+
+# windows conda环境设置
+#conda create -n NetST-win python=3.10
+#conda activate NetST-win
+#pip install PyQt6 PyQt6-WebEngine pyinstaller chardet
