@@ -17,8 +17,10 @@ from model.taxon_table_model import TaxonTableModel
 from service.analysis_service import AnalysisService, AnalysisResult, AlignmentResult
 from service.file_service import FileService
 from ui import MainWindowUI
+from ui.alignment_tab_widget import AlignmentTabWidget
 from ui.csv_traits_import_dialog import CsvTraitsImportDialog
 from ui.haplotype_network_dialog import HaplotypeNetworkDialog
+from ui.haplotype_tab_widget import HaplotypeTabWidget
 from ui.language_manager import lang_manager
 from ui.sequence_alignment_dialog import SequenceAlignmentDialog, SequenceAlignmentConfig
 from ui.standardization_dialog import StandardizationDialog
@@ -116,6 +118,37 @@ class HaplotypeWorker(QThread):
         self.finished.emit(result)
 
 
+class AlignmentTabLoadWorker(QThread):
+    """Parses an aligned FASTA file in the background so the Alignment tab
+    can be populated without blocking the UI thread."""
+
+    finished = pyqtSignal(object)  # parse_alignment_data() dict
+
+    def __init__(self, fasta_path: str):
+        super().__init__()
+        self.fasta_path = fasta_path
+
+    def run(self):
+        data = AlignmentTabWidget.parse_alignment_data(self.fasta_path)
+        self.finished.emit(data)
+
+
+class HaplotypeTabLoadWorker(QThread):
+    """Parses haplotype result files (FASTA + CSVs) in the background so the
+    Haplotype tab can be populated without blocking the UI thread."""
+
+    finished = pyqtSignal(object)  # parse_result_data() dict
+
+    def __init__(self, output_path: str, prefix: str):
+        super().__init__()
+        self.output_path = output_path
+        self.prefix = prefix
+
+    def run(self):
+        data = HaplotypeTabWidget.parse_result_data(self.output_path, self.prefix)
+        self.finished.emit(data)
+
+
 class MainForm(MainWindowUI):
     """
     Main Window Business Logic Class
@@ -147,6 +180,10 @@ class MainForm(MainWindowUI):
         self.analysis_worker: Optional[AnalysisWorker] = None
         self.alignment_worker: Optional[AlignmentWorker] = None
         self.haplotype_worker: Optional[HaplotypeWorker] = None
+        # Background loaders for the Alignment and Haplotype tabs. They parse
+        # result files so the tabs can be populated without blocking the UI.
+        self.alignment_tab_loader: Optional[AlignmentTabLoadWorker] = None
+        self.haplotype_tab_loader: Optional[HaplotypeTabLoadWorker] = None
 
         # Pending JavaScript to inject after the next successful page load in web_view_main.
         # Set by _on_analysis_finished; consumed by _on_web_view_load_finished.
@@ -609,12 +646,12 @@ class MainForm(MainWindowUI):
         self.analysis_worker.start()
 
     def _on_analysis_finished(self, result: AnalysisResult):
-        """Handle analysis completion.
+        """Handle network-analysis completion.
 
-        On success the generated JS data file (prefix.js) is injected into the
-        persistent index.html page so that tcsBU's loadGraph / loadGroups /
-        loadHaplotypes / loadTraits functions are called without navigating away
-        from index.html.
+        The Network page is rendered first (via tcsBU's loadGraph/... calls
+        injected into index.html). The Alignment and Haplotype tabs are then
+        populated by independent background loaders — neither blocks the
+        Network view nor each other.
         """
         index_html = os.path.join(self.current_directory, "static", "tcsbu", "index.html")
 
@@ -637,18 +674,16 @@ class MainForm(MainWindowUI):
             if os.path.isfile(index_html):
                 self.web_view_main.setUrl(QUrl.fromLocalFile(index_html))
 
-        # Show / refresh the Alignment tab whenever an aligned FASTA was produced.
+        # Kick off Alignment tab population in the background (decoupled from
+        # the Haplotype tab load below).
         if result.aligned_fasta:
-            self.show_alignment_tab(result.aligned_fasta)
+            self._load_alignment_tab_async(result.aligned_fasta)
 
-        # Show / refresh the Haplotype tab whenever haplotype data was produced,
-        # regardless of whether downstream steps (fastHaN, visualization) succeeded.
+        # Kick off Haplotype tab population in the background whenever
+        # haplotype data was produced, regardless of whether downstream steps
+        # (fastHaN, visualization) succeeded.
         if result.haplotype_ready:
-            self.show_haplotype_tab(result.output_path, result.prefix)
-
-        # Always end on the Network tab after building a haplotype network.
-        if result.success:
-            self.switch_to_tab('network')
+            self._load_haplotype_tab_async(result.output_path, result.prefix)
 
         self.set_progress(0)
         self.set_status("Ready")
@@ -741,7 +776,7 @@ class MainForm(MainWindowUI):
         if result.success:
             self.log_tab.append_success(
                 f"Alignment completed → {result.output_file}")
-            self.show_alignment_tab(result.output_file)
+            self._load_alignment_tab_async(result.output_file, focus=True)
         else:
             self.log_tab.append_error(
                 f"Alignment failed: {result.error_message}")
@@ -790,7 +825,13 @@ class MainForm(MainWindowUI):
         self.haplotype_worker.start()
 
     def _on_haplotype_calculation_finished(self, result: AnalysisResult):
-        """Handle haplotype calculation completion."""
+        """Handle haplotype calculation completion.
+
+        The Alignment and Haplotype tabs are populated by independent
+        background loaders; the UI thread is not blocked while the files are
+        parsed. The Haplotype tab takes focus (once loaded) because it is the
+        primary output of this flow.
+        """
         self.set_progress(0)
         self.set_status("Ready")
 
@@ -804,13 +845,76 @@ class MainForm(MainWindowUI):
                 f"Haplotype calculation failed:\n{result.error_message}")
 
         if result.aligned_fasta:
-            self.show_alignment_tab(result.aligned_fasta)
+            self._load_alignment_tab_async(result.aligned_fasta)
 
         if result.haplotype_ready:
-            self.show_haplotype_tab(result.output_path, result.prefix)
+            self._load_haplotype_tab_async(
+                result.output_path, result.prefix, focus=True)
 
-        # Always end on the Haplotype tab after haplotype calculation.
-        if result.haplotype_ready:
+    # ==================== Async Tab Loaders ====================
+
+    def _load_alignment_tab_async(self, fasta_path: str, focus: bool = False) -> None:
+        """Parse the aligned FASTA off the UI thread, then populate the tab.
+
+        ``focus`` controls whether the Alignment tab takes focus once loaded.
+        When called from _on_analysis_finished the Network tab stays in front;
+        the standalone alignment flow passes focus=True to surface the result.
+        """
+        if not fasta_path:
+            return
+
+        # Create the tab shell immediately so the user can see progress / the
+        # empty table while parsing runs in the background.
+        if self.alignment_tab is None:
+            self.alignment_tab = AlignmentTabWidget()
+            self.tab_widget.addTab(self.alignment_tab, self.TAB_NAMES['alignment'])
+
+        self.log_tab.append_info("Loading alignment view in background…")
+
+        self.alignment_tab_loader = AlignmentTabLoadWorker(fasta_path)
+        self.alignment_tab_loader.finished.connect(
+            lambda data, f=focus: self._on_alignment_tab_loaded(data, f)
+        )
+        self.alignment_tab_loader.start()
+
+    def _on_alignment_tab_loaded(self, data: dict, focus: bool) -> None:
+        """Apply pre-parsed alignment data to the Alignment tab (main thread)."""
+        if self.alignment_tab is None:
+            return
+        self.alignment_tab.apply_data(data)
+        if data.get("error"):
+            self.log_tab.append_warning(
+                f"Alignment view loaded with issue: {data.get('error')}")
+        else:
+            self.log_tab.append_info("Alignment view ready.")
+        if focus:
+            self.switch_to_tab('alignment')
+
+    def _load_haplotype_tab_async(self, output_path: str, prefix: str,
+                                  focus: bool = False) -> None:
+        """Parse haplotype result files off the UI thread, then populate the tab."""
+        if not output_path or not prefix:
+            return
+
+        if self.haplotype_tab is None:
+            self.haplotype_tab = HaplotypeTabWidget()
+            self.tab_widget.addTab(self.haplotype_tab, self.TAB_NAMES['haplotype'])
+
+        self.log_tab.append_info("Loading haplotype view in background…")
+
+        self.haplotype_tab_loader = HaplotypeTabLoadWorker(output_path, prefix)
+        self.haplotype_tab_loader.finished.connect(
+            lambda data, f=focus: self._on_haplotype_tab_loaded(data, f)
+        )
+        self.haplotype_tab_loader.start()
+
+    def _on_haplotype_tab_loaded(self, data: dict, focus: bool) -> None:
+        """Apply pre-parsed haplotype data to the Haplotype tab (main thread)."""
+        if self.haplotype_tab is None:
+            return
+        self.haplotype_tab.apply_data(data)
+        self.log_tab.append_info("Haplotype view ready.")
+        if focus:
             self.switch_to_tab('haplotype')
 
     # ==================== Tools Functions ====================
