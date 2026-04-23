@@ -3,17 +3,17 @@ Alignment Tab Widget — Displays multiple sequence alignment results.
 
 Layout:
   Top:    Summary label (file name, sequence count, positions)
-          Info label (full file path)
-          Load-more button (only visible when additional positions are hidden)
+          Info label (full file path; also directs the user to the source
+                      FASTA file when the alignment is truncated in the UI)
   Main:   Horizontal splitter:
             Left:  QTableWidget — Sequence Name column
             Right: Nucleotide sequence viewer — one column per position,
                    color-coded by base (A/T/C/G); rows stay in sync with left table
 
-For long alignments (> 500 positions) only variable (informative) sites are
-selected for display; when the selection still exceeds 1000 columns the view
-initially shows only the first 1000 and the remainder is loaded lazily when
-the user clicks "Load more".
+Only the first _MAX_DISPLAY_POSITIONS columns of the alignment are rendered.
+For longer alignments the user is directed to the aligned FASTA file on disk
+instead of loading additional positions into the UI — this keeps parsing and
+rendering cheap regardless of input size.
 
 File parsing is split from UI rendering (parse_alignment_data is a pure
 threadsafe function; apply_data populates Qt widgets on the main thread) so
@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor, QFont
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QHeaderView, QLabel, QPushButton, QSplitter,
+    QAbstractItemView, QHeaderView, QLabel, QSplitter,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -41,11 +41,9 @@ _BASE_STYLE = {
 }
 _DEFAULT_STYLE: Tuple[str, str] = ('#FAFAFA', '#333333')
 
-# Show all positions up to this length; beyond it only variable sites are shown.
-_MAX_FULL_POSITIONS = 500
-# Initial positions rendered when the display list exceeds this size; the rest
-# is loaded on demand via the "Load more" button.
-_LAZY_LOAD_CHUNK = 1000
+# Only the first N positions are ever rendered. For longer alignments the user
+# is directed to the source FASTA file rather than loading more into the UI.
+_MAX_DISPLAY_POSITIONS = 500
 
 
 class AlignmentTabWidget(QWidget):
@@ -55,7 +53,6 @@ class AlignmentTabWidget(QWidget):
         super().__init__(parent)
         self._sequences: List[Tuple[str, str]] = []  # (name, sequence)
         self._display_positions: List[int] = []
-        self._rendered_count: int = 0  # how many columns are currently in the viewer
         self._setup_ui()
 
     # ── UI construction ──────────────────────────────────────────────────────
@@ -73,19 +70,11 @@ class AlignmentTabWidget(QWidget):
         self._info_label = QLabel("")
         self._info_label.setFont(QFont("Arial", 9))
         self._info_label.setStyleSheet("color:#888;padding:2px 4px;")
-        layout.addWidget(self._info_label)
-
-        self._load_more_btn = QPushButton("Load more positions")
-        self._load_more_btn.setStyleSheet(
-            "QPushButton {"
-            "  background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9;"
-            "  padding:4px 10px;border-radius:3px;"
-            "}"
-            "QPushButton:hover { background:#BBDEFB; }"
+        self._info_label.setWordWrap(True)
+        self._info_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self._load_more_btn.clicked.connect(self._load_more)
-        self._load_more_btn.setVisible(False)
-        layout.addWidget(self._load_more_btn)
+        layout.addWidget(self._info_label)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(splitter, 1)
@@ -146,7 +135,9 @@ class AlignmentTabWidget(QWidget):
 
         Threadsafe: touches no Qt objects, so it is safe to call from a
         QThread. The returned dict is consumed by apply_data() on the main
-        thread.
+        thread. Only the first _MAX_DISPLAY_POSITIONS columns are kept for
+        display; the parser does not scan the full alignment for variable
+        sites, which keeps parsing O(N_seqs * 500) regardless of length.
         """
         result: Dict[str, Any] = {
             "fasta_path": fasta_path or "",
@@ -156,6 +147,7 @@ class AlignmentTabWidget(QWidget):
             "info": fasta_path or "",
             "seq_len": 0,
             "n_seqs": 0,
+            "truncated": False,
             "error": None,              # Optional[str]
         }
 
@@ -197,35 +189,39 @@ class AlignmentTabWidget(QWidget):
         seq_len = max(len(s) for _, s in sequences)
         n_seqs = len(sequences)
 
-        if n_seqs == 1 or seq_len <= _MAX_FULL_POSITIONS:
-            display_positions = list(range(seq_len))
-            pos_note = f"{seq_len} positions"
+        display_len = min(seq_len, _MAX_DISPLAY_POSITIONS)
+        display_positions = list(range(display_len))
+        truncated = seq_len > _MAX_DISPLAY_POSITIONS
+
+        if truncated:
+            pos_note = (
+                f"{seq_len} positions (showing first {display_len})"
+            )
+            info_text = (
+                f"Source: {fasta_path}\n"
+                f"Only the first {display_len} positions are shown here to keep the view "
+                f"responsive. Open the file above for the complete alignment."
+            )
         else:
-            seqs_only = [s for _, s in sequences]
-            display_positions = [
-                i for i in range(seq_len)
-                if len({s[i] if i < len(s) else '?' for s in seqs_only}) > 1
-            ]
-            if not display_positions:
-                display_positions = list(range(seq_len))
-            pos_note = f"{seq_len} positions ({len(display_positions)} variable shown)"
+            pos_note = f"{seq_len} positions"
+            info_text = f"Source: {fasta_path}"
 
         result["sequences"] = sequences
         result["display_positions"] = display_positions
         result["seq_len"] = seq_len
         result["n_seqs"] = n_seqs
+        result["truncated"] = truncated
         result["summary"] = (
             f"Alignment: {os.path.basename(fasta_path)}    |    "
             f"Sequences: {n_seqs}    |    {pos_note}"
         )
-        result["info"] = f"Source: {fasta_path}"
+        result["info"] = info_text
         return result
 
     def apply_data(self, data: Dict[str, Any]) -> None:
         """Populate the widget from a parse_alignment_data() result."""
         self._sequences = list(data.get("sequences", []))
         self._display_positions = list(data.get("display_positions", []))
-        self._rendered_count = 0
 
         self._summary_label.setText(data.get("summary", ""))
         self._info_label.setText(data.get("info", ""))
@@ -233,12 +229,11 @@ class AlignmentTabWidget(QWidget):
         self._name_table.setRowCount(0)
         self._seq_viewer.setRowCount(0)
         self._seq_viewer.setColumnCount(0)
-        self._load_more_btn.setVisible(False)
 
         if not self._sequences or not self._display_positions:
             return
 
-        self._render_initial()
+        self._render()
 
     def load_alignment(self, fasta_path: str) -> None:
         """Load and display an aligned FASTA file (synchronous).
@@ -253,22 +248,20 @@ class AlignmentTabWidget(QWidget):
         """Reset the widget (e.g. when opening a new project)."""
         self._sequences.clear()
         self._display_positions.clear()
-        self._rendered_count = 0
         self._name_table.setRowCount(0)
         self._seq_viewer.setRowCount(0)
         self._seq_viewer.setColumnCount(0)
-        self._load_more_btn.setVisible(False)
         self._summary_label.setText("No alignment loaded.")
         self._info_label.setText("")
 
     # ── Private rendering ────────────────────────────────────────────────────
 
-    def _render_initial(self) -> None:
-        """Render name column and the first chunk of the sequence viewer."""
+    def _render(self) -> None:
+        """Render the name column and the (capped) sequence viewer."""
         n_rows = len(self._sequences)
-        n_cols_total = len(self._display_positions)
+        n_cols = len(self._display_positions)
 
-        # Left: sequence name column — rendered once, all rows
+        # Left: sequence name column — all rows
         self._name_table.setRowCount(n_rows)
         for r, (name, _) in enumerate(self._sequences):
             item = QTableWidgetItem(name)
@@ -276,31 +269,16 @@ class AlignmentTabWidget(QWidget):
             item.setToolTip(name)
             self._name_table.setItem(r, 0, item)
 
-        # Right: size the grid once to the final column count, then fill the
-        # first chunk. This avoids re-sizing on every "Load more" click.
+        # Right: nucleotide grid, capped at _MAX_DISPLAY_POSITIONS columns.
         self._seq_viewer.setUpdatesEnabled(False)
         self._seq_viewer.setRowCount(n_rows)
-        self._seq_viewer.setColumnCount(n_cols_total)
+        self._seq_viewer.setColumnCount(n_cols)
         self._seq_viewer.setHorizontalHeaderLabels(
             [str(p + 1) for p in self._display_positions]
         )
-        self._seq_viewer.setUpdatesEnabled(True)
 
-        first_chunk = min(_LAZY_LOAD_CHUNK, n_cols_total)
-        self._render_range(0, first_chunk)
-        self._rendered_count = first_chunk
-
-        self._update_load_more_button()
-
-    def _render_range(self, start: int, stop: int) -> None:
-        """Populate viewer cells for display_positions[start:stop]."""
-        if start >= stop:
-            return
-
-        self._seq_viewer.setUpdatesEnabled(False)
         for r, (_, seq) in enumerate(self._sequences):
-            for c in range(start, stop):
-                pos = self._display_positions[c]
+            for c, pos in enumerate(self._display_positions):
                 base = seq[pos] if pos < len(seq) else '?'
                 bg, fg = _BASE_STYLE.get(base, _DEFAULT_STYLE)
 
@@ -312,26 +290,3 @@ class AlignmentTabWidget(QWidget):
                 item.setToolTip(f"Position {pos + 1}: {base}")
                 self._seq_viewer.setItem(r, c, item)
         self._seq_viewer.setUpdatesEnabled(True)
-
-    def _load_more(self) -> None:
-        """User-triggered render of the next chunk of hidden positions."""
-        n_total = len(self._display_positions)
-        if self._rendered_count >= n_total:
-            self._load_more_btn.setVisible(False)
-            return
-        stop = min(self._rendered_count + _LAZY_LOAD_CHUNK, n_total)
-        self._render_range(self._rendered_count, stop)
-        self._rendered_count = stop
-        self._update_load_more_button()
-
-    def _update_load_more_button(self) -> None:
-        remaining = len(self._display_positions) - self._rendered_count
-        if remaining <= 0:
-            self._load_more_btn.setVisible(False)
-            return
-        next_chunk = min(_LAZY_LOAD_CHUNK, remaining)
-        self._load_more_btn.setText(
-            f"Load more positions  ({self._rendered_count}/"
-            f"{len(self._display_positions)} shown, +{next_chunk})"
-        )
-        self._load_more_btn.setVisible(True)
