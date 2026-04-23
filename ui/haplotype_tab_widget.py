@@ -3,17 +3,18 @@ Haplotype Tab Widget — Displays haplotype analysis results.
 
 Layout (vertical outer splitter):
   Top:    Haplotype Summary
-          Load-more button (only visible when additional positions are hidden)
+          Info label (directs the user to the output files when the aligned
+                      haplotype sequence is truncated in the UI)
             Horizontal inner splitter:
               Left:  QTableWidget — Haplotype | Total Count | Samples
               Right: Nucleotide sequence viewer — one column per position,
                      color-coded by base (A/T/C/G); rows stay in sync with left table
   Bottom: Sequence → Haplotype Mapping — Sequence Name | Haplotype
 
-For long aligned haplotypes (> 500 positions) only variable (informative) sites
-are selected for display; when the selection still exceeds 1000 columns the
-viewer initially shows only the first 1000 and the remainder is loaded lazily
-when the user clicks "Load more".
+Only the first _MAX_DISPLAY_POSITIONS columns of each haplotype sequence are
+rendered. For longer alignments the user is directed to the output files on
+disk (e.g. ``{prefix}_hap.fasta``) instead of loading additional positions
+into the UI — this keeps parsing and rendering cheap regardless of length.
 
 File parsing is split from UI rendering (parse_result_data is a pure
 threadsafe function; apply_data populates Qt widgets on the main thread) so
@@ -30,7 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor, QFont
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QHeaderView, QLabel, QPushButton, QSplitter,
+    QAbstractItemView, QHeaderView, QLabel, QSplitter,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -45,12 +46,9 @@ _BASE_STYLE: Dict[str, Tuple[str, str]] = {
 }
 _DEFAULT_STYLE: Tuple[str, str] = ('#FAFAFA', '#333333')
 
-# If the aligned sequence length exceeds this limit, display only variable
-# (informative) positions instead of every position, for performance.
-_MAX_FULL_POSITIONS = 500
-# Initial positions rendered when the display list exceeds this size; the rest
-# is loaded on demand via the "Load more" button.
-_LAZY_LOAD_CHUNK = 1000
+# Only the first N positions are ever rendered. For longer alignments the user
+# is directed to the output files on disk rather than loading more into the UI.
+_MAX_DISPLAY_POSITIONS = 500
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,7 +72,6 @@ class HaplotypeTabWidget(QWidget):
         self._hap_sequences: Dict[str, str] = {}
         # 0-based column indices actually shown in the seq viewer
         self._display_positions: List[int] = []
-        self._rendered_count: int = 0
         self._setup_ui()
 
     # ── UI construction ──────────────────────────────────────────────────────
@@ -99,17 +96,15 @@ class HaplotypeTabWidget(QWidget):
         tl.setSpacing(2)
         tl.addWidget(_section_header("Haplotype Summary"))
 
-        self._load_more_btn = QPushButton("Load more positions")
-        self._load_more_btn.setStyleSheet(
-            "QPushButton {"
-            "  background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9;"
-            "  padding:4px 10px;border-radius:3px;"
-            "}"
-            "QPushButton:hover { background:#BBDEFB; }"
+        self._info_label = QLabel("")
+        self._info_label.setFont(QFont("Arial", 9))
+        self._info_label.setStyleSheet("color:#888;padding:2px 4px;")
+        self._info_label.setWordWrap(True)
+        self._info_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self._load_more_btn.clicked.connect(self._load_more)
-        self._load_more_btn.setVisible(False)
-        tl.addWidget(self._load_more_btn)
+        self._info_label.setVisible(False)
+        tl.addWidget(self._info_label)
 
         inner = QSplitter(Qt.Orientation.Horizontal)
         # stretch=1 ensures inner fills all remaining height in the top pane,
@@ -173,7 +168,9 @@ class HaplotypeTabWidget(QWidget):
 
         Threadsafe: touches no Qt objects, so it is safe to call from a
         QThread. The returned dict is consumed by apply_data() on the main
-        thread.
+        thread. Only the first _MAX_DISPLAY_POSITIONS columns are kept for
+        display; the parser does not scan the full alignment for variable
+        sites, which keeps parsing O(N_haps * 500) regardless of length.
         """
         hap_path = os.path.join(output_path, f"{prefix}_hap_trait.csv")
         seq_path = os.path.join(output_path, f"{prefix}_seq.meta.csv")
@@ -228,18 +225,34 @@ class HaplotypeTabWidget(QWidget):
 
         display_positions: List[int] = []
         seq_len = 0
+        truncated = False
         if hap_sequences:
-            seqs = list(hap_sequences.values())
-            seq_len = max(len(s) for s in seqs)
-            if len(seqs) == 1 or seq_len <= _MAX_FULL_POSITIONS:
-                display_positions = list(range(seq_len))
+            seq_len = max(len(s) for s in hap_sequences.values())
+            display_len = min(seq_len, _MAX_DISPLAY_POSITIONS)
+            display_positions = list(range(display_len))
+            truncated = seq_len > _MAX_DISPLAY_POSITIONS
+
+        summary = (
+            f"Project: {prefix}    |    "
+            f"Unique haplotypes: {len(hap_rows)}    |    "
+            f"Total sequences: {len(seq_rows)}"
+        )
+        if seq_len:
+            if truncated:
+                summary += (
+                    f"    |    {seq_len} positions "
+                    f"(showing first {len(display_positions)})"
+                )
             else:
-                display_positions = [
-                    i for i in range(seq_len)
-                    if len({s[i] if i < len(s) else '?' for s in seqs}) > 1
-                ]
-                if not display_positions:
-                    display_positions = list(range(seq_len))
+                summary += f"    |    {seq_len} positions"
+
+        info = ""
+        if truncated:
+            info = (
+                f"Only the first {len(display_positions)} positions are shown here to keep "
+                f"the view responsive. For the full aligned haplotypes open "
+                f"{fasta_path}."
+            )
 
         return {
             "prefix": prefix,
@@ -249,24 +262,24 @@ class HaplotypeTabWidget(QWidget):
             "hap_sequences": hap_sequences,
             "display_positions": display_positions,
             "seq_len": seq_len,
-            "summary": (
-                f"Project: {prefix}    |    "
-                f"Unique haplotypes: {len(hap_rows)}    |    "
-                f"Total sequences: {len(seq_rows)}"
-            ),
+            "truncated": truncated,
+            "summary": summary,
+            "info": info,
         }
 
     def apply_data(self, data: Dict[str, Any]) -> None:
         """Populate all three panes from a parse_result_data() result."""
         self._hap_sequences = dict(data.get("hap_sequences", {}))
         self._display_positions = list(data.get("display_positions", []))
-        self._rendered_count = 0
 
         self._fill_hap_table(data.get("hap_rows", []))
         self._fill_seq_table(data.get("seq_rows", []))
-        self._render_seq_viewer_initial()
+        self._render_seq_viewer()
 
         self._summary_label.setText(data.get("summary", ""))
+        info = data.get("info", "")
+        self._info_label.setText(info)
+        self._info_label.setVisible(bool(info))
 
     def load_result(self, output_path: str, prefix: str) -> None:
         """Reload all three panes from the latest analysis output files (sync).
@@ -285,9 +298,9 @@ class HaplotypeTabWidget(QWidget):
         self._seq_table.setRowCount(0)
         self._hap_sequences.clear()
         self._display_positions.clear()
-        self._rendered_count = 0
-        self._load_more_btn.setVisible(False)
         self._summary_label.setText("No results loaded.")
+        self._info_label.clear()
+        self._info_label.setVisible(False)
 
     # ── Private: fill tables ─────────────────────────────────────────────────
 
@@ -314,45 +327,27 @@ class HaplotypeTabWidget(QWidget):
         self._seq_table.resizeColumnToContents(0)
         self._seq_table.resizeColumnToContents(1)
 
-    def _render_seq_viewer_initial(self) -> None:
-        """Render the first chunk of the nucleotide grid; hide load-more if not needed."""
+    def _render_seq_viewer(self) -> None:
+        """Render the (capped) nucleotide grid for all haplotypes."""
         self._seq_viewer.setRowCount(0)
         self._seq_viewer.setColumnCount(0)
-        self._load_more_btn.setVisible(False)
 
         if not self._hap_sequences or not self._display_positions:
             return
 
         hap_order = list(self._hap_sequences.keys())
-        n_cols_total = len(self._display_positions)
+        n_cols = len(self._display_positions)
 
-        # Size the grid once to the final column count so later "Load more"
-        # calls don't have to resize.
         self._seq_viewer.setUpdatesEnabled(False)
         self._seq_viewer.setRowCount(len(hap_order))
-        self._seq_viewer.setColumnCount(n_cols_total)
+        self._seq_viewer.setColumnCount(n_cols)
         self._seq_viewer.setHorizontalHeaderLabels(
             [str(p + 1) for p in self._display_positions]
         )
-        self._seq_viewer.setUpdatesEnabled(True)
 
-        first_chunk = min(_LAZY_LOAD_CHUNK, n_cols_total)
-        self._render_range(0, first_chunk)
-        self._rendered_count = first_chunk
-
-        self._update_load_more_button()
-
-    def _render_range(self, start: int, stop: int) -> None:
-        """Populate viewer cells for display_positions[start:stop]."""
-        if start >= stop:
-            return
-
-        hap_order = list(self._hap_sequences.keys())
-        self._seq_viewer.setUpdatesEnabled(False)
         for r, hap_name in enumerate(hap_order):
             seq = self._hap_sequences.get(hap_name, "")
-            for c in range(start, stop):
-                pos = self._display_positions[c]
+            for c, pos in enumerate(self._display_positions):
                 base = seq[pos] if pos < len(seq) else '?'
                 bg, fg = _BASE_STYLE.get(base, _DEFAULT_STYLE)
 
@@ -364,29 +359,6 @@ class HaplotypeTabWidget(QWidget):
                 item.setToolTip(f"Position {pos + 1}: {base}")
                 self._seq_viewer.setItem(r, c, item)
         self._seq_viewer.setUpdatesEnabled(True)
-
-    def _load_more(self) -> None:
-        """User-triggered render of the next chunk of hidden positions."""
-        n_total = len(self._display_positions)
-        if self._rendered_count >= n_total:
-            self._load_more_btn.setVisible(False)
-            return
-        stop = min(self._rendered_count + _LAZY_LOAD_CHUNK, n_total)
-        self._render_range(self._rendered_count, stop)
-        self._rendered_count = stop
-        self._update_load_more_button()
-
-    def _update_load_more_button(self) -> None:
-        remaining = len(self._display_positions) - self._rendered_count
-        if remaining <= 0:
-            self._load_more_btn.setVisible(False)
-            return
-        next_chunk = min(_LAZY_LOAD_CHUNK, remaining)
-        self._load_more_btn.setText(
-            f"Load more positions  ({self._rendered_count}/"
-            f"{len(self._display_positions)} shown, +{next_chunk})"
-        )
-        self._load_more_btn.setVisible(True)
 
     # ── Utility ───────────────────────────────────────────────────────────────
 
