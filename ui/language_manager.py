@@ -180,21 +180,150 @@ class LanguageManager:
             'tab_network': {'cn': '网络视图', 'en': 'Network'},
             'tab_data': {'cn': '数据', 'en': 'Data'},
             'tab_haplotype': {'cn': '单倍型', 'en': 'Haplotype'},
+            'tab_alignment': {'cn': '序列比对', 'en': 'Alignment'},
             'tab_report': {'cn': '分析结果', 'en': 'Analysis Report'},
             'tab_log': {'cn': '日志', 'en': 'Log'},
 
             # Data Tab
             'btn_select_all': {'cn': '全选', 'en': 'Select All'},
             'btn_deselect_all': {'cn': '取消全选', 'en': 'Deselect All'},
-            'label_selected': {'cn': '已选择', 'en': 'Selected'},
+            'label_selected': {'cn': '已选择:', 'en': 'Selected:'},
 
             # Log Tab / Output Panel
             'btn_clear_log': {'cn': '清除日志', 'en': 'Clear Log'},
             'btn_copy_log': {'cn': '复制日志', 'en': 'Copy Log'},
-            'label_output': {'cn': '输出目录', 'en': 'Output'},
+            'label_output': {'cn': '输出', 'en': 'Output'},
+            'label_project_name': {'cn': '项目名称:', 'en': 'Project Name:'},
+            'label_output_folder': {'cn': '输出目录:', 'en': 'Output Folder:'},
+            'placeholder_project': {'cn': '例如: my_project', 'en': 'e.g. my_project'},
             'btn_open': {'cn': '打开', 'en': 'Open'},
             'btn_change': {'cn': '更改', 'en': 'Change'},
             'log_hint': {'cn': '日志', 'en': 'Logs'},
+
+            # Alignment Tab
+            'align_no_data': {'cn': '未加载比对结果。', 'en': 'No alignment loaded.'},
+            'align_not_found': {'cn': '未找到比对文件。', 'en': 'Alignment file not found.'},
+            'align_read_error': {'cn': '读取比对文件失败。', 'en': 'Failed to read alignment file.'},
+            'align_empty': {'cn': '比对文件中未找到序列。', 'en': 'No sequences found in alignment file.'},
+            'align_label_alignment': {'cn': '比对文件', 'en': 'Alignment'},
+            'align_label_sequences': {'cn': '序列数', 'en': 'Sequences'},
+            'align_positions': {'cn': '{n} 个位点', 'en': '{n} positions'},
+            'align_positions_trunc': {
+                'cn': '{total} 个位点（仅显示前 {shown} 个）',
+                'en': '{total} positions (showing first {shown})'
+            },
+            'align_info_source': {'cn': '源文件: {path}', 'en': 'Source: {path}'},
+            'align_info_truncated': {
+                'cn': '源文件: {path}\n为保证界面响应速度，此处仅展示前 {shown} 个位点。如需完整比对结果，请打开上方源文件。',
+                'en': ('Source: {path}\nOnly the first {shown} positions are shown here '
+                       'to keep the view responsive. Open the file above for the '
+                       'complete alignment.')
+            },
+            'align_header_seqname': {'cn': '序列名称', 'en': 'Sequence Name'},
+
+            # Haplotype Tab
+            'hap_no_data': {'cn': '未加载结果。', 'en': 'No results loaded.'},
+            'hap_label_project': {'cn': '项目', 'en': 'Project'},
+            'hap_label_unique': {'cn': '单倍型数', 'en': 'Unique haplotypes'},
+            'hap_label_total_seq': {'cn': '序列总数', 'en': 'Total sequences'},
+            'hap_positions': {'cn': '    |    {n} 个位点', 'en': '    |    {n} positions'},
+            'hap_positions_trunc': {
+                'cn': '    |    {total} 个位点（仅显示前 {shown} 个）',
+                'en': '    |    {total} positions (showing first {shown})'
+            },
+            'hap_info_truncated': {
+                'cn': '为保证界面响应速度，此处仅展示前 {shown} 个位点。如需查看完整的单倍型比对序列，请打开源文件: {path}',
+                'en': ('Only the first {shown} positions are shown here to keep '
+                       'the view responsive. For the full aligned haplotypes open '
+                       '{path}.')
+            },
+            'hap_section_summary': {'cn': '单倍型摘要', 'en': 'Haplotype Summary'},
+            'hap_section_mapping': {'cn': '序列 → 单倍型映射', 'en': 'Sequence → Haplotype Mapping'},
+            'hap_header_haplotype': {'cn': '单倍型', 'en': 'Haplotype'},
+            'hap_header_total': {'cn': '总数量', 'en': 'Total Count'},
+            'hap_header_samples': {'cn': '样本', 'en': 'Samples'},
+            'hap_header_seqname': {'cn': '序列名称', 'en': 'Sequence Name'},
+
+            # Standardization dialog
+            'dlg_std_title': {'cn': '标准化', 'en': 'Standardization'},
+            'dlg_std_group': {'cn': '标准化选项', 'en': 'Standardization'},
+            'dlg_std_remove_ambiguous': {'cn': '移除含模糊碱基的序列', 'en': 'Remove seq with ambiguous bases'},
+            'dlg_std_replace': {'cn': '替换', 'en': 'Replace'},
+            'dlg_std_split_using': {'cn': '按分隔符拆分:', 'en': 'Split names using:'},
+            'dlg_std_use_as_name': {'cn': '作为新名称', 'en': 'Use as the new name'},
+            'dlg_std_use_as_discrete': {'cn': '作为离散性状', 'en': 'Use as discrete trait'},
+            'dlg_std_use_as_continuous': {'cn': '作为连续性状', 'en': 'Use as continuous trait'},
+            'dlg_std_numbering': {'cn': '使用序号作为序列名', 'en': 'Use numbering as seq names'},
+            'dlg_std_preview_names': {'cn': '预览名称:', 'en': 'Preview Names:'},
+            'dlg_std_split_results': {'cn': '拆分结果:', 'en': 'Split Results:'},
+
+            # File dialog titles
+            'dlg_load_seq_title': {'cn': '载入序列文件', 'en': 'Load Sequence File'},
+            'dlg_add_seq_title': {'cn': '追加序列文件', 'en': 'Add Sequence File'},
+            'dlg_export_fasta_title': {'cn': '导出 FASTA 文件', 'en': 'Export FASTA File'},
+            'dlg_load_csv_title': {'cn': '载入 CSV 性状文件', 'en': 'Load CSV Traits File'},
+            'dlg_select_output': {'cn': '选择输出目录', 'en': 'Select Output Folder'},
+            'dlg_delimiter_title': {'cn': '分隔符', 'en': 'Delimiter'},
+            'dlg_delimiter_prompt': {'cn': '请输入 FASTA 头部分隔符:', 'en': 'Enter FASTA header delimiter:'},
+            'filter_fasta': {'cn': 'FASTA 文件 (*.fas *.fasta *.fa);;所有文件 (*.*)',
+                             'en': 'FASTA Files (*.fas *.fasta *.fa);;All Files (*.*)'},
+            'filter_fasta_export': {'cn': 'FASTA 文件 (*.fasta);;所有文件 (*.*)',
+                                    'en': 'FASTA Files (*.fasta);;All Files (*.*)'},
+            'filter_csv': {'cn': 'CSV 文件 (*.csv);;所有文件 (*.*)',
+                           'en': 'CSV Files (*.csv);;All Files (*.*)'},
+
+            # Common message box titles / text
+            'title_warning': {'cn': '警告', 'en': 'Warning'},
+            'title_error': {'cn': '错误', 'en': 'Error'},
+            'title_info': {'cn': '信息', 'en': 'Information'},
+            'title_success': {'cn': '成功', 'en': 'Success'},
+            'title_about': {'cn': '关于', 'en': 'About'},
+            'title_validation_error': {'cn': '数据校验错误', 'en': 'Validation Error'},
+            'title_name_mismatch': {'cn': '名称不匹配', 'en': 'Name Mismatch Error'},
+            'title_update_traits': {'cn': '更新性状', 'en': 'Update Traits'},
+            'title_alignment_failed': {'cn': '比对失败', 'en': 'Alignment Failed'},
+            'title_tcsbu_help': {'cn': 'TCS-BU 帮助', 'en': 'TCS-BU Help'},
+            'title_netst_help': {'cn': 'NetST 帮助', 'en': 'NetST Help'},
+
+            'msg_no_sequences_in_file': {'cn': '文件中未找到序列!', 'en': 'No sequences found in file!'},
+            'msg_no_export': {'cn': '没有可导出的数据!', 'en': 'No data to export!'},
+            'msg_export_complete': {'cn': '导出完成!', 'en': 'Export completed!'},
+            'msg_load_seq_first': {'cn': '请先载入序列文件再导入性状!',
+                                   'en': 'Please load a sequence file first before importing traits!'},
+            'msg_csv_empty': {'cn': 'CSV 文件为空!', 'en': 'The CSV file is empty!'},
+            'msg_csv_no_header': {'cn': 'CSV 文件缺少表头行!', 'en': 'The CSV file has no header row!'},
+            'msg_csv_no_data': {'cn': 'CSV 文件没有数据行!', 'en': 'The CSV file contains no data rows!'},
+            'msg_csv_need_name_col': {'cn': '必须选择序列名称列!', 'en': 'Sequence Name column must be selected!'},
+            'msg_load_failed': {'cn': '加载文件失败: {err}', 'en': 'Failed to load file: {err}'},
+            'msg_add_failed': {'cn': '追加序列失败: {err}', 'en': 'Failed to add sequences: {err}'},
+            'msg_export_failed': {'cn': '导出失败: {err}', 'en': 'Failed to export: {err}'},
+            'msg_csv_import_failed': {'cn': '导入 CSV 性状失败:\n{err}', 'en': 'Failed to import CSV traits:\n{err}'},
+            'msg_set_output_first': {'cn': '请先设置输出目录!', 'en': 'Please set output directory first!'},
+            'msg_enter_project_name': {'cn': '请输入项目名称!', 'en': 'Please enter a project name!'},
+            'msg_load_data_first': {'cn': '请先加载数据!', 'en': 'Please load data first!'},
+            'msg_select_seq_first': {'cn': '请先选择序列!', 'en': 'Please select sequences first!'},
+            'msg_analysis_failed': {'cn': '分析失败: {err}', 'en': 'Analysis failed: {err}'},
+            'msg_hap_calc_failed': {'cn': '单倍型计算失败:\n{err}', 'en': 'Haplotype calculation failed:\n{err}'},
+            'msg_alignment_failed': {'cn': '比对失败:\n{err}', 'en': 'Alignment failed:\n{err}'},
+            'msg_pdf_not_found': {'cn': '{name} 帮助 PDF 未找到:\n{path}',
+                                  'en': '{name} help PDF not found:\n{path}'},
+            'msg_traits_overwrite': {
+                'cn': '部分序列已存在性状数据。\n是否使用 CSV 中的数据覆盖已有性状?',
+                'en': 'Trait data already exists for some sequences.\n'
+                      'Do you want to overwrite the existing traits with the CSV data?',
+            },
+            'msg_name_mismatch_header': {'cn': '序列名称不匹配:\n', 'en': 'Sequence name mismatch detected:\n'},
+            'msg_name_mismatch_missing': {'cn': '数据表中存在但 CSV 中缺失的序列:',
+                                          'en': 'Sequences in data table NOT found in CSV:'},
+            'msg_name_mismatch_extra': {'cn': 'CSV 中存在但数据表中缺失的名称:',
+                                        'en': 'Names in CSV NOT found in data table:'},
+            'msg_about_text': {
+                'cn': '单倍型网络分析工具\n\n版本: 2.0.0\n\n基于 PyQt6 重构的 Python 版本\n\n用于单倍型网络的构建与分析',
+                'en': 'Haplotype Network Analysis Tool\n\n'
+                      'Version: 2.0.0\n\n'
+                      'Python version rebuilt with PyQt6\n\n'
+                      'For haplotype network construction and analysis',
+            },
 
             # Status Bar
             'status_ready': {'cn': '就绪', 'en': 'Ready'},

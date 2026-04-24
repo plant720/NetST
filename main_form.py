@@ -274,9 +274,9 @@ class MainForm(MainWindowUI):
         """Load sequence data from FASTA file."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Load Sequence File",
+            lang_manager.get('dlg_load_seq_title', 'Load Sequence File'),
             "",
-            "FASTA Files (*.fas *.fasta *.fa);;All Files (*.*)"
+            lang_manager.get('filter_fasta', 'FASTA Files (*.fas *.fasta *.fa);;All Files (*.*)')
         )
 
         if not file_path:
@@ -289,7 +289,9 @@ class MainForm(MainWindowUI):
             headers = self.file_service.get_fasta_headers(file_path, limit=100)
 
             if not headers:
-                QMessageBox.warning(self, "Warning", "No sequences found in file!")
+                QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                    lang_manager.get('msg_no_sequences_in_file',
+                                                     'No sequences found in file!'))
                 return
 
             # Show standardization dialog
@@ -321,13 +323,15 @@ class MainForm(MainWindowUI):
 
         except Exception as e:
             self.log_tab.append_error(f"Failed to load file: {str(e)}")
-            QMessageBox.critical(self, "Error", f"Failed to load file: {str(e)}")
+            QMessageBox.critical(self, lang_manager.get('title_error', 'Error'),
+                                 lang_manager.get('msg_load_failed',
+                                                  'Failed to load file: {err}').format(err=str(e)))
 
     def _add_sequence(self):
         """Add sequences to existing data."""
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Add Sequence File", "",
-            "FASTA Files (*.fas *.fasta *.fa);;All Files (*.*)"
+            self, lang_manager.get('dlg_add_seq_title', 'Add Sequence File'), "",
+            lang_manager.get('filter_fasta', 'FASTA Files (*.fas *.fasta *.fa);;All Files (*.*)')
         )
 
         if not file_path:
@@ -340,7 +344,9 @@ class MainForm(MainWindowUI):
             headers = self.file_service.get_fasta_headers(file_path, limit=100)
 
             if not headers:
-                QMessageBox.warning(self, "Warning", "No sequences found in file!")
+                QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                    lang_manager.get('msg_no_sequences_in_file',
+                                                     'No sequences found in file!'))
                 return
 
             # Show standardization dialog
@@ -374,16 +380,20 @@ class MainForm(MainWindowUI):
 
         except Exception as e:
             self.log_tab.append_error(f"Failed to add sequences: {str(e)}")
-            QMessageBox.critical(self, "Error", f"Failed to add sequences: {str(e)}")
+            QMessageBox.critical(self, lang_manager.get('title_error', 'Error'),
+                                 lang_manager.get('msg_add_failed',
+                                                  'Failed to add sequences: {err}').format(err=str(e)))
 
     def _export_sequence(self):
         """Export sequences to FASTA file."""
         if self.table_model.rowCount() < 1:
-            QMessageBox.warning(self, "Warning", "No data to export!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_no_export', 'No data to export!'))
             return
 
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export FASTA File", "", "FASTA Files (*.fasta);;All Files (*.*)"
+            self, lang_manager.get('dlg_export_fasta_title', 'Export FASTA File'), "",
+            lang_manager.get('filter_fasta_export', 'FASTA Files (*.fasta);;All Files (*.*)')
         )
 
         if file_path:
@@ -391,7 +401,9 @@ class MainForm(MainWindowUI):
                 file_path += '.fasta'
 
             delimiter, ok = QInputDialog.getText(
-                self, "Delimiter", "Enter FASTA header delimiter:", text="|"
+                self, lang_manager.get('dlg_delimiter_title', 'Delimiter'),
+                lang_manager.get('dlg_delimiter_prompt', 'Enter FASTA header delimiter:'),
+                text="|"
             )
             if not ok:
                 delimiter = "|"
@@ -401,10 +413,13 @@ class MainForm(MainWindowUI):
                     file_path, self.table_model.get_all_taxons(), delimiter
                 )
                 self.log_tab.append_success(f"Sequences exported to: {file_path}")
-                QMessageBox.information(self, "Success", "Export completed!")
+                QMessageBox.information(self, lang_manager.get('title_success', 'Success'),
+                                        lang_manager.get('msg_export_complete', 'Export completed!'))
             except Exception as e:
                 self.log_tab.append_error(f"Failed to export: {str(e)}")
-                QMessageBox.critical(self, "Error", f"Failed to export: {str(e)}")
+                QMessageBox.critical(self, lang_manager.get('title_error', 'Error'),
+                                     lang_manager.get('msg_export_failed',
+                                                      'Failed to export: {err}').format(err=str(e)))
 
     def _load_csv_traits(self):
         """Import discrete / continuous traits from a CSV file.
@@ -423,15 +438,17 @@ class MainForm(MainWindowUI):
 
         # Step 1 – Sequence must be loaded first
         if self.table_model.rowCount() < 1:
-            QMessageBox.warning(self, "Warning", "Please load a sequence file first before importing traits!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_load_seq_first',
+                                                 'Please load a sequence file first before importing traits!'))
             return
 
         # Step 2 – Choose CSV file
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Load CSV Traits File",
+            lang_manager.get('dlg_load_csv_title', 'Load CSV Traits File'),
             "",
-            "CSV Files (*.csv);;All Files (*.*)"
+            lang_manager.get('filter_csv', 'CSV Files (*.csv);;All Files (*.*)')
         )
         if not file_path:
             return
@@ -444,18 +461,23 @@ class MainForm(MainWindowUI):
                 all_rows = [row for row in reader if any(cell.strip() for cell in row)]
 
             if not all_rows:
-                QMessageBox.warning(self, "Warning", "The CSV file is empty!")
+                QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                    lang_manager.get('msg_csv_empty', 'The CSV file is empty!'))
                 return
 
             headers = all_rows[0]
             data_rows = all_rows[1:]
 
             if not headers:
-                QMessageBox.warning(self, "Warning", "The CSV file has no header row!")
+                QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                    lang_manager.get('msg_csv_no_header',
+                                                     'The CSV file has no header row!'))
                 return
 
             if not data_rows:
-                QMessageBox.warning(self, "Warning", "The CSV file contains no data rows!")
+                QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                    lang_manager.get('msg_csv_no_data',
+                                                     'The CSV file contains no data rows!'))
                 return
 
             # Show at most 5 rows in the preview
@@ -471,7 +493,9 @@ class MainForm(MainWindowUI):
             continuous_col = mapping['continuous_col']
 
             if name_col is None:
-                QMessageBox.critical(self, "Error", "Sequence Name column must be selected!")
+                QMessageBox.critical(self, lang_manager.get('title_error', 'Error'),
+                                     lang_manager.get('msg_csv_need_name_col',
+                                                      'Sequence Name column must be selected!'))
                 return
 
             # Step 4 – Build lookup: csv_name -> (discrete, continuous)
@@ -498,18 +522,23 @@ class MainForm(MainWindowUI):
             extra_in_csv = csv_names - loaded_names  # in CSV but not loaded
 
             if missing_in_csv or extra_in_csv:
-                msg_lines = ["Sequence name mismatch detected:\n"]
+                msg_lines = [lang_manager.get('msg_name_mismatch_header',
+                                              'Sequence name mismatch detected:\n')]
                 if missing_in_csv:
-                    msg_lines.append("Sequences in data table NOT found in CSV:")
+                    msg_lines.append(lang_manager.get('msg_name_mismatch_missing',
+                                                      'Sequences in data table NOT found in CSV:'))
                     for n in sorted(missing_in_csv):
                         msg_lines.append(f"  • {n}")
                 if extra_in_csv:
                     if missing_in_csv:
                         msg_lines.append("")
-                    msg_lines.append("Names in CSV NOT found in data table:")
+                    msg_lines.append(lang_manager.get('msg_name_mismatch_extra',
+                                                      'Names in CSV NOT found in data table:'))
                     for n in sorted(extra_in_csv):
                         msg_lines.append(f"  • {n}")
-                QMessageBox.critical(self, "Name Mismatch Error", "\n".join(msg_lines))
+                QMessageBox.critical(self, lang_manager.get('title_name_mismatch',
+                                                            'Name Mismatch Error'),
+                                     "\n".join(msg_lines))
                 return
 
             # Step 6 – Ask whether to overwrite if traits already exist
@@ -524,9 +553,10 @@ class MainForm(MainWindowUI):
             if has_existing_discrete or has_existing_continuous:
                 reply = QMessageBox.question(
                     self,
-                    "Update Traits",
-                    "Trait data already exists for some sequences.\n"
-                    "Do you want to overwrite the existing traits with the CSV data?",
+                    lang_manager.get('title_update_traits', 'Update Traits'),
+                    lang_manager.get('msg_traits_overwrite',
+                                     'Trait data already exists for some sequences.\n'
+                                     'Do you want to overwrite the existing traits with the CSV data?'),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No
                 )
@@ -567,7 +597,9 @@ class MainForm(MainWindowUI):
 
         except Exception as e:
             self.log_tab.append_error(f"Failed to import CSV traits: {str(e)}")
-            QMessageBox.critical(self, "Error", f"Failed to import CSV traits:\n{str(e)}")
+            QMessageBox.critical(self, lang_manager.get('title_error', 'Error'),
+                                 lang_manager.get('msg_csv_import_failed',
+                                                  'Failed to import CSV traits:\n{err}').format(err=str(e)))
 
     # ==================== Data Selection ====================
 
@@ -599,28 +631,35 @@ class MainForm(MainWindowUI):
     def _run_network_analysis(self, network_type: str, extra_args: list = None):
         """Run haplotype network analysis."""
         if self.table_model.rowCount() < 1:
-            QMessageBox.warning(self, "Warning", "Please load data first!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_load_data_first', 'Please load data first!'))
             return
 
         selected = self.table_model.get_selected_taxons()
         if not selected:
-            QMessageBox.warning(self, "Warning", "Please select sequences first!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_select_seq_first', 'Please select sequences first!'))
             return
 
         valid, message = self.table_model.validate_for_analysis()
         if not valid:
-            QMessageBox.critical(self, "Validation Error", message)
+            QMessageBox.critical(self, lang_manager.get('title_validation_error', 'Validation Error'),
+                                 message)
             return
 
         # Get output path and project prefix from output panel
         output_path = self.get_output_path()
         if not output_path:
-            QMessageBox.warning(self, "Warning", "Please set output directory first!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_set_output_first',
+                                                 'Please set output directory first!'))
             return
 
         prefix = self.get_project_prefix()
         if not prefix:
-            QMessageBox.warning(self, "Warning", "Please enter a project name!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_enter_project_name',
+                                                 'Please enter a project name!'))
             return
 
         # Warn if selected data lacks traits that affect visualization
@@ -685,7 +724,9 @@ class MainForm(MainWindowUI):
             self.switch_to_tab('network')
         else:
             self.log_tab.append_error(f"Analysis failed: {result.error_message}")
-            QMessageBox.critical(self, "Error", f"Analysis failed: {result.error_message}")
+            QMessageBox.critical(self, lang_manager.get('title_error', 'Error'),
+                                 lang_manager.get('msg_analysis_failed',
+                                                  'Analysis failed: {err}').format(err=result.error_message))
             # Return to index.html (reset state, no pending JS)
             if os.path.isfile(index_html):
                 self.web_view_main.setUrl(QUrl.fromLocalFile(index_html))
@@ -752,12 +793,14 @@ class MainForm(MainWindowUI):
     def _run_sequence_alignment(self):
         """Show Multiple Sequence Alignment dialog then run the selected aligner."""
         if self.table_model.rowCount() < 1:
-            QMessageBox.warning(self, "Warning", "Please load data first!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_load_data_first', 'Please load data first!'))
             return
 
         selected = self.table_model.get_selected_taxons()
         if not selected:
-            QMessageBox.warning(self, "Warning", "Please select sequences first!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_select_seq_first', 'Please select sequences first!'))
             return
 
         config = SequenceAlignmentDialog.get_alignment_config(self)
@@ -766,12 +809,16 @@ class MainForm(MainWindowUI):
 
         output_path = self.get_output_path()
         if not output_path:
-            QMessageBox.warning(self, "Warning", "Please set output directory first!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_set_output_first',
+                                                 'Please set output directory first!'))
             return
 
         prefix = self.get_project_prefix()
         if not prefix:
-            QMessageBox.warning(self, "Warning", "Please enter a project name!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_enter_project_name',
+                                                 'Please enter a project name!'))
             return
 
         tool_label = "MAFFT" if config.tool == "mafft" else "MUSCLE"
@@ -798,20 +845,23 @@ class MainForm(MainWindowUI):
             self.log_tab.append_error(
                 f"Alignment failed: {result.error_message}")
             QMessageBox.critical(
-                self, "Alignment Failed",
-                f"Alignment failed:\n{result.error_message}")
+                self, lang_manager.get('title_alignment_failed', 'Alignment Failed'),
+                lang_manager.get('msg_alignment_failed',
+                                 'Alignment failed:\n{err}').format(err=result.error_message))
 
     # ==================== Haplotype Calculation ====================
 
     def _calculate_haplotype(self):
         """Show MSA dialog, run alignment + haplotype calculation, display in Haplotype tab."""
         if self.table_model.rowCount() < 1:
-            QMessageBox.warning(self, "Warning", "Please load data first!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_load_data_first', 'Please load data first!'))
             return
 
         selected = self.table_model.get_selected_taxons()
         if not selected:
-            QMessageBox.warning(self, "Warning", "Please select sequences first!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_select_seq_first', 'Please select sequences first!'))
             return
 
         config = SequenceAlignmentDialog.get_alignment_config(self)
@@ -820,12 +870,16 @@ class MainForm(MainWindowUI):
 
         output_path = self.get_output_path()
         if not output_path:
-            QMessageBox.warning(self, "Warning", "Please set output directory first!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_set_output_first',
+                                                 'Please set output directory first!'))
             return
 
         prefix = self.get_project_prefix()
         if not prefix:
-            QMessageBox.warning(self, "Warning", "Please enter a project name!")
+            QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
+                                lang_manager.get('msg_enter_project_name',
+                                                 'Please enter a project name!'))
             return
 
         tool_label = "MAFFT" if config.tool == "mafft" else "MUSCLE"
@@ -859,8 +913,9 @@ class MainForm(MainWindowUI):
             self.log_tab.append_error(
                 f"Haplotype calculation failed: {result.error_message}")
             QMessageBox.critical(
-                self, "Error",
-                f"Haplotype calculation failed:\n{result.error_message}")
+                self, lang_manager.get('title_error', 'Error'),
+                lang_manager.get('msg_hap_calc_failed',
+                                 'Haplotype calculation failed:\n{err}').format(err=result.error_message))
 
         if result.aligned_fasta:
             self._load_alignment_tab_async(result.aligned_fasta)
@@ -951,11 +1006,19 @@ class MainForm(MainWindowUI):
         # Update window title
         self.setWindowTitle(lang_manager.get('window_title'))
 
-        # Update tab names using widget references so indices don't need to be hard-coded
-        for widget, lang_key in [
+        # Update tab names using widget references so indices don't need to be hard-coded.
+        # Haplotype and Alignment tabs are included conditionally — they only exist
+        # after the first successful analysis / alignment run.
+        tab_keys = [
+            (self.index_tab, 'tab_index'),
             (self.web_view_main, 'tab_network'),
             (self.data_tab, 'tab_data'),
-        ]:
+            (self.haplotype_tab, 'tab_haplotype'),
+            (self.alignment_tab, 'tab_alignment'),
+        ]
+        for widget, lang_key in tab_keys:
+            if widget is None:
+                continue
             idx = self.tab_widget.indexOf(widget)
             if idx >= 0:
                 self.tab_widget.setTabText(idx, lang_manager.get(lang_key))
@@ -965,6 +1028,10 @@ class MainForm(MainWindowUI):
             self.data_tab.update_language()
         if self.output_panel:
             self.output_panel.update_language()
+        if self.alignment_tab is not None:
+            self.alignment_tab.update_language()
+        if self.haplotype_tab is not None:
+            self.haplotype_tab.update_language()
         if self.status_bar_widget:
             self.status_bar_widget.set_status(lang_manager.get('status_ready'))
 
@@ -981,11 +1048,14 @@ class MainForm(MainWindowUI):
         """Show about dialog."""
         QMessageBox.about(
             self,
-            "About",
-            "Haplotype Network Analysis Tool\n\n"
-            "Version: 2.0.0\n\n"
-            "Python version rebuilt with PyQt6\n\n"
-            "For haplotype network construction and analysis"
+            lang_manager.get('title_about', 'About'),
+            lang_manager.get(
+                'msg_about_text',
+                'Haplotype Network Analysis Tool\n\n'
+                'Version: 2.0.0\n\n'
+                'Python version rebuilt with PyQt6\n\n'
+                'For haplotype network construction and analysis'
+            )
         )
 
     def _show_help(self):
@@ -999,8 +1069,10 @@ class MainForm(MainWindowUI):
 
         pdf_path = os.path.join(self.current_directory, "static", "docs", "tcsbu.pdf")
         if not os.path.isfile(pdf_path):
-            QMessageBox.warning(self, "TCS-BU Help",
-                                f"TCS-BU help PDF not found:\n{pdf_path}")
+            QMessageBox.warning(self, lang_manager.get('title_tcsbu_help', 'TCS-BU Help'),
+                                lang_manager.get('msg_pdf_not_found',
+                                                 '{name} help PDF not found:\n{path}'
+                                                 ).format(name='TCS-BU', path=pdf_path))
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
 
@@ -1011,8 +1083,10 @@ class MainForm(MainWindowUI):
 
         pdf_path = os.path.join(self.current_directory, "static", "docs", "netst.pdf")
         if not os.path.isfile(pdf_path):
-            QMessageBox.warning(self, "NetST Help",
-                                f"NetST help PDF not found:\n{pdf_path}")
+            QMessageBox.warning(self, lang_manager.get('title_netst_help', 'NetST Help'),
+                                lang_manager.get('msg_pdf_not_found',
+                                                 '{name} help PDF not found:\n{path}'
+                                                 ).format(name='NetST', path=pdf_path))
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
 

@@ -31,6 +31,7 @@ from .output_panel import OutputPanel
 from .index_tab_widget import IndexTabWidget
 from .haplotype_tab_widget import HaplotypeTabWidget
 from .alignment_tab_widget import AlignmentTabWidget
+from .language_manager import lang_manager
 
 
 class FallbackWebView(QTextEdit):
@@ -76,13 +77,17 @@ class MainWindowUI(QMainWindow):
     DEFAULT_WINDOW_SIZE = (1400, 900)
     DEFAULT_WINDOW_POSITION = (100, 100)
 
-    TAB_NAMES = {
-        'index': "Home",
-        'network': "Network",
-        'data': "Data",
-        'haplotype': "Haplotype",
-        'alignment': "Alignment",
-    }
+    # Localized tab labels resolved at access time so they follow the
+    # currently selected language even when the tab is created on-demand.
+    @property
+    def TAB_NAMES(self):  # noqa: N802 (preserve legacy public name)
+        return {
+            'index': lang_manager.get('tab_index', 'Home'),
+            'network': lang_manager.get('tab_network', 'Network'),
+            'data': lang_manager.get('tab_data', 'Data'),
+            'haplotype': lang_manager.get('tab_haplotype', 'Haplotype'),
+            'alignment': lang_manager.get('tab_alignment', 'Alignment'),
+        }
 
     def __init__(self):
         """Initialize main window UI"""

@@ -30,6 +30,8 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from .language_manager import lang_manager
+
 # ── Nucleotide colour scheme  (background, foreground) ──────────────────────
 _BASE_STYLE = {
     'A': ('#C8E6C9', '#1B5E20'),  # green
@@ -53,6 +55,9 @@ class AlignmentTabWidget(QWidget):
         super().__init__(parent)
         self._sequences: List[Tuple[str, str]] = []  # (name, sequence)
         self._display_positions: List[int] = []
+        # Raw data captured from the most recent apply_data() call, used to
+        # re-render localized summary/info text when the UI language changes.
+        self._last_data: Dict[str, Any] = {}
         self._setup_ui()
 
     # ── UI construction ──────────────────────────────────────────────────────
@@ -62,14 +67,15 @@ class AlignmentTabWidget(QWidget):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(4)
 
-        self._summary_label = QLabel("No alignment loaded.")
-        self._summary_label.setFont(QFont("Arial", 10))
-        self._summary_label.setStyleSheet("color:#555;padding:4px;")
+        self._summary_label = QLabel(lang_manager.get('align_no_data', 'No alignment loaded.'))
+        self._summary_label.setFont(QFont("Arial", 11))
+        self._summary_label.setStyleSheet("color:#333;padding:4px;")
         layout.addWidget(self._summary_label)
 
         self._info_label = QLabel("")
-        self._info_label.setFont(QFont("Arial", 9))
-        self._info_label.setStyleSheet("color:#888;padding:2px 4px;")
+        # Slightly larger, darker font so the source-file path is legible.
+        self._info_label.setFont(QFont("Arial", 11))
+        self._info_label.setStyleSheet("color:#444;padding:2px 4px;")
         self._info_label.setWordWrap(True)
         self._info_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -99,7 +105,7 @@ class AlignmentTabWidget(QWidget):
     def _make_name_table() -> QTableWidget:
         t = QTableWidget()
         t.setColumnCount(1)
-        t.setHorizontalHeaderLabels(["Sequence Name"])
+        t.setHorizontalHeaderLabels([lang_manager.get('align_header_seqname', 'Sequence Name')])
         t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         t.setAlternatingRowColors(True)
@@ -143,16 +149,14 @@ class AlignmentTabWidget(QWidget):
             "fasta_path": fasta_path or "",
             "sequences": [],            # List[Tuple[str, str]]
             "display_positions": [],    # List[int]
-            "summary": "No alignment loaded.",
-            "info": fasta_path or "",
             "seq_len": 0,
             "n_seqs": 0,
+            "display_len": 0,
             "truncated": False,
             "error": None,              # Optional[str]
         }
 
         if not fasta_path or not os.path.isfile(fasta_path):
-            result["summary"] = "Alignment file not found."
             result["error"] = "not_found"
             return result
 
@@ -175,14 +179,10 @@ class AlignmentTabWidget(QWidget):
                 if current is not None and buf:
                     sequences.append((current, ''.join(buf).upper()))
         except Exception as e:
-            result["summary"] = "Failed to read alignment file."
-            result["info"] = fasta_path
             result["error"] = f"read_error: {e}"
             return result
 
         if not sequences:
-            result["summary"] = "No sequences found in alignment file."
-            result["info"] = fasta_path
             result["error"] = "empty"
             return result
 
@@ -193,47 +193,91 @@ class AlignmentTabWidget(QWidget):
         display_positions = list(range(display_len))
         truncated = seq_len > _MAX_DISPLAY_POSITIONS
 
-        if truncated:
-            pos_note = (
-                f"{seq_len} positions (showing first {display_len})"
-            )
-            info_text = (
-                f"Source: {fasta_path}\n"
-                f"Only the first {display_len} positions are shown here to keep the view "
-                f"responsive. Open the file above for the complete alignment."
-            )
-        else:
-            pos_note = f"{seq_len} positions"
-            info_text = f"Source: {fasta_path}"
-
         result["sequences"] = sequences
         result["display_positions"] = display_positions
         result["seq_len"] = seq_len
         result["n_seqs"] = n_seqs
+        result["display_len"] = display_len
         result["truncated"] = truncated
-        result["summary"] = (
-            f"Alignment: {os.path.basename(fasta_path)}    |    "
-            f"Sequences: {n_seqs}    |    {pos_note}"
-        )
-        result["info"] = info_text
         return result
+
+    @staticmethod
+    def _format_summary_info(data: Dict[str, Any]) -> Tuple[str, str]:
+        """Build localized summary / info strings from a parse result dict."""
+        fasta_path = data.get("fasta_path", "") or ""
+        error = data.get("error")
+
+        if error == "not_found":
+            return lang_manager.get('align_not_found', 'Alignment file not found.'), ""
+        if error and str(error).startswith("read_error"):
+            return (lang_manager.get('align_read_error',
+                                     'Failed to read alignment file.'),
+                    fasta_path)
+        if error == "empty":
+            return (lang_manager.get('align_empty',
+                                     'No sequences found in alignment file.'),
+                    fasta_path)
+        if not data.get("sequences"):
+            return lang_manager.get('align_no_data', 'No alignment loaded.'), ""
+
+        seq_len = int(data.get("seq_len", 0))
+        n_seqs = int(data.get("n_seqs", 0))
+        display_len = int(data.get("display_len", seq_len))
+        truncated = bool(data.get("truncated", False))
+
+        if truncated:
+            pos_note = lang_manager.get(
+                'align_positions_trunc',
+                '{total} positions (showing first {shown})'
+            ).format(total=seq_len, shown=display_len)
+            info_text = lang_manager.get(
+                'align_info_truncated',
+                ('Source: {path}\nOnly the first {shown} positions are shown here '
+                 'to keep the view responsive. Open the file above for the '
+                 'complete alignment.')
+            ).format(path=fasta_path, shown=display_len)
+        else:
+            pos_note = lang_manager.get(
+                'align_positions', '{n} positions').format(n=seq_len)
+            info_text = lang_manager.get(
+                'align_info_source', 'Source: {path}').format(path=fasta_path)
+
+        summary = (
+            f"{lang_manager.get('align_label_alignment', 'Alignment')}: "
+            f"{os.path.basename(fasta_path)}    |    "
+            f"{lang_manager.get('align_label_sequences', 'Sequences')}: {n_seqs}    |    "
+            f"{pos_note}"
+        )
+        return summary, info_text
 
     def apply_data(self, data: Dict[str, Any]) -> None:
         """Populate the widget from a parse_alignment_data() result."""
+        self._last_data = dict(data) if data else {}
         self._sequences = list(data.get("sequences", []))
         self._display_positions = list(data.get("display_positions", []))
 
-        self._summary_label.setText(data.get("summary", ""))
-        self._info_label.setText(data.get("info", ""))
+        summary, info = self._format_summary_info(self._last_data)
+        self._summary_label.setText(summary)
+        self._info_label.setText(info)
 
         self._name_table.setRowCount(0)
         self._seq_viewer.setRowCount(0)
         self._seq_viewer.setColumnCount(0)
+        self._name_table.setHorizontalHeaderLabels(
+            [lang_manager.get('align_header_seqname', 'Sequence Name')])
 
         if not self._sequences or not self._display_positions:
             return
 
         self._render()
+
+    def update_language(self) -> None:
+        """Re-render language-dependent strings (summary / info / headers)."""
+        summary, info = self._format_summary_info(self._last_data)
+        self._summary_label.setText(summary)
+        self._info_label.setText(info)
+        self._name_table.setHorizontalHeaderLabels(
+            [lang_manager.get('align_header_seqname', 'Sequence Name')])
 
     def load_alignment(self, fasta_path: str) -> None:
         """Load and display an aligned FASTA file (synchronous).
@@ -248,10 +292,12 @@ class AlignmentTabWidget(QWidget):
         """Reset the widget (e.g. when opening a new project)."""
         self._sequences.clear()
         self._display_positions.clear()
+        self._last_data = {}
         self._name_table.setRowCount(0)
         self._seq_viewer.setRowCount(0)
         self._seq_viewer.setColumnCount(0)
-        self._summary_label.setText("No alignment loaded.")
+        self._summary_label.setText(
+            lang_manager.get('align_no_data', 'No alignment loaded.'))
         self._info_label.setText("")
 
     # ── Private rendering ────────────────────────────────────────────────────

@@ -35,6 +35,8 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from .language_manager import lang_manager
+
 # ── Nucleotide colour scheme  (background, foreground) ──────────────────────
 _BASE_STYLE: Dict[str, Tuple[str, str]] = {
     'A': ('#C8E6C9', '#1B5E20'),  # green
@@ -72,6 +74,9 @@ class HaplotypeTabWidget(QWidget):
         self._hap_sequences: Dict[str, str] = {}
         # 0-based column indices actually shown in the seq viewer
         self._display_positions: List[int] = []
+        # Raw data captured from the most recent apply_data() call, used to
+        # re-render localized summary/info text when the UI language changes.
+        self._last_data: Dict[str, Any] = {}
         self._setup_ui()
 
     # ── UI construction ──────────────────────────────────────────────────────
@@ -81,9 +86,9 @@ class HaplotypeTabWidget(QWidget):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
 
-        self._summary_label = QLabel("No results loaded.")
-        self._summary_label.setFont(QFont("Arial", 10))
-        self._summary_label.setStyleSheet("color:#555;padding:4px;")
+        self._summary_label = QLabel(lang_manager.get('hap_no_data', 'No results loaded.'))
+        self._summary_label.setFont(QFont("Arial", 11))
+        self._summary_label.setStyleSheet("color:#333;padding:4px;")
         layout.addWidget(self._summary_label)
 
         outer = QSplitter(Qt.Orientation.Vertical)
@@ -94,11 +99,14 @@ class HaplotypeTabWidget(QWidget):
         tl = QVBoxLayout(top)
         tl.setContentsMargins(0, 0, 0, 0)
         tl.setSpacing(2)
-        tl.addWidget(_section_header("Haplotype Summary"))
+        self._summary_header = _section_header(
+            lang_manager.get('hap_section_summary', 'Haplotype Summary'))
+        tl.addWidget(self._summary_header)
 
         self._info_label = QLabel("")
-        self._info_label.setFont(QFont("Arial", 9))
-        self._info_label.setStyleSheet("color:#888;padding:2px 4px;")
+        # Slightly larger, darker font so the source-file path is legible.
+        self._info_label.setFont(QFont("Arial", 11))
+        self._info_label.setStyleSheet("color:#444;padding:2px 4px;")
         self._info_label.setWordWrap(True)
         self._info_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -113,7 +121,11 @@ class HaplotypeTabWidget(QWidget):
         tl.addWidget(inner, 1)
 
         # Left: stat table (Haplotype | Total Count | Samples)
-        self._hap_table = _make_table(["Haplotype", "Total Count", "Samples"])
+        self._hap_table = _make_table([
+            lang_manager.get('hap_header_haplotype', 'Haplotype'),
+            lang_manager.get('hap_header_total', 'Total Count'),
+            lang_manager.get('hap_header_samples', 'Samples'),
+        ])
         inner.addWidget(self._hap_table)
 
         # Right: nucleotide sequence viewer
@@ -137,8 +149,13 @@ class HaplotypeTabWidget(QWidget):
         bl = QVBoxLayout(bottom)
         bl.setContentsMargins(0, 0, 0, 0)
         bl.setSpacing(2)
-        bl.addWidget(_section_header("Sequence → Haplotype Mapping"))
-        self._seq_table = _make_table(["Sequence Name", "Haplotype"])
+        self._mapping_header = _section_header(
+            lang_manager.get('hap_section_mapping', 'Sequence → Haplotype Mapping'))
+        bl.addWidget(self._mapping_header)
+        self._seq_table = _make_table([
+            lang_manager.get('hap_header_seqname', 'Sequence Name'),
+            lang_manager.get('hap_header_haplotype', 'Haplotype'),
+        ])
         bl.addWidget(self._seq_table, 1)  # stretch=1 mirrors the top pane fix
         outer.addWidget(bottom)
 
@@ -226,49 +243,71 @@ class HaplotypeTabWidget(QWidget):
         display_positions: List[int] = []
         seq_len = 0
         truncated = False
+        display_len = 0
         if hap_sequences:
             seq_len = max(len(s) for s in hap_sequences.values())
             display_len = min(seq_len, _MAX_DISPLAY_POSITIONS)
             display_positions = list(range(display_len))
             truncated = seq_len > _MAX_DISPLAY_POSITIONS
 
-        summary = (
-            f"Project: {prefix}    |    "
-            f"Unique haplotypes: {len(hap_rows)}    |    "
-            f"Total sequences: {len(seq_rows)}"
-        )
-        if seq_len:
-            if truncated:
-                summary += (
-                    f"    |    {seq_len} positions "
-                    f"(showing first {len(display_positions)})"
-                )
-            else:
-                summary += f"    |    {seq_len} positions"
-
-        info = ""
-        if truncated:
-            info = (
-                f"Only the first {len(display_positions)} positions are shown here to keep "
-                f"the view responsive. For the full aligned haplotypes open "
-                f"{fasta_path}."
-            )
-
         return {
             "prefix": prefix,
             "output_path": output_path,
+            "fasta_path": fasta_path,
             "hap_rows": hap_rows,
             "seq_rows": seq_rows,
             "hap_sequences": hap_sequences,
             "display_positions": display_positions,
             "seq_len": seq_len,
+            "display_len": display_len,
             "truncated": truncated,
-            "summary": summary,
-            "info": info,
+            "n_hap": len(hap_rows),
+            "n_seq": len(seq_rows),
         }
+
+    @staticmethod
+    def _format_summary_info(data: Dict[str, Any]) -> Tuple[str, str]:
+        """Build localized summary / info strings from a parse result dict."""
+        if not data:
+            return lang_manager.get('hap_no_data', 'No results loaded.'), ""
+
+        prefix = data.get("prefix", "")
+        n_hap = int(data.get("n_hap", 0))
+        n_seq = int(data.get("n_seq", 0))
+        seq_len = int(data.get("seq_len", 0))
+        display_len = int(data.get("display_len", seq_len))
+        truncated = bool(data.get("truncated", False))
+        fasta_path = data.get("fasta_path", "") or ""
+
+        summary = (
+            f"{lang_manager.get('hap_label_project', 'Project')}: {prefix}    |    "
+            f"{lang_manager.get('hap_label_unique', 'Unique haplotypes')}: {n_hap}    |    "
+            f"{lang_manager.get('hap_label_total_seq', 'Total sequences')}: {n_seq}"
+        )
+        if seq_len:
+            if truncated:
+                summary += lang_manager.get(
+                    'hap_positions_trunc',
+                    '    |    {total} positions (showing first {shown})'
+                ).format(total=seq_len, shown=display_len)
+            else:
+                summary += lang_manager.get(
+                    'hap_positions', '    |    {n} positions').format(n=seq_len)
+
+        info = ""
+        if truncated:
+            info = lang_manager.get(
+                'hap_info_truncated',
+                ('Only the first {shown} positions are shown here to keep '
+                 'the view responsive. For the full aligned haplotypes open '
+                 '{path}.')
+            ).format(shown=display_len, path=fasta_path)
+
+        return summary, info
 
     def apply_data(self, data: Dict[str, Any]) -> None:
         """Populate all three panes from a parse_result_data() result."""
+        self._last_data = dict(data) if data else {}
         self._hap_sequences = dict(data.get("hap_sequences", {}))
         self._display_positions = list(data.get("display_positions", []))
 
@@ -276,10 +315,30 @@ class HaplotypeTabWidget(QWidget):
         self._fill_seq_table(data.get("seq_rows", []))
         self._render_seq_viewer()
 
-        self._summary_label.setText(data.get("summary", ""))
-        info = data.get("info", "")
+        summary, info = self._format_summary_info(self._last_data)
+        self._summary_label.setText(summary)
         self._info_label.setText(info)
         self._info_label.setVisible(bool(info))
+
+    def update_language(self) -> None:
+        """Re-render language-dependent strings when the UI language changes."""
+        summary, info = self._format_summary_info(self._last_data)
+        self._summary_label.setText(summary)
+        self._info_label.setText(info)
+        self._info_label.setVisible(bool(info))
+        self._summary_header.setText(
+            lang_manager.get('hap_section_summary', 'Haplotype Summary'))
+        self._mapping_header.setText(
+            lang_manager.get('hap_section_mapping', 'Sequence → Haplotype Mapping'))
+        self._hap_table.setHorizontalHeaderLabels([
+            lang_manager.get('hap_header_haplotype', 'Haplotype'),
+            lang_manager.get('hap_header_total', 'Total Count'),
+            lang_manager.get('hap_header_samples', 'Samples'),
+        ])
+        self._seq_table.setHorizontalHeaderLabels([
+            lang_manager.get('hap_header_seqname', 'Sequence Name'),
+            lang_manager.get('hap_header_haplotype', 'Haplotype'),
+        ])
 
     def load_result(self, output_path: str, prefix: str) -> None:
         """Reload all three panes from the latest analysis output files (sync).
@@ -298,7 +357,9 @@ class HaplotypeTabWidget(QWidget):
         self._seq_table.setRowCount(0)
         self._hap_sequences.clear()
         self._display_positions.clear()
-        self._summary_label.setText("No results loaded.")
+        self._last_data = {}
+        self._summary_label.setText(
+            lang_manager.get('hap_no_data', 'No results loaded.'))
         self._info_label.clear()
         self._info_label.setVisible(False)
 
