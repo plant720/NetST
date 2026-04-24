@@ -7,6 +7,7 @@ Integrated as Python module 2026
 """
 
 import csv
+import os
 import random
 
 # Predefined color palettes for 3–10 groups
@@ -44,8 +45,12 @@ def _gen_hap_config(hap_file: str):
     hap_conf_list = []
     with open(hap_file, mode='r', newline='', encoding='utf-8') as f:
         reader = csv.reader(f)
-        next(reader)  # skip header
+        # Skip header; empty file → no rows to process.
+        if next(reader, None) is None:
+            return hap_conf_list
         for row in reader:
+            if len(row) < 2:
+                continue
             sample = row[0]
             hap = row[1]
             group = row[-1].strip() if len(row) >= 4 else ""
@@ -119,7 +124,6 @@ def generate_network_config(gml_file: str, hap_file: str, out_prefix: str,
     group_conf_list = _color_group_config(hap_conf_list)
     _write_conf(hap_conf_list, group_conf_list, out_prefix)
 
-    import os
     with open(out_prefix + '.js', 'w', encoding='utf-8') as fp:
         fp.write('var gmlfile = {target: {files: [new File(["')
         fp.write(_file_to_escaped(gml_file))

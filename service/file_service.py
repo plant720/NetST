@@ -17,18 +17,29 @@ class FileService:
 
     @staticmethod
     def detect_encoding(file_path: str) -> str:
-        """Detect file encoding."""
+        """Detect file encoding. Always returns a valid codec name."""
         with open(file_path, 'rb') as f:
             raw_data = f.read(10000)  # Read first 10KB
-            result = chardet.detect(raw_data)
-            return result['encoding'] or 'utf-8'
+        if not raw_data:
+            return 'utf-8'
+        result = chardet.detect(raw_data) or {}
+        encoding = result.get('encoding')
+        if not encoding:
+            return 'utf-8'
+        # Validate codec; fall back to utf-8 on unknown encoding names.
+        try:
+            import codecs
+            codecs.lookup(encoding)
+        except LookupError:
+            return 'utf-8'
+        return encoding
 
     @staticmethod
     def ensure_utf8(file_path: str) -> None:
         """Convert file to UTF-8 if needed."""
         encoding = FileService.detect_encoding(file_path)
         if encoding.lower() not in ('utf-8', 'ascii'):
-            with open(file_path, 'r', encoding=encoding) as f:
+            with open(file_path, 'r', encoding=encoding, errors='replace') as f:
                 content = f.read()
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(content)
@@ -236,43 +247,59 @@ class FileService:
         result = []
         current_id = start_id
 
-        for i, taxon in enumerate(taxons):
-            # Skip sequences with ambiguous bases if requested
-            if config.remove_ambiguous:
-                ambiguous = set('RYSWKMBDHVN')
-                if any(base.upper() in ambiguous for base in taxon.sequence):
-                    continue
+        ambiguous = frozenset('RYSWKMBDHVN')
+        replace_enabled = config.replace_enabled and bool(config.replace_from)
+        replace_from = config.replace_from
+        replace_to = config.replace_to or ""
 
-            # Update taxon ID
+        split_name = (config.split_name_enabled and bool(config.split_name_delimiter),
+                      config.split_name_delimiter, config.split_name_index)
+        split_disc = (config.split_discrete_enabled and bool(config.split_discrete_delimiter),
+                      config.split_discrete_delimiter, config.split_discrete_index)
+        split_cont = (config.split_continuous_enabled and bool(config.split_continuous_delimiter),
+                      config.split_continuous_delimiter, config.split_continuous_index)
+
+        # When several splits share the same delimiter (common case) we can
+        # split once and reuse the parts list instead of re-splitting.
+        same_delim = (
+            split_name[0] and split_disc[0] and split_cont[0]
+            and split_name[1] == split_disc[1] == split_cont[1]
+        )
+
+        for taxon in taxons:
+            if config.remove_ambiguous and any(b in ambiguous for b in taxon.sequence.upper()):
+                continue
+
             taxon.id = current_id
             current_id += 1
 
-            # Apply replace if enabled
-            if config.replace_enabled and config.replace_from:
-                taxon.name = taxon.name.replace(config.replace_from, config.replace_to)
+            if replace_enabled:
+                taxon.name = taxon.name.replace(replace_from, replace_to)
 
-            # Get original header for splitting
             original_name = taxon.name
 
-            # Split and extract new name
-            if config.split_name_enabled and config.split_name_delimiter:
-                parts = original_name.split(config.split_name_delimiter)
-                if config.split_name_index < len(parts):
-                    taxon.name = parts[config.split_name_index].strip()
+            if same_delim:
+                parts = original_name.split(split_name[1])
+                if split_name[2] < len(parts):
+                    taxon.name = parts[split_name[2]].strip()
+                if split_disc[2] < len(parts):
+                    taxon.discrete_traits = parts[split_disc[2]].strip()
+                if split_cont[2] < len(parts):
+                    taxon.continuous_traits = parts[split_cont[2]].strip()
+            else:
+                if split_name[0]:
+                    parts = original_name.split(split_name[1])
+                    if split_name[2] < len(parts):
+                        taxon.name = parts[split_name[2]].strip()
+                if split_disc[0]:
+                    parts = original_name.split(split_disc[1])
+                    if split_disc[2] < len(parts):
+                        taxon.discrete_traits = parts[split_disc[2]].strip()
+                if split_cont[0]:
+                    parts = original_name.split(split_cont[1])
+                    if split_cont[2] < len(parts):
+                        taxon.continuous_traits = parts[split_cont[2]].strip()
 
-            # Split and extract discrete trait
-            if config.split_discrete_enabled and config.split_discrete_delimiter:
-                parts = original_name.split(config.split_discrete_delimiter)
-                if config.split_discrete_index < len(parts):
-                    taxon.discrete_traits = parts[config.split_discrete_index].strip()
-
-            # Split and extract continuous trait
-            if config.split_continuous_enabled and config.split_continuous_delimiter:
-                parts = original_name.split(config.split_continuous_delimiter)
-                if config.split_continuous_index < len(parts):
-                    taxon.continuous_traits = parts[config.split_continuous_index].strip()
-
-            # Use numbering as name if requested
             if config.use_numbering:
                 taxon.name = str(taxon.id)
 
