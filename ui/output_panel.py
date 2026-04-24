@@ -43,6 +43,9 @@ class OutputPanel(QWidget):
         self.btn_open: Optional[QPushButton] = None
         self.btn_change: Optional[QPushButton] = None
         self.hint_label: Optional[QLabel] = None
+        self.output_title_label: Optional[QLabel] = None
+        self.project_name_label: Optional[QLabel] = None
+        self.output_folder_label: Optional[QLabel] = None
 
         # Default output path
         self.output_path = os.path.join(os.path.expanduser("~"), "HaplotypeOutput")
@@ -73,20 +76,25 @@ class OutputPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(5)
 
+        from .language_manager import lang_manager
+
         # Title
-        title_label = QLabel("Output")
-        title_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        layout.addWidget(title_label)
+        self.output_title_label = QLabel(lang_manager.get('label_output', 'Output'))
+        self.output_title_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        layout.addWidget(self.output_title_label)
 
         # Project name (file prefix)
-        layout.addWidget(QLabel("Project Name:"))
+        self.project_name_label = QLabel(lang_manager.get('label_project_name', 'Project Name:'))
+        layout.addWidget(self.project_name_label)
         self.project_name_edit = QLineEdit()
-        self.project_name_edit.setPlaceholderText("e.g. my_project")
+        self.project_name_edit.setPlaceholderText(
+            lang_manager.get('placeholder_project', 'e.g. my_project'))
         self.project_name_edit.setText("project")
         layout.addWidget(self.project_name_edit)
 
         # Output folder path
-        layout.addWidget(QLabel("Output Folder:"))
+        self.output_folder_label = QLabel(lang_manager.get('label_output_folder', 'Output Folder:'))
+        layout.addWidget(self.output_folder_label)
         self.output_path_edit = QLineEdit()
         self.output_path_edit.setText(self.output_path)
         self.output_path_edit.setReadOnly(True)
@@ -96,11 +104,11 @@ class OutputPanel(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(5)
 
-        self.btn_open = QPushButton("Open")
+        self.btn_open = QPushButton(lang_manager.get('btn_open', 'Open'))
         self.btn_open.clicked.connect(self._open_output_folder)
         btn_layout.addWidget(self.btn_open)
 
-        self.btn_change = QPushButton("Change")
+        self.btn_change = QPushButton(lang_manager.get('btn_change', 'Change'))
         self.btn_change.clicked.connect(self._change_output_folder)
         btn_layout.addWidget(self.btn_change)
 
@@ -118,8 +126,10 @@ class OutputPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(5)
 
+        from .language_manager import lang_manager
+
         # Hint label
-        self.hint_label = QLabel("Logs")
+        self.hint_label = QLabel(lang_manager.get('log_hint', 'Logs'))
         self.hint_label.setStyleSheet("color: #666666;")
         layout.addWidget(self.hint_label)
 
@@ -154,8 +164,10 @@ class OutputPanel(QWidget):
 
     def _change_output_folder(self):
         """Change output folder"""
+        from .language_manager import lang_manager
         folder = QFileDialog.getExistingDirectory(
-            self, "Select Output Folder", self.output_path
+            self, lang_manager.get('dlg_select_output', 'Select Output Folder'),
+            self.output_path
         )
 
         if folder:
@@ -226,3 +238,12 @@ class OutputPanel(QWidget):
         self.btn_open.setText(lang_manager.get('btn_open'))
         self.btn_change.setText(lang_manager.get('btn_change'))
         self.hint_label.setText(lang_manager.get('log_hint'))
+        if self.output_title_label:
+            self.output_title_label.setText(lang_manager.get('label_output'))
+        if self.project_name_label:
+            self.project_name_label.setText(lang_manager.get('label_project_name'))
+        if self.output_folder_label:
+            self.output_folder_label.setText(lang_manager.get('label_output_folder'))
+        if self.project_name_edit:
+            self.project_name_edit.setPlaceholderText(
+                lang_manager.get('placeholder_project'))

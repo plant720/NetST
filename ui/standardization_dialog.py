@@ -15,6 +15,8 @@ from PyQt6.QtWidgets import (
     QTextEdit, QPushButton, QFrame, QSplitter
 )
 
+from .language_manager import lang_manager
+
 
 @dataclass
 class StandardizationConfig:
@@ -53,7 +55,7 @@ class SplitOptionWidget(QFrame):
         layout.setSpacing(5)
 
         # Row 1: Checkbox + delimiter
-        self.checkbox = QCheckBox("Split names using:")
+        self.checkbox = QCheckBox(lang_manager.get('dlg_std_split_using', 'Split names using:'))
         self.checkbox.stateChanged.connect(self._on_checkbox_changed)
         layout.addWidget(self.checkbox, 0, 0)
 
@@ -114,7 +116,7 @@ class StandardizationDialog(QDialog):
         self._update_preview()
 
     def _setup_ui(self):
-        self.setWindowTitle("Standardization")
+        self.setWindowTitle(lang_manager.get('dlg_std_title', 'Standardization'))
         self.setMinimumSize(650, 450)
         self.setModal(True)
 
@@ -137,17 +139,18 @@ class StandardizationDialog(QDialog):
         # Bottom: Buttons and numbering option
         bottom_layout = QHBoxLayout()
 
-        self.numbering_check = QCheckBox("Use numbering as seq names")
+        self.numbering_check = QCheckBox(
+            lang_manager.get('dlg_std_numbering', 'Use numbering as seq names'))
         bottom_layout.addWidget(self.numbering_check)
 
         bottom_layout.addStretch()
 
-        self.ok_btn = QPushButton("OK")
+        self.ok_btn = QPushButton(lang_manager.get('btn_ok', 'OK'))
         self.ok_btn.setMinimumWidth(75)
         self.ok_btn.clicked.connect(self._on_ok)
         bottom_layout.addWidget(self.ok_btn)
 
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton(lang_manager.get('btn_cancel', 'Cancel'))
         self.cancel_btn.setMinimumWidth(75)
         self.cancel_btn.clicked.connect(self.reject)
         bottom_layout.addWidget(self.cancel_btn)
@@ -155,17 +158,18 @@ class StandardizationDialog(QDialog):
         layout.addLayout(bottom_layout)
 
     def _create_options_widget(self) -> QGroupBox:
-        group = QGroupBox("Standardization")
+        group = QGroupBox(lang_manager.get('dlg_std_group', 'Standardization'))
         layout = QVBoxLayout(group)
         layout.setSpacing(8)
 
         # Remove ambiguous bases
-        self.remove_ambiguous_check = QCheckBox("Remove seq with ambiguous bases")
+        self.remove_ambiguous_check = QCheckBox(
+            lang_manager.get('dlg_std_remove_ambiguous', 'Remove seq with ambiguous bases'))
         layout.addWidget(self.remove_ambiguous_check)
 
         # Replace option
         replace_layout = QHBoxLayout()
-        self.replace_check = QCheckBox("Replace")
+        self.replace_check = QCheckBox(lang_manager.get('dlg_std_replace', 'Replace'))
         self.replace_check.stateChanged.connect(self._on_replace_changed)
         replace_layout.addWidget(self.replace_check)
 
@@ -185,15 +189,18 @@ class StandardizationDialog(QDialog):
         layout.addLayout(replace_layout)
 
         # Split options
-        self.split_name = SplitOptionWidget("Use as the new name", 0)
+        self.split_name = SplitOptionWidget(
+            lang_manager.get('dlg_std_use_as_name', 'Use as the new name'), 0)
         self.split_name.set_preview_callback(self._update_preview)
         layout.addWidget(self.split_name)
 
-        self.split_discrete = SplitOptionWidget("Use as discrete trait", 1)
+        self.split_discrete = SplitOptionWidget(
+            lang_manager.get('dlg_std_use_as_discrete', 'Use as discrete trait'), 1)
         self.split_discrete.set_preview_callback(self._update_preview)
         layout.addWidget(self.split_discrete)
 
-        self.split_continuous = SplitOptionWidget("Use as continuous trait", 2)
+        self.split_continuous = SplitOptionWidget(
+            lang_manager.get('dlg_std_use_as_continuous', 'Use as continuous trait'), 2)
         self.split_continuous.set_preview_callback(self._update_preview)
         layout.addWidget(self.split_continuous)
 
@@ -208,7 +215,7 @@ class StandardizationDialog(QDialog):
 
         # Preview Names
         names_layout = QVBoxLayout()
-        names_label = QLabel("Preview Names:")
+        names_label = QLabel(lang_manager.get('dlg_std_preview_names', 'Preview Names:'))
         names_layout.addWidget(names_label)
 
         self.preview_names = QTextEdit()
@@ -221,7 +228,7 @@ class StandardizationDialog(QDialog):
 
         # Split Results
         results_layout = QVBoxLayout()
-        results_label = QLabel("Split Results:")
+        results_label = QLabel(lang_manager.get('dlg_std_split_results', 'Split Results:'))
         results_layout.addWidget(results_label)
 
         self.split_results = QTextEdit()

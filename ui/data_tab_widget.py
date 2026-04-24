@@ -35,6 +35,7 @@ class DataTabWidget(QWidget):
         self.btn_deselect_all: Optional[QPushButton] = None
         self.selected_count_label: Optional[QLabel] = None
         self.total_count_label: Optional[QLabel] = None
+        self._count_caption_label: Optional[QLabel] = None
 
         self._select_all_callback: Optional[Callable] = None
         self._deselect_all_callback: Optional[Callable] = None
@@ -62,21 +63,23 @@ class DataTabWidget(QWidget):
         toolbar_layout = QHBoxLayout(toolbar_frame)
         toolbar_layout.setContentsMargins(5, 3, 5, 3)
 
+        from .language_manager import lang_manager
+
         # Select All button
-        self.btn_select_all = QPushButton("Select All")
+        self.btn_select_all = QPushButton(lang_manager.get('btn_select_all', 'Select All'))
         self.btn_select_all.clicked.connect(self._on_select_all)
         toolbar_layout.addWidget(self.btn_select_all)
 
         # Deselect All button
-        self.btn_deselect_all = QPushButton("Deselect All")
+        self.btn_deselect_all = QPushButton(lang_manager.get('btn_deselect_all', 'Deselect All'))
         self.btn_deselect_all.clicked.connect(self._on_deselect_all)
         toolbar_layout.addWidget(self.btn_deselect_all)
 
         toolbar_layout.addStretch()
 
         # Selected count display
-        count_label = QLabel("Selected:")
-        toolbar_layout.addWidget(count_label)
+        self._count_caption_label = QLabel(lang_manager.get('label_selected', 'Selected:'))
+        toolbar_layout.addWidget(self._count_caption_label)
 
         self.selected_count_label = QLabel("0")
         self.selected_count_label.setMinimumWidth(30)
@@ -183,3 +186,5 @@ class DataTabWidget(QWidget):
         from .language_manager import lang_manager
         self.btn_select_all.setText(lang_manager.get('btn_select_all'))
         self.btn_deselect_all.setText(lang_manager.get('btn_deselect_all'))
+        if self._count_caption_label:
+            self._count_caption_label.setText(lang_manager.get('label_selected'))

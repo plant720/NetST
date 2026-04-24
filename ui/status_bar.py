@@ -6,6 +6,8 @@ Provides the status bar component with status message and progress bar.
 
 from PyQt6.QtWidgets import QProgressBar, QLabel
 
+from .language_manager import lang_manager
+
 
 class StatusBarWidget:
     """
@@ -27,7 +29,7 @@ class StatusBarWidget:
     def _setup_ui(self):
         """Setup user interface"""
         # Status label
-        self.status_label = QLabel("Ready")
+        self.status_label = QLabel(lang_manager.get('status_ready', 'Ready'))
         self.status_bar.addWidget(self.status_label, 1)
 
         # Progress bar
@@ -64,5 +66,5 @@ class StatusBarWidget:
 
     def reset(self):
         """Reset status bar to initial state"""
-        self.set_status("Ready")
+        self.set_status(lang_manager.get('status_ready', 'Ready'))
         self.hide_progress()
