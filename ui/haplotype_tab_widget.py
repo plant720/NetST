@@ -306,26 +306,34 @@ class HaplotypeTabWidget(QWidget):
 
     def _fill_hap_table(self, rows: List[Tuple[str, str, str]]) -> None:
         """Fill the haplotype summary table from pre-parsed rows."""
-        self._hap_table.setRowCount(len(rows))
-        for r, (hap, count, samples) in enumerate(rows):
-            self._hap_table.setItem(r, 0, _plain_item(hap))
-            cnt = _plain_item(count)
-            cnt.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self._hap_table.setItem(r, 1, cnt)
-            self._hap_table.setItem(r, 2, _plain_item(samples))
+        self._hap_table.setUpdatesEnabled(False)
+        try:
+            self._hap_table.setRowCount(len(rows))
+            for r, (hap, count, samples) in enumerate(rows):
+                self._hap_table.setItem(r, 0, _plain_item(hap))
+                cnt = _plain_item(count)
+                cnt.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self._hap_table.setItem(r, 1, cnt)
+                self._hap_table.setItem(r, 2, _plain_item(samples))
 
-        self._hap_table.resizeColumnToContents(0)
-        self._hap_table.resizeColumnToContents(1)
+            self._hap_table.resizeColumnToContents(0)
+            self._hap_table.resizeColumnToContents(1)
+        finally:
+            self._hap_table.setUpdatesEnabled(True)
 
     def _fill_seq_table(self, rows: List[Tuple[str, str]]) -> None:
         """Fill the sequence mapping table from pre-parsed rows."""
-        self._seq_table.setRowCount(len(rows))
-        for r, (name, hap) in enumerate(rows):
-            self._seq_table.setItem(r, 0, _plain_item(name))
-            self._seq_table.setItem(r, 1, _plain_item(hap))
+        self._seq_table.setUpdatesEnabled(False)
+        try:
+            self._seq_table.setRowCount(len(rows))
+            for r, (name, hap) in enumerate(rows):
+                self._seq_table.setItem(r, 0, _plain_item(name))
+                self._seq_table.setItem(r, 1, _plain_item(hap))
 
-        self._seq_table.resizeColumnToContents(0)
-        self._seq_table.resizeColumnToContents(1)
+            self._seq_table.resizeColumnToContents(0)
+            self._seq_table.resizeColumnToContents(1)
+        finally:
+            self._seq_table.setUpdatesEnabled(True)
 
     def _render_seq_viewer(self) -> None:
         """Render the (capped) nucleotide grid for all haplotypes."""

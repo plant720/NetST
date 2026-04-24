@@ -197,6 +197,21 @@ class MainForm(MainWindowUI):
         # Delayed loading of initial pages
         QTimer.singleShot(100, self._load_initial_pages)
 
+    @staticmethod
+    def _stop_worker(worker: Optional[QThread]) -> None:
+        """Stop a previous QThread worker so a new one can take its place.
+
+        Prevents abandoned threads when the user kicks off a new analysis
+        (or tab loader) before the previous one has finished.
+        """
+        if worker is None or not worker.isRunning():
+            return
+        worker.requestInterruption()
+        worker.quit()
+        if not worker.wait(5000):
+            worker.terminate()
+            worker.wait()
+
     def _init_components(self):
         """Initialize components."""
         self.data_tab.set_model(self.table_model)
@@ -636,6 +651,7 @@ class MainForm(MainWindowUI):
         self.log_tab.append_info(f"Output directory: {output_path}")
         self.set_status("Analyzing...")
 
+        self._stop_worker(self.analysis_worker)
         self.analysis_worker = AnalysisWorker(
             self.analysis_service, network_type, selected, output_path, prefix,
             extra_args=extra_args or []
@@ -764,6 +780,7 @@ class MainForm(MainWindowUI):
             f"({len(selected)} sequences)...")
         self.set_status("Aligning...")
 
+        self._stop_worker(self.alignment_worker)
         self.alignment_worker = AlignmentWorker(
             self.analysis_service, selected, output_path, prefix, config)
         self.alignment_worker.log.connect(self.log_tab.append_info)
@@ -817,6 +834,7 @@ class MainForm(MainWindowUI):
             f"({len(selected)} sequences)...")
         self.set_status("Calculating haplotypes...")
 
+        self._stop_worker(self.haplotype_worker)
         self.haplotype_worker = HaplotypeWorker(
             self.analysis_service, selected, output_path, prefix, config)
         self.haplotype_worker.progress.connect(self.set_progress)
@@ -871,6 +889,7 @@ class MainForm(MainWindowUI):
 
         self.log_tab.append_info("Loading alignment view in background…")
 
+        self._stop_worker(self.alignment_tab_loader)
         self.alignment_tab_loader = AlignmentTabLoadWorker(fasta_path)
         self.alignment_tab_loader.finished.connect(
             lambda data, f=focus: self._on_alignment_tab_loaded(data, f)
@@ -902,6 +921,7 @@ class MainForm(MainWindowUI):
 
         self.log_tab.append_info("Loading haplotype view in background…")
 
+        self._stop_worker(self.haplotype_tab_loader)
         self.haplotype_tab_loader = HaplotypeTabLoadWorker(output_path, prefix)
         self.haplotype_tab_loader.finished.connect(
             lambda data, f=focus: self._on_haplotype_tab_loaded(data, f)
@@ -1022,6 +1042,14 @@ class MainForm(MainWindowUI):
             return True
         except (ValueError, TypeError):
             return False
+
+    def closeEvent(self, event):
+        """Ensure background workers are stopped before the window is destroyed."""
+        for worker in (self.analysis_worker, self.alignment_worker,
+                       self.haplotype_worker, self.alignment_tab_loader,
+                       self.haplotype_tab_loader):
+            self._stop_worker(worker)
+        super().closeEvent(event)
 
 
 def main():

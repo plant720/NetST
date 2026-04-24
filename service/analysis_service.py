@@ -178,7 +178,10 @@ class AnalysisService:
                     cmd,
                     cwd=output_path,
                     capture_output=True,
-                    text=True
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    timeout=600,
                 )
                 if process.stdout:
                     self._log(f"fastHaN stdout: {process.stdout.strip()}")
@@ -187,7 +190,10 @@ class AnalysisService:
                 if process.returncode != 0:
                     self._log(f"fastHaN exited with code {process.returncode}")
                     success = False
-            except Exception as e:
+            except subprocess.TimeoutExpired:
+                self._log("fastHaN timed out after 600 seconds")
+                success = False
+            except (FileNotFoundError, PermissionError, OSError) as e:
                 self._log(f"Network construction error: {e}")
                 self._log(traceback.format_exc())
                 success = False
@@ -317,7 +323,7 @@ class AnalysisService:
             try:
                 order_flag = ["--inputorder"] if add_inputorder else []
                 cmd = [mafft_cmd] + order_flag + method_args + [input_file]
-                with open(output_file, 'w') as out_f:
+                with open(output_file, 'w', encoding='utf-8') as out_f:
                     process = subprocess.run(
                         cmd,
                         cwd=work_dir,
@@ -506,7 +512,7 @@ class AnalysisService:
 
             if not sequences:
                 self._log("No sequences found in aligned FASTA")
-                return False
+                return False, False
 
             seq_len = len(sequences[0][1])
 
@@ -517,13 +523,13 @@ class AnalysisService:
             hap_counter = 0
 
             for name, seq in sequences:
-                if seq not in seq_to_hap:
+                hap_name = seq_to_hap.get(seq)
+                if hap_name is None:
                     hap_counter += 1
                     hap_name = f"H{hap_counter}"
                     seq_to_hap[seq] = hap_name
                     hap_sequences[hap_name] = seq
                     hap_info[hap_name] = []
-                hap_name = seq_to_hap[seq]
                 cont, disc = taxon_lookup.get(name, ("0", ""))
                 hap_info[hap_name].append((name, cont, disc))
 
