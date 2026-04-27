@@ -24,7 +24,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=['rthook_qtwebengine.py'], # 运行时钩子：修正 QtWebEngine 路径
+    runtime_hooks=['rthook_qtwebengine-mac.py'], # 运行时钩子：修正 QtWebEngine 路径
     excludes=[                               # 排除不需要的 PyQt6 子模块（减小体积）
         'PyQt6.Qt3DCore', 'PyQt6.Qt3DRender', 'PyQt6.QtBluetooth',
         'PyQt6.QtNfc', 'PyQt6.QtSensors', 'PyQt6.QtSerialPort',

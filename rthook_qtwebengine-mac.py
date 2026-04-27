@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # @Time       : 2026/4/8 19:57
 # @Author     : zzhen
-# @File       : rthook_qtwebengine.py
+# @File       : rthook_qtwebengine-mac.py
 # @Software   : PyCharm
 # @Description: 
 # @Copyright  : Copyright (c) 2026 by zzhen, All Rights Reserved.
