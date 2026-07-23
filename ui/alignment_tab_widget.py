@@ -21,7 +21,7 @@ the tab can be populated asynchronously from a background worker.
 """
 
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor, QFont
@@ -46,6 +46,7 @@ _DEFAULT_STYLE: Tuple[str, str] = ('#FAFAFA', '#333333')
 # Only the first N positions are ever rendered. For longer alignments the user
 # is directed to the source FASTA file rather than loading more into the UI.
 _MAX_DISPLAY_POSITIONS = 500
+_MAX_DISPLAY_SEQUENCES = 200
 
 
 class AlignmentTabWidget(QWidget):
@@ -136,14 +137,16 @@ class AlignmentTabWidget(QWidget):
     # ── Public API ───────────────────────────────────────────────────────────
 
     @staticmethod
-    def parse_alignment_data(fasta_path: str) -> Dict[str, Any]:
+    def parse_alignment_data(
+        fasta_path: str,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
         """Parse an aligned FASTA file into plain Python data.
 
         Threadsafe: touches no Qt objects, so it is safe to call from a
         QThread. The returned dict is consumed by apply_data() on the main
-        thread. Only the first _MAX_DISPLAY_POSITIONS columns are kept for
-        display; the parser does not scan the full alignment for variable
-        sites, which keeps parsing O(N_seqs * 500) regardless of length.
+        thread. The file is read completely to report accurate dimensions, but
+        only a bounded sequence/position preview is returned to the GUI thread.
         """
         result: Dict[str, Any] = {
             "fasta_path": fasta_path or "",
@@ -153,6 +156,7 @@ class AlignmentTabWidget(QWidget):
             "n_seqs": 0,
             "display_len": 0,
             "truncated": False,
+            "rows_truncated": False,
             "error": None,              # Optional[str]
         }
 
@@ -161,44 +165,64 @@ class AlignmentTabWidget(QWidget):
             return result
 
         sequences: List[Tuple[str, str]] = []
+        n_seqs = 0
+        seq_len = 0
         try:
             current: Optional[str] = None
-            buf: List[str] = []
+            current_length = 0
+            preview_parts: List[str] = []
+
+            def finish_record() -> None:
+                nonlocal n_seqs, seq_len
+                if current is None or current_length == 0:
+                    return
+                if n_seqs < _MAX_DISPLAY_SEQUENCES:
+                    sequences.append((current, ''.join(preview_parts).upper()))
+                n_seqs += 1
+                seq_len = max(seq_len, current_length)
+
             with open(fasta_path, encoding="utf-8") as fh:
                 for line in fh:
+                    if cancel_check is not None and cancel_check():
+                        result["error"] = "cancelled"
+                        return result
                     line = line.strip()
                     if not line:
                         continue
                     if line.startswith('>'):
-                        if current is not None and buf:
-                            sequences.append((current, ''.join(buf).upper()))
+                        finish_record()
                         current = line[1:].strip()
-                        buf = []
+                        current_length = 0
+                        preview_parts = []
                     else:
-                        buf.append(line)
-                if current is not None and buf:
-                    sequences.append((current, ''.join(buf).upper()))
+                        current_length += len(line)
+                        if n_seqs < _MAX_DISPLAY_SEQUENCES:
+                            remaining = _MAX_DISPLAY_POSITIONS - sum(
+                                len(part) for part in preview_parts)
+                            if remaining > 0:
+                                preview_parts.append(line[:remaining])
+                finish_record()
         except Exception as e:
             result["error"] = f"read_error: {e}"
             return result
 
-        if not sequences:
+        if n_seqs == 0:
             result["error"] = "empty"
             return result
-
-        seq_len = max(len(s) for _, s in sequences)
-        n_seqs = len(sequences)
 
         display_len = min(seq_len, _MAX_DISPLAY_POSITIONS)
         display_positions = list(range(display_len))
         truncated = seq_len > _MAX_DISPLAY_POSITIONS
 
+        # The table widget creates one item per visible base. Keep the complete
+        # counts, but pass only a bounded preview to the GUI thread.
         result["sequences"] = sequences
         result["display_positions"] = display_positions
         result["seq_len"] = seq_len
         result["n_seqs"] = n_seqs
         result["display_len"] = display_len
         result["truncated"] = truncated
+        result["rows_truncated"] = n_seqs > _MAX_DISPLAY_SEQUENCES
         return result
 
     @staticmethod
@@ -224,6 +248,8 @@ class AlignmentTabWidget(QWidget):
         n_seqs = int(data.get("n_seqs", 0))
         display_len = int(data.get("display_len", seq_len))
         truncated = bool(data.get("truncated", False))
+        display_n_seqs = len(data.get("sequences", []))
+        rows_truncated = bool(data.get("rows_truncated", False))
 
         if truncated:
             pos_note = lang_manager.get(
@@ -241,6 +267,12 @@ class AlignmentTabWidget(QWidget):
                 'align_positions', '{n} positions').format(n=seq_len)
             info_text = lang_manager.get(
                 'align_info_source', 'Source: {path}').format(path=fasta_path)
+
+        if rows_truncated:
+            info_text += "\n" + lang_manager.get(
+                'align_sequences_truncated',
+                'Only the first {shown} of {total} sequences are displayed.'
+            ).format(shown=display_n_seqs, total=n_seqs)
 
         summary = (
             f"{lang_manager.get('align_label_alignment', 'Alignment')}: "
@@ -278,27 +310,14 @@ class AlignmentTabWidget(QWidget):
         self._info_label.setText(info)
         self._name_table.setHorizontalHeaderLabels(
             [lang_manager.get('align_header_seqname', 'Sequence Name')])
-
-    def load_alignment(self, fasta_path: str) -> None:
-        """Load and display an aligned FASTA file (synchronous).
-
-        Kept for callers that want to parse + render in the current thread.
-        Background/async callers should use parse_alignment_data() followed by
-        apply_data() on the main thread.
-        """
-        self.apply_data(self.parse_alignment_data(fasta_path))
-
-    def clear(self) -> None:
-        """Reset the widget (e.g. when opening a new project)."""
-        self._sequences.clear()
-        self._display_positions.clear()
-        self._last_data = {}
-        self._name_table.setRowCount(0)
-        self._seq_viewer.setRowCount(0)
-        self._seq_viewer.setColumnCount(0)
-        self._summary_label.setText(
-            lang_manager.get('align_no_data', 'No alignment loaded.'))
-        self._info_label.setText("")
+        for row, (_, seq) in enumerate(self._sequences):
+            for column, position in enumerate(self._display_positions):
+                item = self._seq_viewer.item(row, column)
+                if item is not None:
+                    base = seq[position] if position < len(seq) else '?'
+                    item.setToolTip(lang_manager.get(
+                        'tooltip_position', 'Position {position}: {base}'
+                    ).format(position=position + 1, base=base))
 
     # ── Private rendering ────────────────────────────────────────────────────
 
@@ -333,6 +352,8 @@ class AlignmentTabWidget(QWidget):
                 item.setBackground(QBrush(QColor(bg)))
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                item.setToolTip(f"Position {pos + 1}: {base}")
+                item.setToolTip(lang_manager.get(
+                    'tooltip_position', 'Position {position}: {base}'
+                ).format(position=pos + 1, base=base))
                 self._seq_viewer.setItem(r, c, item)
         self._seq_viewer.setUpdatesEnabled(True)

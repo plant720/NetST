@@ -7,6 +7,7 @@ Integrated as Python module 2026
 """
 
 import csv
+import json
 import os
 import random
 
@@ -30,9 +31,9 @@ def _text_to_integer(text: str) -> int:
 
 
 def _random_color(seed: int) -> str:
-    random.seed(seed)
+    generator = random.Random(seed)
     chars = '123456789ABCDEF'
-    return '#' + ''.join(chars[random.randint(0, 14)] for _ in range(6))
+    return '#' + ''.join(chars[generator.randint(0, 14)] for _ in range(6))
 
 
 def _gen_hap_config(hap_file: str):
@@ -92,18 +93,25 @@ def _color_group_config(hap_conf_list):
 
 
 def _write_conf(hap_conf_list, group_conf_list, out_prefix: str) -> None:
+    # tcsBU parses these files with line.split(';') rather than a CSV parser,
+    # so delimiters/newlines must be normalized instead of CSV-quoted.
+    def field(value) -> str:
+        return str(value).replace(';', '_').replace('\r', '_').replace('\n', '_')
+
     with open(out_prefix + '_hapconf.csv', 'w', encoding='utf-8') as f:
         for sample, group, hap in hap_conf_list:
-            f.write(f"{sample};{group};{hap}\n")
+            f.write(f"{field(sample)};{field(group)};{field(hap)}\n")
     with open(out_prefix + '_groupconf.csv', 'w', encoding='utf-8') as f:
         for group, color, style in group_conf_list:
-            f.write(f"{group};{color};{style}\n")
+            f.write(f"{field(group)};{field(color)};{field(style)}\n")
 
 
-def _file_to_escaped(file_name: str) -> str:
-    with open(file_name, 'r', encoding='utf-8') as f:
+def _file_to_json_string(file_name: str) -> str:
+    with open(file_name, 'r', encoding='utf-8', newline='') as f:
         content = f.read()
-    return content.replace('"', '\\"').replace('\n', '\\n')
+    # json.dumps correctly escapes quotes, backslashes, CR/LF and control
+    # characters before the content is embedded into generated JavaScript.
+    return json.dumps(content, ensure_ascii=False)
 
 
 def generate_network_config(gml_file: str, hap_file: str, out_prefix: str,
@@ -112,7 +120,7 @@ def generate_network_config(gml_file: str, hap_file: str, out_prefix: str,
     Main entry point replacing the GenNetworkConfig2 executable.
 
     Args:
-        gml_file:               Path to the .gml network file produced by fastHaN.
+        gml_file:               Path to a tcsBU-compatible .gml network file.
         hap_file:               Path to the _seq.meta.csv file.
         out_prefix:             Output path prefix (without extension). Writes
                                 <out_prefix>_hapconf.csv, <out_prefix>_groupconf.csv,
@@ -125,20 +133,20 @@ def generate_network_config(gml_file: str, hap_file: str, out_prefix: str,
     _write_conf(hap_conf_list, group_conf_list, out_prefix)
 
     with open(out_prefix + '.js', 'w', encoding='utf-8') as fp:
-        fp.write('var gmlfile = {target: {files: [new File(["')
-        fp.write(_file_to_escaped(gml_file))
-        fp.write('"], ".gml")]}};\n')
+        fp.write('var gmlfile = {target: {files: [new File([')
+        fp.write(_file_to_json_string(gml_file))
+        fp.write('], ".gml")]}};\n')
 
-        fp.write('var hapconffile = {target: {files: [new File(["')
-        fp.write(_file_to_escaped(out_prefix + '_hapconf.csv'))
-        fp.write('"], ".csv")]}};\n')
+        fp.write('var hapconffile = {target: {files: [new File([')
+        fp.write(_file_to_json_string(out_prefix + '_hapconf.csv'))
+        fp.write('], ".csv")]}};\n')
 
-        fp.write('var groupconffile = {target: {files: [new File(["')
-        fp.write(_file_to_escaped(out_prefix + '_groupconf.csv'))
-        fp.write('"], ".csv")]}};\n')
+        fp.write('var groupconffile = {target: {files: [new File([')
+        fp.write(_file_to_json_string(out_prefix + '_groupconf.csv'))
+        fp.write('], ".csv")]}};\n')
 
         traitconf_path = out_prefix + '_traitconf.csv'
         if has_continuous_traits and os.path.isfile(traitconf_path):
-            fp.write('var traitconffile = {target: {files: [new File(["')
-            fp.write(_file_to_escaped(traitconf_path))
-            fp.write('"], ".csv")]}};\n')
+            fp.write('var traitconffile = {target: {files: [new File([')
+            fp.write(_file_to_json_string(traitconf_path))
+            fp.write('], ".csv")]}};\n')

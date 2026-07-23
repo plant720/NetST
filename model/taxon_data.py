@@ -3,7 +3,7 @@ Data model representing a single taxon/sequence entry.
 Corresponds to the rows in the VB.NET DataGridView.
 """
 from dataclasses import dataclass
-from typing import Optional
+import math
 
 
 @dataclass
@@ -32,35 +32,30 @@ class TaxonData:
         return len(self.sequence) if self.sequence else 0
 
     def is_valid_continuous_traits(self) -> bool:
-        """Validates that continuous traits is numeric."""
+        """Return whether the continuous trait is a finite numeric value."""
         try:
-            float(self.continuous_traits)
-            return True
+            return math.isfinite(float(self.continuous_traits))
         except (ValueError, TypeError):
             return False
 
-    def validate(self) -> tuple[bool, Optional[str]]:
-        """
-        Validate the taxon data for analysis.
-        Returns (is_valid, error_message).
-        """
-        if not self.is_valid_continuous_traits():
-            return False, f"ID: {self.id}, Name: {self.name} - Continuous Traits '{self.continuous_traits}' is not a numerical value."
-
-        return True, None
-
     def to_fasta_header(self, delimiter: str = "|") -> str:
         """Generate FASTA header string."""
+        delimiter = str(delimiter).replace("\r", "").replace("\n", "") or "|"
         parts = [
-            self.name.replace(delimiter, "_"),
-            self.discrete_traits.replace(delimiter, "_"),
-            self.continuous_traits.replace(delimiter, "_"),
+            self._single_line_header(self.name).replace(delimiter, "_"),
+            self._single_line_header(self.discrete_traits).replace(delimiter, "_"),
+            self._single_line_header(self.continuous_traits).replace(delimiter, "_"),
         ]
         return ">" + delimiter.join(parts)
 
     def to_analysis_header(self) -> str:
         """Generate header for analysis FASTA file."""
-        return f">{self.name}"
+        return f">{self._single_line_header(self.name)}"
+
+    @staticmethod
+    def _single_line_header(value: object) -> str:
+        """Normalize user-editable text before placing it in a FASTA header."""
+        return str(value).replace("\r", "_").replace("\n", "_")
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""

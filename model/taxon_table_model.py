@@ -28,6 +28,8 @@ class TaxonTableModel(QAbstractTableModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._data: List[TaxonData] = []
+        self._headers = [label for label, _ in self.COLUMNS]
+        self._sequence_tooltip = "Length: {length} bp\nClick the cell to view or edit the full sequence"
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return len(self._data)
@@ -65,7 +67,7 @@ class TaxonTableModel(QAbstractTableModel):
 
         elif role == Qt.ItemDataRole.ToolTipRole:
             if col == 3:  # Sequence column
-                return f"Length: {taxon.sequence_length} bp\nClick to view full sequence"
+                return self._sequence_tooltip.format(length=taxon.sequence_length)
 
         return None
 
@@ -117,19 +119,21 @@ class TaxonTableModel(QAbstractTableModel):
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if role == Qt.ItemDataRole.DisplayRole:
             if orientation == Qt.Orientation.Horizontal:
-                return self.COLUMNS[section][0]
+                return self._headers[section]
             else:
                 return section + 1
         return None
 
-    # Data manipulation methods
+    def update_language(self, headers: List[str], sequence_tooltip: str) -> None:
+        """Update localized headers and tooltips without rebuilding the model."""
+        if len(headers) == len(self.COLUMNS):
+            self._headers = list(headers)
+        self._sequence_tooltip = sequence_tooltip
+        self.headerDataChanged.emit(
+            Qt.Orientation.Horizontal, 0, len(self.COLUMNS) - 1
+        )
 
-    def add_taxon(self, taxon: TaxonData) -> None:
-        """Add a single taxon."""
-        row = len(self._data)
-        self.beginInsertRows(QModelIndex(), row, row)
-        self._data.append(taxon)
-        self.endInsertRows()
+    # Data manipulation methods
 
     def add_taxons(self, taxons: List[TaxonData]) -> None:
         """Add multiple taxons."""
@@ -140,13 +144,6 @@ class TaxonTableModel(QAbstractTableModel):
         self.beginInsertRows(QModelIndex(), start_row, end_row)
         self._data.extend(taxons)
         self.endInsertRows()
-
-    def remove_taxon(self, row: int) -> None:
-        """Remove a taxon by row index."""
-        if 0 <= row < len(self._data):
-            self.beginRemoveRows(QModelIndex(), row, row)
-            del self._data[row]
-            self.endRemoveRows()
 
     def clear(self) -> None:
         """Clear all data."""
@@ -194,17 +191,3 @@ class TaxonTableModel(QAbstractTableModel):
                 self.index(len(self._data) - 1, 0),
                 [Qt.ItemDataRole.CheckStateRole]
             )
-
-    def get_full_sequence(self, row: int) -> str:
-        """Get full sequence for a taxon (not truncated)."""
-        if 0 <= row < len(self._data):
-            return self._data[row].sequence
-        return ""
-
-    def validate_for_analysis(self) -> tuple[bool, Optional[str]]:
-        """Validate all data before analysis."""
-        for taxon in self._data:
-            valid, message = taxon.validate()
-            if not valid:
-                return False, message
-        return True, None

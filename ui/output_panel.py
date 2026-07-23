@@ -5,12 +5,11 @@ Right side panel containing output folder selection and log display.
 """
 
 import os
-import subprocess
-import sys
 from datetime import datetime
 from typing import Optional
 
-from PyQt6.QtGui import QColor, QTextCursor, QFont
+from PyQt6.QtCore import QUrl
+from PyQt6.QtGui import QColor, QTextCursor, QFont, QDesktopServices
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
     QPushButton, QLabel, QLineEdit, QFrame, QFileDialog
@@ -144,23 +143,20 @@ class OutputPanel(QWidget):
 
     def _open_output_folder(self):
         """Open output folder in file explorer"""
-        path = self.output_path_edit.text()
+        from .language_manager import lang_manager
 
-        # Create folder if not exists
-        if not os.path.exists(path):
-            try:
-                os.makedirs(path)
-            except Exception:
-                pass
-
-        # Open in file explorer
-        if os.path.exists(path):
-            if sys.platform == 'win32':
-                os.startfile(path)
-            elif sys.platform == 'darwin':
-                subprocess.run(['open', path])
-            else:
-                subprocess.run(['xdg-open', path])
+        path = self.output_path_edit.text().strip()
+        try:
+            if not path:
+                raise OSError('Output folder is empty')
+            os.makedirs(path, exist_ok=True)
+            opened = QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+            if not opened:
+                raise OSError(f'No desktop application could open {path}')
+        except OSError as exc:
+            self.append_error(lang_manager.get(
+                'msg_open_output_failed',
+                'Could not open the output folder: {error}').format(error=exc))
 
     def _change_output_folder(self):
         """Change output folder"""
@@ -178,18 +174,9 @@ class OutputPanel(QWidget):
         """Get the project name used as output file prefix."""
         return self.project_name_edit.text().strip()
 
-    def set_project_prefix(self, name: str):
-        """Set the project name / file prefix."""
-        self.project_name_edit.setText(name)
-
     def get_output_path(self) -> str:
         """Get current output path"""
         return self.output_path_edit.text()
-
-    def set_output_path(self, path: str):
-        """Set output path"""
-        self.output_path = path
-        self.output_path_edit.setText(path)
 
     def append_log(self, message: str, level: str = 'INFO'):
         """Append log message with specified level"""
@@ -223,14 +210,6 @@ class OutputPanel(QWidget):
     def append_error(self, message: str):
         """Append error level log"""
         self.append_log(message, 'ERROR')
-
-    def clear_log(self):
-        """Clear log content"""
-        self.log_text.clear()
-
-    def get_log_content(self) -> str:
-        """Get log content"""
-        return self.log_text.toPlainText()
 
     def update_language(self):
         """Update interface language"""

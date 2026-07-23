@@ -2,7 +2,8 @@
 Service for handling file operations (FASTA, CSV, etc.)
 """
 import csv
-import os
+import json
+import re
 import shutil
 from pathlib import Path
 from typing import List
@@ -10,10 +11,24 @@ from typing import List
 import chardet
 
 from model.taxon_data import TaxonData
+from service.format_conversion_service import (
+    SequenceRecord,
+    read_nexus,
+    read_phylip,
+    records_to_vcf,
+    write_nexus,
+    write_phylip,
+)
 
 
 class FileService:
     """Service for handling file I/O operations."""
+
+    @staticmethod
+    def clean_fasta_header(header: str) -> str:
+        """Normalize a FASTA title into a safe single-token sample name."""
+        cleaned = header.replace(',', '_').replace('"', '').replace("'", '').replace('=', '_')
+        return re.sub(r'\s+', '_', cleaned.strip())
 
     @staticmethod
     def detect_encoding(file_path: str) -> str:
@@ -44,14 +59,12 @@ class FileService:
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(content)
 
-    def load_fasta_file(self, file_path: str, delimiter: str = "|") -> List[TaxonData]:
+    def load_fasta_file(self, file_path: str) -> List[TaxonData]:
         """
         Load sequences from a FASTA file.
         
         Args:
             file_path: Path to FASTA file
-            delimiter: Delimiter used in headers
-            
         Returns:
             List of TaxonData objects
         """
@@ -66,101 +79,75 @@ class FileService:
             for line in f:
                 line = line.strip()
                 if line.startswith('>'):
-                    # Save previous sequence if exists
-                    if current_header is not None and sequence_lines:
+                    if current_header is not None:
+                        if not sequence_lines:
+                            raise ValueError(
+                                f"FASTA record '{current_header}' has no sequence")
                         taxon_id += 1
                         sequence = ''.join(sequence_lines)
-                        taxon = self._parse_fasta_header(taxon_id, current_header, sequence, delimiter)
+                        taxon = self._parse_fasta_header(taxon_id, current_header, sequence)
                         taxons.append(taxon)
-                        sequence_lines = []
-
                     current_header = line[1:]  # Remove '>'
+                    if not current_header.strip():
+                        raise ValueError("FASTA contains an empty header")
+                    sequence_lines = []
                 elif line:
+                    if current_header is None:
+                        raise ValueError("FASTA sequence data appears before the first header")
                     sequence_lines.append(line)
 
-            # Don't forget the last sequence
-            if current_header is not None and sequence_lines:
+            if current_header is not None:
+                if not sequence_lines:
+                    raise ValueError(f"FASTA record '{current_header}' has no sequence")
                 taxon_id += 1
                 sequence = ''.join(sequence_lines)
-                taxon = self._parse_fasta_header(taxon_id, current_header, sequence, delimiter)
+                taxon = self._parse_fasta_header(taxon_id, current_header, sequence)
                 taxons.append(taxon)
 
         return taxons
 
-    def _parse_fasta_header(self, taxon_id: int, header: str, sequence: str, delimiter: str) -> TaxonData:
+    def load_nexus_file(self, file_path: str) -> List[TaxonData]:
+        """Load a NEXUS sequence matrix as editable NetST records."""
+        return self._sequence_records_to_taxons(read_nexus(file_path))
+
+    def load_phylip_file(self, file_path: str) -> List[TaxonData]:
+        """Load a sequential PHYLIP alignment as editable NetST records."""
+        return self._sequence_records_to_taxons(read_phylip(file_path))
+
+    def get_sequence_headers(self, file_path: str, file_format: str,
+                             limit: int = 100) -> List[str]:
+        """Return normalized labels for a supported structured sequence file."""
+        loaders = {
+            "nexus": read_nexus,
+            "phylip": read_phylip,
+        }
+        try:
+            loader = loaders[file_format.lower()]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported sequence format: {file_format}") from exc
+        return [
+            self.clean_fasta_header(record.name)
+            for record in loader(file_path)[:max(0, limit)]
+        ]
+
+    def _sequence_records_to_taxons(self, records) -> List[TaxonData]:
+        return [
+            TaxonData(
+                id=index,
+                name=self.clean_fasta_header(record.name),
+                sequence=record.sequence,
+            )
+            for index, record in enumerate(records, start=1)
+        ]
+
+    def _parse_fasta_header(self, taxon_id: int, header: str,
+                            sequence: str) -> TaxonData:
         """Parse FASTA header and create TaxonData."""
         # Clean header: replace problematic characters
-        clean_header = header.replace(',', '_').replace('"', '').replace("'", "").replace('=', '_')
+        clean_header = self.clean_fasta_header(header)
 
         taxon = TaxonData(id=taxon_id, name=clean_header, sequence=sequence)
         return taxon
-
-    def load_csv_file(self, file_path: str) -> List[TaxonData]:
-        """
-        Load data from CSV file.
-        
-        Args:
-            file_path: Path to CSV file
-            
-        Returns:
-            List of TaxonData objects
-        """
-        taxons = []
-        encoding = self.detect_encoding(file_path)
-
-        with open(file_path, 'r', encoding=encoding, newline='') as f:
-            reader = csv.reader(f)
-
-            # Skip header
-            try:
-                next(reader)
-            except StopIteration:
-                return taxons
-
-            taxon_id = 0
-            for row in reader:
-                if not row or not any(row):  # Skip empty rows
-                    continue
-
-                taxon_id += 1
-                taxon = TaxonData(id=taxon_id)
-
-                if len(row) > 0:
-                    taxon.name = row[0].strip()
-                if len(row) > 1:
-                    taxon.sequence = row[1].strip()
-                if len(row) > 2:
-                    taxon.discrete_traits = row[2].strip()
-                if len(row) > 3:
-                    taxon.continuous_traits = row[3].strip()
-
-                taxons.append(taxon)
-
-        return taxons
-
-    def save_to_csv(self, file_path: str, taxons: List[TaxonData]) -> None:
-        """
-        Save data to CSV file.
-        
-        Args:
-            file_path: Output file path
-            taxons: List of TaxonData to save
-        """
-        with open(file_path, 'w', encoding='utf-8', newline='') as f:
-            writer = csv.writer(f)
-
-            # Write header
-            writer.writerow(['ID', 'Name', 'Sequence', 'Discrete Traits', 'Continuous Traits'])
-
-            # Write data
-            for taxon in taxons:
-                writer.writerow([
-                    taxon.id,
-                    taxon.name,
-                    taxon.sequence,
-                    taxon.discrete_traits,
-                    taxon.continuous_traits,
-                ])
 
     def export_to_fasta(self, file_path: str, taxons: List[TaxonData], delimiter: str = "|") -> None:
         """
@@ -175,6 +162,89 @@ class FileService:
             for taxon in taxons:
                 f.write(taxon.to_fasta_header(delimiter) + '\n')
                 f.write(taxon.sequence + '\n')
+
+    def export_sequences(self, file_path: str, taxons: List[TaxonData],
+                         file_format: str) -> List[str]:
+        """Export sequence data and return every generated output path.
+
+        FASTA headers intentionally contain the editable traits. NEXUS,
+        PHYLIP, and VCF contain sample names plus sequences only. A VCF export
+        additionally embeds NetST metadata headers and writes a paired CSV so
+        the traits can be imported again without parsing custom VCF headers.
+        """
+        if not taxons:
+            raise ValueError("No sequence data to export")
+        file_format = file_format.lower()
+        if file_format == "fasta":
+            self.export_to_fasta(file_path, taxons, "|")
+            return [file_path]
+
+        records = [
+            SequenceRecord(taxon.name, taxon.sequence)
+            for taxon in taxons
+        ]
+        if file_format == "nexus":
+            write_nexus(file_path, records)
+            return [file_path]
+        if file_format == "phylip":
+            write_phylip(file_path, records)
+            return [file_path]
+        if file_format != "vcf":
+            raise ValueError(f"Unsupported export format: {file_format}")
+
+        content = records_to_vcf(records)
+        lines = content.rstrip("\n").split("\n")
+        header_index = next(
+            index for index, line in enumerate(lines)
+            if line.startswith("#CHROM")
+        )
+        vcf_sample_names = lines[header_index].split("\t")[9:]
+        trait_rows = []
+        for taxon, sample_name in zip(taxons, vcf_sample_names):
+            row = self._trait_row(taxon)
+            row["sample"] = sample_name
+            trait_rows.append(row)
+        metadata_lines = [
+            "##NetSTSampleMetadata=" + json.dumps(
+                row, ensure_ascii=False, separators=(",", ":"),
+            )
+            for row in trait_rows
+        ]
+        lines[header_index:header_index] = metadata_lines
+        with open(file_path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("\n".join(lines) + "\n")
+
+        stem = file_path[:-4] if file_path.lower().endswith(".vcf") else file_path
+        metadata_path = stem + "_metadata.csv"
+        self._write_trait_rows(metadata_path, trait_rows)
+        return [file_path, metadata_path]
+
+    def export_traits(self, file_path: str, taxons: List[TaxonData]) -> None:
+        """Export all editable trait fields as a UTF-8 CSV table."""
+        if not taxons:
+            raise ValueError("No trait data to export")
+        self._write_trait_rows(
+            file_path, [self._trait_row(taxon) for taxon in taxons])
+
+    @staticmethod
+    def _write_trait_rows(file_path: str, rows: List[dict]) -> None:
+        with open(file_path, "w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=[
+                "sample", "discrete_trait", "continuous_trait",
+                "quantity", "organism",
+            ])
+            writer.writeheader()
+            writer.writerows(rows)
+
+    @staticmethod
+    def _trait_row(taxon: TaxonData) -> dict:
+        return {
+            "sample": taxon.name,
+            "discrete_trait": taxon.discrete_traits,
+            "continuous_trait": taxon.continuous_traits,
+            "quantity": taxon.quantity,
+            "organism": taxon.organism,
+        }
 
     def write_analysis_fasta(self, file_path: str, taxons: List[TaxonData]) -> None:
         """
@@ -195,42 +265,9 @@ class FileService:
         shutil.copy2(source, destination)
 
     @staticmethod
-    def file_exists(file_path: str) -> bool:
-        """Check if file exists."""
-        return os.path.isfile(file_path)
-
-    @staticmethod
     def ensure_directory(dir_path: str) -> None:
         """Ensure directory exists, create if not."""
         Path(dir_path).mkdir(parents=True, exist_ok=True)
-
-    def get_fasta_headers(self, file_path: str, limit: int = 100) -> List[str]:
-        """
-        Extract sequence headers from FASTA file for preview.
-        
-        Args:
-            file_path: Path to FASTA file
-            limit: Maximum number of headers to extract
-            
-        Returns:
-            List of header strings (without '>')
-        """
-        headers = []
-        encoding = self.detect_encoding(file_path)
-
-        with open(file_path, 'r', encoding=encoding) as f:
-            count = 0
-            for line in f:
-                line = line.strip()
-                if line.startswith('>'):
-                    # Clean header like VB.NET does
-                    header = line[1:].replace(',', '_').replace('"', '').replace("'", "").replace('=', '_')
-                    headers.append(header)
-                    count += 1
-                    if count >= limit:
-                        break
-
-        return headers
 
     def apply_standardization(self, taxons: List[TaxonData], config, start_id: int = 1) -> List[TaxonData]:
         """

@@ -142,13 +142,11 @@ class DataTabWidget(QWidget):
         """Select all button click handler"""
         if self._select_all_callback:
             self._select_all_callback()
-        self.selection_changed.emit()
 
     def _on_deselect_all(self):
         """Deselect all button click handler"""
         if self._deselect_all_callback:
             self._deselect_all_callback()
-        self.selection_changed.emit()
 
     def _on_data_changed(self, *args):
         """Data changed handler"""
@@ -169,17 +167,6 @@ class DataTabWidget(QWidget):
             self.total_count_label.setText(str(total))
         elif model:
             self.total_count_label.setText(str(model.rowCount()))
-
-    def get_table_view(self) -> QTableView:
-        """Get table view object"""
-        return self.table_view
-
-    def refresh(self):
-        """Refresh table display"""
-        model = self.table_view.model()
-        if model:
-            model.layoutChanged.emit()
-        self._apply_column_widths()
 
     def update_language(self):
         """Update interface language"""

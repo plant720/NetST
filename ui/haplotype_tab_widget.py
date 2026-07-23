@@ -26,7 +26,7 @@ Sorting:  disabled — column headers are not clickable for sorting.
 
 import csv
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor, QFont
@@ -51,6 +51,8 @@ _DEFAULT_STYLE: Tuple[str, str] = ('#FAFAFA', '#333333')
 # Only the first N positions are ever rendered. For longer alignments the user
 # is directed to the output files on disk rather than loading more into the UI.
 _MAX_DISPLAY_POSITIONS = 500
+_MAX_DISPLAY_HAPLOTYPES = 200
+_MAX_DISPLAY_MAPPINGS = 1000
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -61,6 +63,28 @@ def _plain_item(value: str) -> QTableWidgetItem:
     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
     item.setToolTip(str(value))
     return item
+
+
+def _cancelled_parse_result(prefix: str, output_path: str,
+                            fasta_path: str) -> Dict[str, Any]:
+    """Return a small sentinel payload for an interrupted background load."""
+    return {
+        "prefix": prefix,
+        "output_path": output_path,
+        "fasta_path": fasta_path,
+        "hap_rows": [],
+        "seq_rows": [],
+        "hap_sequences": {},
+        "display_positions": [],
+        "seq_len": 0,
+        "display_len": 0,
+        "truncated": False,
+        "n_hap": 0,
+        "n_seq": 0,
+        "hap_rows_truncated": False,
+        "seq_rows_truncated": False,
+        "errors": ["cancelled"],
+    }
 
 
 # ── Main widget ───────────────────────────────────────────────────────────────
@@ -180,7 +204,11 @@ class HaplotypeTabWidget(QWidget):
     # ── Public API ───────────────────────────────────────────────────────────
 
     @staticmethod
-    def parse_result_data(output_path: str, prefix: str) -> Dict[str, Any]:
+    def parse_result_data(
+        output_path: str,
+        prefix: str,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
         """Parse all result files (CSV + FASTA) into plain Python data.
 
         Threadsafe: touches no Qt objects, so it is safe to call from a
@@ -192,60 +220,96 @@ class HaplotypeTabWidget(QWidget):
         hap_path = os.path.join(output_path, f"{prefix}_hap_trait.csv")
         seq_path = os.path.join(output_path, f"{prefix}_seq.meta.csv")
         fasta_path = os.path.join(output_path, f"{prefix}_hap.fasta")
+        errors: List[str] = []
 
         hap_rows: List[Tuple[str, str, str]] = []
+        n_hap = 0
         if os.path.isfile(hap_path):
             try:
                 with open(hap_path, encoding="utf-8") as fh:
                     for row in csv.DictReader(fh):
-                        hap_rows.append((
-                            row.get("haplotype", ""),
-                            row.get("total_quantity", ""),
-                            row.get("samples", ""),
-                        ))
-            except Exception:
+                        if cancel_check is not None and cancel_check():
+                            return _cancelled_parse_result(prefix, output_path, fasta_path)
+                        n_hap += 1
+                        if len(hap_rows) < _MAX_DISPLAY_HAPLOTYPES:
+                            hap_rows.append((
+                                row.get("haplotype", ""),
+                                row.get("total_quantity", ""),
+                                row.get("samples", ""),
+                            ))
+            except Exception as error:
                 hap_rows = []
+                errors.append(f"hap_trait: {error}")
+        else:
+            errors.append(f"missing: {hap_path}")
 
         seq_rows: List[Tuple[str, str]] = []
+        n_seq = 0
         if os.path.isfile(seq_path):
             try:
                 with open(seq_path, encoding="utf-8") as fh:
                     for row in csv.DictReader(fh):
-                        seq_rows.append((
-                            row.get("sequence_name", ""),
-                            row.get("haplotype", ""),
-                        ))
-            except Exception:
+                        if cancel_check is not None and cancel_check():
+                            return _cancelled_parse_result(prefix, output_path, fasta_path)
+                        n_seq += 1
+                        if len(seq_rows) < _MAX_DISPLAY_MAPPINGS:
+                            seq_rows.append((
+                                row.get("sequence_name", ""),
+                                row.get("haplotype", ""),
+                            ))
+            except Exception as error:
                 seq_rows = []
+                errors.append(f"seq_meta: {error}")
+        else:
+            errors.append(f"missing: {seq_path}")
 
         hap_sequences: Dict[str, str] = {}
+        displayed_haplotypes = {row[0] for row in hap_rows}
+        seq_len = 0
         if os.path.isfile(fasta_path):
             try:
                 current: Optional[str] = None
-                buf: List[str] = []
+                current_length = 0
+                preview_parts: List[str] = []
+
+                def finish_record() -> None:
+                    nonlocal seq_len
+                    if current is None or current_length == 0:
+                        return
+                    seq_len = max(seq_len, current_length)
+                    if current in displayed_haplotypes:
+                        hap_sequences[current] = ''.join(preview_parts).upper()
+
                 with open(fasta_path, encoding="utf-8") as fh:
                     for line in fh:
+                        if cancel_check is not None and cancel_check():
+                            return _cancelled_parse_result(prefix, output_path, fasta_path)
                         line = line.strip()
                         if not line:
                             continue
                         if line.startswith('>'):
-                            if current is not None and buf:
-                                hap_sequences[current] = ''.join(buf).upper()
+                            finish_record()
                             current = line[1:].strip()
-                            buf = []
+                            current_length = 0
+                            preview_parts = []
                         else:
-                            buf.append(line)
-                    if current is not None and buf:
-                        hap_sequences[current] = ''.join(buf).upper()
-            except Exception:
+                            current_length += len(line)
+                            if current in displayed_haplotypes:
+                                preview_length = sum(len(part) for part in preview_parts)
+                                remaining = _MAX_DISPLAY_POSITIONS - preview_length
+                                if remaining > 0:
+                                    preview_parts.append(line[:remaining])
+                    finish_record()
+            except Exception as error:
                 hap_sequences = {}
+                errors.append(f"hap_fasta: {error}")
+        else:
+            errors.append(f"missing: {fasta_path}")
 
         display_positions: List[int] = []
-        seq_len = 0
         truncated = False
         display_len = 0
-        if hap_sequences:
-            seq_len = max(len(s) for s in hap_sequences.values())
+        if seq_len:
             display_len = min(seq_len, _MAX_DISPLAY_POSITIONS)
             display_positions = list(range(display_len))
             truncated = seq_len > _MAX_DISPLAY_POSITIONS
@@ -261,8 +325,11 @@ class HaplotypeTabWidget(QWidget):
             "seq_len": seq_len,
             "display_len": display_len,
             "truncated": truncated,
-            "n_hap": len(hap_rows),
-            "n_seq": len(seq_rows),
+            "n_hap": n_hap,
+            "n_seq": n_seq,
+            "hap_rows_truncated": n_hap > len(hap_rows),
+            "seq_rows_truncated": n_seq > len(seq_rows),
+            "errors": errors,
         }
 
     @staticmethod
@@ -277,6 +344,8 @@ class HaplotypeTabWidget(QWidget):
         seq_len = int(data.get("seq_len", 0))
         display_len = int(data.get("display_len", seq_len))
         truncated = bool(data.get("truncated", False))
+        hap_rows_truncated = bool(data.get("hap_rows_truncated", False))
+        seq_rows_truncated = bool(data.get("seq_rows_truncated", False))
         fasta_path = data.get("fasta_path", "") or ""
 
         summary = (
@@ -302,6 +371,20 @@ class HaplotypeTabWidget(QWidget):
                  'the view responsive. For the full aligned haplotypes open '
                  '{path}.')
             ).format(shown=display_len, path=fasta_path)
+
+        row_notes = []
+        if hap_rows_truncated:
+            row_notes.append(lang_manager.get(
+                'hap_haplotypes_truncated',
+                'Only the first {shown} of {total} haplotypes are displayed.'
+            ).format(shown=len(data.get('hap_rows', [])), total=n_hap))
+        if seq_rows_truncated:
+            row_notes.append(lang_manager.get(
+                'hap_mappings_truncated',
+                'Only the first {shown} of {total} sequence mappings are displayed.'
+            ).format(shown=len(data.get('seq_rows', [])), total=n_seq))
+        if row_notes:
+            info = (info + "\n" if info else "") + "\n".join(row_notes)
 
         return summary, info
 
@@ -339,29 +422,15 @@ class HaplotypeTabWidget(QWidget):
             lang_manager.get('hap_header_seqname', 'Sequence Name'),
             lang_manager.get('hap_header_haplotype', 'Haplotype'),
         ])
-
-    def load_result(self, output_path: str, prefix: str) -> None:
-        """Reload all three panes from the latest analysis output files (sync).
-
-        Kept for callers that want to parse + render in the current thread.
-        Background/async callers should use parse_result_data() followed by
-        apply_data() on the main thread.
-        """
-        self.apply_data(self.parse_result_data(output_path, prefix))
-
-    def clear(self) -> None:
-        """Reset all panes (e.g. when opening a new project)."""
-        self._hap_table.setRowCount(0)
-        self._seq_viewer.setRowCount(0)
-        self._seq_viewer.setColumnCount(0)
-        self._seq_table.setRowCount(0)
-        self._hap_sequences.clear()
-        self._display_positions.clear()
-        self._last_data = {}
-        self._summary_label.setText(
-            lang_manager.get('hap_no_data', 'No results loaded.'))
-        self._info_label.clear()
-        self._info_label.setVisible(False)
+        for row, hap_name in enumerate(self._current_hap_order()):
+            sequence = self._hap_sequences.get(hap_name, '')
+            for column, position in enumerate(self._display_positions):
+                item = self._seq_viewer.item(row, column)
+                if item is not None:
+                    base = sequence[position] if position < len(sequence) else '?'
+                    item.setToolTip(lang_manager.get(
+                        'tooltip_position', 'Position {position}: {base}'
+                    ).format(position=position + 1, base=base))
 
     # ── Private: fill tables ─────────────────────────────────────────────────
 
@@ -425,7 +494,9 @@ class HaplotypeTabWidget(QWidget):
                 item.setBackground(QBrush(QColor(bg)))
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                item.setToolTip(f"Position {pos + 1}: {base}")
+                item.setToolTip(lang_manager.get(
+                    'tooltip_position', 'Position {position}: {base}'
+                ).format(position=pos + 1, base=base))
                 self._seq_viewer.setItem(r, c, item)
         self._seq_viewer.setUpdatesEnabled(True)
 

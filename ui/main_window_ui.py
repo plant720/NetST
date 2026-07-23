@@ -31,6 +31,7 @@ from .output_panel import OutputPanel
 from .index_tab_widget import IndexTabWidget
 from .haplotype_tab_widget import HaplotypeTabWidget
 from .alignment_tab_widget import AlignmentTabWidget
+from .interpretation_tab_widget import InterpretationTabWidget
 from .language_manager import lang_manager
 
 
@@ -40,17 +41,13 @@ class FallbackWebView(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
-        self.setText("WebEngine not available\n\n"
-                     "Please install PyQt6-WebEngine:\npip install PyQt6-WebEngine")
+        self.update_language()
+
+    def update_language(self):
+        self.setText(lang_manager.get('webengine_unavailable'))
 
     def setUrl(self, url):
         self.setText(f"URL: {url.toString() if hasattr(url, 'toString') else url}")
-
-    def back(self):
-        pass
-
-    def forward(self):
-        pass
 
 
 class MainWindowUI(QMainWindow):
@@ -87,6 +84,7 @@ class MainWindowUI(QMainWindow):
             'data': lang_manager.get('tab_data', 'Data'),
             'haplotype': lang_manager.get('tab_haplotype', 'Haplotype'),
             'alignment': lang_manager.get('tab_alignment', 'Alignment'),
+            'interpretation': lang_manager.get('tab_interpretation', 'Interpretation'),
         }
 
     def __init__(self):
@@ -100,6 +98,7 @@ class MainWindowUI(QMainWindow):
         self.data_tab: Optional[DataTabWidget] = None
         self.haplotype_tab: Optional[HaplotypeTabWidget] = None  # hidden until first analysis
         self.alignment_tab: Optional[AlignmentTabWidget] = None  # hidden until first alignment
+        self.interpretation_tab: Optional[InterpretationTabWidget] = None
         self.output_panel: Optional[OutputPanel] = None
         self._panel_toggle_btn: Optional[QPushButton] = None
         self._panel_last_width: int = 300
@@ -111,9 +110,6 @@ class MainWindowUI(QMainWindow):
         # Application directory
         self.current_directory = os.path.dirname(os.path.abspath(__file__))
         self.current_directory = os.path.dirname(self.current_directory)
-
-        # Language setting
-        self.language = "en"
 
         # Initialize UI
         self._init_window()
@@ -170,7 +166,8 @@ class MainWindowUI(QMainWindow):
         # Narrow toggle strip to the right of the splitter (always visible)
         self._panel_toggle_btn = QPushButton("▶")
         self._panel_toggle_btn.setFixedWidth(18)
-        self._panel_toggle_btn.setToolTip("Collapse output panel")
+        self._panel_toggle_btn.setToolTip(
+            lang_manager.get('tooltip_collapse_output', 'Collapse output panel'))
         self._panel_toggle_btn.setStyleSheet(
             "QPushButton {"
             "  border: none;"
@@ -192,14 +189,16 @@ class MainWindowUI(QMainWindow):
             self._panel_last_width = self._splitter.sizes()[1]
             self.output_panel.setVisible(False)
             self._panel_toggle_btn.setText("◀")
-            self._panel_toggle_btn.setToolTip("Expand output panel")
+            self._panel_toggle_btn.setToolTip(
+                lang_manager.get('tooltip_expand_output', 'Expand output panel'))
         else:
             self.output_panel.setVisible(True)
             total = sum(self._splitter.sizes())
             restore = self._panel_last_width or 300
             self._splitter.setSizes([total - restore, restore])
             self._panel_toggle_btn.setText("▶")
-            self._panel_toggle_btn.setToolTip("Collapse output panel")
+            self._panel_toggle_btn.setToolTip(
+                lang_manager.get('tooltip_collapse_output', 'Collapse output panel'))
 
     def _create_index_tab(self):
         """Create the Index (welcome) tab — always the first tab."""
@@ -231,6 +230,17 @@ class MainWindowUI(QMainWindow):
         if os.path.isfile(html_path):
             self.web_view_main.setUrl(QUrl.fromLocalFile(html_path))
 
+    def show_waiting_page(self) -> None:
+        """Show a self-contained localized waiting page without static files."""
+        title = lang_manager.get('waiting_title', 'Analysis in progress')
+        body = lang_manager.get(
+            'waiting_body', 'Sequence processing and network construction are running.')
+        self.web_view_main.setHtml(
+            '<html><body style="font-family:Arial;text-align:center;margin-top:15%;color:#444;">'
+            f'<h2 style="color:#1976D2;">{title}</h2><p>{body}</p>'
+            '</body></html>'
+        )
+
     def switch_to_tab(self, tab_name: str):
         """Switch to the named tab using widget references (robust against index changes)."""
         widget_map = {
@@ -239,6 +249,7 @@ class MainWindowUI(QMainWindow):
             'data': self.data_tab,
             'haplotype': self.haplotype_tab,
             'alignment': self.alignment_tab,
+            'interpretation': self.interpretation_tab,
         }
         widget = widget_map.get(tab_name)
         if widget is not None:
@@ -246,52 +257,34 @@ class MainWindowUI(QMainWindow):
             if idx >= 0:
                 self.tab_widget.setCurrentIndex(idx)
 
-    def show_haplotype_tab(self, output_path: str, prefix: str) -> None:
-        """Create (once) and show the Haplotype tab, then load the latest results.
+    def show_interpretation_tab(self, report: dict) -> None:
+        """Create or refresh the structured auxiliary-analysis result tab."""
+        if self.interpretation_tab is None:
+            self.interpretation_tab = InterpretationTabWidget()
+            self.tab_widget.addTab(
+                self.interpretation_tab, self.TAB_NAMES['interpretation'])
+        self.interpretation_tab.set_report(report)
+        self.switch_to_tab('interpretation')
 
-        Safe to call repeatedly — avoids adding duplicate tabs on re-analysis.
-        """
-        if self.haplotype_tab is None:
-            # First successful analysis: create and register the tab
-            self.haplotype_tab = HaplotypeTabWidget()
-            self.tab_widget.addTab(self.haplotype_tab, self.TAB_NAMES['haplotype'])
-
-        # Always refresh content so re-runs show up-to-date data
-        self.haplotype_tab.load_result(output_path, prefix)
-
-        # Switch focus to the haplotype tab so the user notices it
-        self.switch_to_tab('haplotype')
-
-    def show_alignment_tab(self, fasta_path: str) -> None:
-        """Create (once) and show the Alignment tab, then load the aligned FASTA.
-
-        Safe to call repeatedly — avoids adding duplicate tabs on re-alignment.
-        """
-        if self.alignment_tab is None:
-            self.alignment_tab = AlignmentTabWidget()
-            self.tab_widget.addTab(self.alignment_tab, self.TAB_NAMES['alignment'])
-
-        self.alignment_tab.load_alignment(fasta_path)
-        self.switch_to_tab('alignment')
-
-    def set_status(self, message: str):
-        """Set status bar message"""
+    def set_status_key(self, key: str, default: str = ''):
         if self.status_bar_widget:
-            self.status_bar_widget.set_status(message)
+            self.status_bar_widget.set_status_key(key, default)
+
+    def update_chrome_language(self) -> None:
+        """Refresh persistent main-window widgets after a language change."""
+        if self.index_tab:
+            self.index_tab.update_language()
+        if isinstance(self.web_view_main, FallbackWebView):
+            self.web_view_main.update_language()
+        if self._panel_toggle_btn:
+            key = ('tooltip_collapse_output' if self.output_panel.isVisible()
+                   else 'tooltip_expand_output')
+            self._panel_toggle_btn.setToolTip(lang_manager.get(key))
 
     def set_progress(self, value: int):
         """Set progress bar value (0-100)"""
         if self.status_bar_widget:
             self.status_bar_widget.set_progress(value)
-
-    def append_log(self, message: str, level: str = 'INFO'):
-        """Append log message"""
-        if self.output_panel:
-            self.output_panel.append_log(message, level)
-
-    def get_current_directory(self) -> str:
-        """Get application directory"""
-        return self.current_directory
 
     def get_output_path(self) -> str:
         """Get output path"""

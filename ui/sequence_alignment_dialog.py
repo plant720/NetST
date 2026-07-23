@@ -5,8 +5,7 @@ Presents a tabbed dialog for configuring either MAFFT or MUSCLE alignment,
 based on the CLI options supported by each tool.
 """
 
-from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
@@ -15,100 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .language_manager import lang_manager
-
-
-# ---------------------------------------------------------------------------
-# Config dataclass
-# ---------------------------------------------------------------------------
-
-@dataclass
-class SequenceAlignmentConfig:
-    """Parameters chosen by the user for a standalone alignment run."""
-
-    tool: str = "mafft"  # "mafft" or "muscle"
-
-    # ── MAFFT options ──────────────────────────────────────────────────────
-    mafft_algorithm: str = "auto"  # auto | retree1 | retree2 | linsi | ginsi | einsi
-    mafft_op: float = 1.53  # --op  gap opening penalty
-    mafft_ep: float = 0.0  # --ep  offset (gap extension-like)
-    mafft_maxiterate: int = 0  # --maxiterate  (0 = disabled / use algorithm default)
-    mafft_thread: int = -1  # --thread  (-1 = auto)
-    mafft_clustalout: bool = False  # --clustalout
-    mafft_reorder: bool = False  # --reorder  (default: input order)
-    mafft_quiet: bool = False  # --quiet
-    mafft_dash: bool = False  # --dash
-
-    # ── MUSCLE options ─────────────────────────────────────────────────────
-    muscle_maxiters: int = 16  # -maxiters
-    muscle_maxhours: float = 0.0  # -maxhours  (0.0 = no limit)
-    muscle_diags: bool = False  # -diags
-    muscle_output_format: str = "fasta"  # fasta | html | msf | clw | clwstrict
-    muscle_quiet: bool = False  # -quiet
-
-    # ── MAFFT arg builders ─────────────────────────────────────────────────
-
-    def to_mafft_method_args(self) -> List[str]:
-        """Return the algorithm/method portion of the MAFFT args list.
-
-        Note: '--inputorder' is handled separately by AnalysisService
-        (it is added by default unless mafft_reorder is True).
-        """
-        _alg_map = {
-            "auto": ["--auto"],
-            "retree1": ["--retree", "1"],
-            "retree2": ["--retree", "2"],
-            "linsi": ["--localpair", "--maxiterate", "1000"],
-            "ginsi": ["--globalpair", "--maxiterate", "1000"],
-            "einsi": ["--genafpair", "--maxiterate", "1000"],
-        }
-        args: List[str] = list(_alg_map.get(self.mafft_algorithm, ["--auto"]))
-
-        # Per-run options
-        if self.mafft_op != 1.53:
-            args += ["--op", str(round(self.mafft_op, 6))]
-        if self.mafft_ep != 0.0:
-            args += ["--ep", str(round(self.mafft_ep, 6))]
-
-        # Only apply --maxiterate for non-preset algorithms
-        preset_algorithms = {"linsi", "ginsi", "einsi"}
-        if self.mafft_algorithm not in preset_algorithms and self.mafft_maxiterate > 0:
-            args += ["--maxiterate", str(self.mafft_maxiterate)]
-
-        args += ["--thread", str(self.mafft_thread)]
-
-        if self.mafft_clustalout:
-            args.append("--clustalout")
-        if self.mafft_reorder:
-            args.append("--reorder")
-        if self.mafft_quiet:
-            args.append("--quiet")
-        if self.mafft_dash:
-            args.append("--dash")
-
-        return args
-
-    # ── MUSCLE arg builder ─────────────────────────────────────────────────
-
-    def to_muscle_extra_args(self) -> List[str]:
-        """Return MUSCLE option args (excluding -in / -out file paths)."""
-        args: List[str] = []
-        if self.muscle_diags:
-            args.append("-diags")
-        if self.muscle_maxiters != 16:
-            args += ["-maxiters", str(self.muscle_maxiters)]
-        if self.muscle_maxhours > 0.0:
-            args += ["-maxhours", str(round(self.muscle_maxhours, 4))]
-        _fmt_map = {
-            "html": "-html",
-            "msf": "-msf",
-            "clw": "-clw",
-            "clwstrict": "-clwstrict",
-        }
-        if self.muscle_output_format in _fmt_map:
-            args.append(_fmt_map[self.muscle_output_format])
-        if self.muscle_quiet:
-            args.append("-quiet")
-        return args
+from model.alignment_config import SequenceAlignmentConfig
 
 
 # ---------------------------------------------------------------------------
@@ -116,12 +22,12 @@ class SequenceAlignmentConfig:
 # ---------------------------------------------------------------------------
 
 _MAFFT_ALGORITHMS = [
-    ("auto", "Auto (automatic selection)"),
-    ("retree1", "FFT-NS-1 (very fast)"),
-    ("retree2", "FFT-NS-2 (fast, default)"),
-    ("linsi", "L-INS-i (local pair, most accurate, slow)"),
-    ("ginsi", "G-INS-i (global pair, slow)"),
-    ("einsi", "E-INS-i (long indel regions, slow)"),
+    ("auto", "menu_mafft_auto", "Auto (automatic selection)"),
+    ("retree1", "menu_mafft_fftns1", "FFT-NS-1 (very fast)"),
+    ("retree2", "menu_mafft_fftns2", "FFT-NS-2 (fast)"),
+    ("linsi", "menu_mafft_linsi", "L-INS-i (most accurate)"),
+    ("ginsi", "menu_mafft_ginsi", "G-INS-i (global, slow)"),
+    ("einsi", "menu_mafft_einsi", "E-INS-i (long indels)"),
 ]
 
 _MUSCLE_OUTPUT_FORMATS = [
@@ -210,8 +116,8 @@ class SequenceAlignmentDialog(QDialog):
         alg_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
 
         self._mafft_alg_combo = QComboBox()
-        for key, label in _MAFFT_ALGORITHMS:
-            self._mafft_alg_combo.addItem(label, key)
+        for key, text_key, fallback in _MAFFT_ALGORITHMS:
+            self._mafft_alg_combo.addItem(lang_manager.get(text_key, fallback), key)
         self._mafft_alg_combo.currentIndexChanged.connect(self._on_mafft_alg_changed)
         alg_form.addRow(lang_manager.get('dlg_msa_select', 'Algorithm:'),
                         self._mafft_alg_combo)

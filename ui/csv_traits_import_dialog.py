@@ -17,9 +17,6 @@ from PyQt6.QtWidgets import (
 
 from .language_manager import lang_manager
 
-_NONE_OPTION = "-- None --"
-
-
 class CsvTraitsImportDialog(QDialog):
     """
     Dialog that lets the user map CSV columns to sequence name,
@@ -58,21 +55,24 @@ class CsvTraitsImportDialog(QDialog):
         # Sequence Name (required)
         grid.addWidget(QLabel(lang_manager.get('dlg_csv_seq_name', 'Sequence Name Column:')), 0, 0)
         self.combo_name = QComboBox()
-        self.combo_name.addItems(self._headers)
+        for index, header in enumerate(self._headers):
+            self.combo_name.addItem(header, index)
         grid.addWidget(self.combo_name, 0, 1)
 
         # Discrete Traits (optional)
         grid.addWidget(QLabel(lang_manager.get('dlg_csv_discrete', 'Discrete Traits Column:')), 1, 0)
         self.combo_discrete = QComboBox()
-        self.combo_discrete.addItem(_NONE_OPTION)
-        self.combo_discrete.addItems(self._headers)
+        self.combo_discrete.addItem(lang_manager.get('option_none', '-- None --'), None)
+        for index, header in enumerate(self._headers):
+            self.combo_discrete.addItem(header, index)
         grid.addWidget(self.combo_discrete, 1, 1)
 
         # Continuous Traits (optional)
         grid.addWidget(QLabel(lang_manager.get('dlg_csv_continuous', 'Continuous Traits Column:')), 2, 0)
         self.combo_continuous = QComboBox()
-        self.combo_continuous.addItem(_NONE_OPTION)
-        self.combo_continuous.addItems(self._headers)
+        self.combo_continuous.addItem(lang_manager.get('option_none', '-- None --'), None)
+        for index, header in enumerate(self._headers):
+            self.combo_continuous.addItem(header, index)
         grid.addWidget(self.combo_continuous, 2, 1)
 
         main_layout.addWidget(mapping_group)
@@ -126,19 +126,14 @@ class CsvTraitsImportDialog(QDialog):
           'continuous_col' – index of continuous traits column, or None
         """
 
-        def _index(combo: QComboBox, has_none: bool) -> Optional[int]:
-            text = combo.currentText()
-            if has_none and text == _NONE_OPTION:
-                return None
-            try:
-                return self._headers.index(text)
-            except ValueError:
-                return None
+        def _index(combo: QComboBox) -> Optional[int]:
+            value = combo.currentData()
+            return value if isinstance(value, int) else None
 
         return {
-            'name_col': _index(self.combo_name, has_none=False),
-            'discrete_col': _index(self.combo_discrete, has_none=True),
-            'continuous_col': _index(self.combo_continuous, has_none=True),
+            'name_col': _index(self.combo_name),
+            'discrete_col': _index(self.combo_discrete),
+            'continuous_col': _index(self.combo_continuous),
         }
 
     # ------------------------------------------------------------------

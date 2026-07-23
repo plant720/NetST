@@ -44,9 +44,8 @@ class StandardizationConfig:
 class SplitOptionWidget(QFrame):
     """Widget for a single split option (checkbox + delimiter + index)."""
 
-    def __init__(self, label_text: str, default_index: int = 0, option_id: str = "", parent=None):
+    def __init__(self, label_text: str, default_index: int = 0, parent=None):
         super().__init__(parent)
-        self.option_id = option_id
         self._setup_ui(label_text, default_index)
 
     def _setup_ui(self, label_text: str, default_index: int):
@@ -92,10 +91,9 @@ class SplitOptionWidget(QFrame):
         return self.index_spin.value()
 
     def set_preview_callback(self, callback: Callable):
-        # Pass self as the source when checkbox state changes
-        self.checkbox.stateChanged.connect(lambda state: callback(self, state))
-        self.delimiter_edit.textChanged.connect(lambda: callback(self, None))
-        self.index_spin.valueChanged.connect(lambda: callback(self, None))
+        self.checkbox.stateChanged.connect(lambda _state: callback(self))
+        self.delimiter_edit.textChanged.connect(lambda _text: callback(self))
+        self.index_spin.valueChanged.connect(lambda _value: callback(self))
 
 
 class StandardizationDialog(QDialog):
@@ -246,7 +244,7 @@ class StandardizationDialog(QDialog):
         self.replace_from_edit.setEnabled(enabled)
         self.replace_to_edit.setEnabled(enabled)
 
-    def _update_preview(self, source=None, state=None):
+    def _update_preview(self, source=None):
         # Update preview names
         preview_text = "\n".join(self.sequence_names)
         self.preview_names.setText(preview_text)
@@ -276,13 +274,10 @@ class StandardizationDialog(QDialog):
             index = self._active_split.get_index()
 
             for name in self.sequence_names:
-                try:
-                    parts = name.split(delimiter)
-                    if index < len(parts):
-                        results.append(parts[index])
-                    else:
-                        results.append(f"Error: {name}")
-                except Exception:
+                parts = name.split(delimiter)
+                if index < len(parts):
+                    results.append(parts[index])
+                else:
                     results.append(f"Error: {name}")
 
             self.split_results.setText("\n".join(results))

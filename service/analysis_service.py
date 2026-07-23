@@ -5,15 +5,49 @@ Corresponds to the analysis_network and related methods in VB.NET.
 import csv
 import os
 import platform
-import subprocess
 import sys
+import tempfile
 import traceback
 from dataclasses import dataclass
-from typing import List, Optional, Callable, Tuple
+from typing import List, Optional, Callable, Sequence, Tuple
 
 from model.taxon_data import TaxonData
 from service.file_service import FileService
+from service.format_conversion_service import (
+    read_fasta,
+    write_phylip,
+)
 from service.gen_network_config import generate_network_config
+from service.haplotype_service import HaplotypeCalculation, identify_haplotypes
+from service.mcan_adapter import (
+    McanAdapterError,
+    McanVcfInput,
+    convert_graphml_to_tcsbu_gml,
+    parse_mcan_options,
+    prepare_mcan_input,
+    prepare_mcan_vcf_input,
+)
+from service.process_service import (
+    ManagedProcessRunner,
+    ProcessCancelled,
+    ProcessTimedOut,
+)
+from service.rmst_service import (
+    RMSTCancelled,
+    RMSTError,
+    build_rmst_network,
+    parse_rmst_options,
+)
+from service.validation_service import has_meaningful_continuous_trait
+
+
+class AnalysisEngineError(RuntimeError):
+    """Raised when an external analysis engine completes unsuccessfully."""
+
+
+_NETWORK_TYPES = {
+    "original_tcs", "modified_tcs", "mjn", "msn", "mcan", "rmst",
+}
 
 
 @dataclass
@@ -22,6 +56,8 @@ class AlignmentResult:
     success: bool
     output_file: str = ""
     error_message: Optional[str] = None
+    cancelled: bool = False
+    displayable_fasta: bool = True
 
 
 @dataclass
@@ -39,10 +75,8 @@ class AnalysisResult:
     has_continuous_traits: bool = False
     # Path to the aligned FASTA produced during the analysis (empty if skipped).
     aligned_fasta: str = ""
-
-    def get_visualization_path(self) -> str:
-        return os.path.join(self.output_path, f"{self.prefix}.html")
-
+    # Distinguishes an intentional user cancellation from an analysis failure.
+    cancelled: bool = False
 
 class AnalysisService:
     """Service for running haplotype network analyses."""
@@ -54,18 +88,26 @@ class AnalysisService:
         Args:
             application_path: Root application directory
         """
-        self.root_path = application_path
-        self.lib_path = os.path.join(application_path, "lib")
+        # External tools run with the output directory as cwd, so every
+        # application/resource path must be absolute before spawning them.
+        self.root_path = os.path.abspath(application_path)
+        self.lib_path = os.path.join(self.root_path, "lib")
         self.file_service = FileService()
+        self.process_runner = ManagedProcessRunner()
 
         self._progress_callback: Optional[Callable[[int], None]] = None
         self._log_callback: Optional[Callable[[str], None]] = None
+        self._cancel_callback: Optional[Callable[[], bool]] = None
 
     def set_progress_callback(self, callback: Callable[[int], None]) -> None:
         self._progress_callback = callback
 
     def set_log_callback(self, callback: Callable[[str], None]) -> None:
         self._log_callback = callback
+
+    def set_cancel_callback(self, callback: Optional[Callable[[], bool]]) -> None:
+        """Set a callback checked while an external process is running."""
+        self._cancel_callback = callback
 
     def _update_progress(self, value: int) -> None:
         if self._progress_callback:
@@ -75,11 +117,16 @@ class AnalysisService:
         if self._log_callback:
             self._log_callback(message)
 
+    def _check_cancelled(self) -> None:
+        if self._cancel_callback is not None and self._cancel_callback():
+            raise ProcessCancelled("Analysis cancelled")
+
     # ── Main analysis entry point ───────────────────────────────────────────────
 
     def run_network_analysis(self, network_type: str, taxons: List[TaxonData],
                              output_path: str, prefix: str,
-                             extra_args: List[str] = None) -> AnalysisResult:
+                             extra_args: List[str] = None,
+                             mcan_vcf_input: Optional[McanVcfInput] = None) -> AnalysisResult:
         """
         Run haplotype network analysis.
 
@@ -87,23 +134,30 @@ class AnalysisService:
           1. Write input FASTA
           2. Align with MAFFT (or MUSCLE fallback) if sequences have different lengths
           3. Process haplotypes: identify unique sequences, write PHYLIP + supporting files
-          4. Call fastHaN to build the network (original_tcs / modified_tcs / msn / mjn)
-          5. Generate visualization via GenNetworkConfig2
+          4. Call fastHaN/McAN or the internal RMST engine to build the network
+          5. Adapt the engine output to GML and generate a tcsBU visualization
 
         All output files are named  <output_path>/<prefix>_*.
 
         Args:
-            network_type: One of "original_tcs", "modified_tcs", "mjn", "msn"
+            network_type: One of "original_tcs", "modified_tcs", "mjn", "msn",
+                          "mcan", "rmst"
             taxons: List of selected taxons
             output_path: Directory for output files
             prefix: Project name used as output file name prefix
-            extra_args: Additional CLI arguments passed to fastHaN (e.g. ['-t', '4', '-e', '1'])
+            extra_args: Allow-listed engine arguments (for example ['-t', '4']
+                        or ['--method', 'exact'])
 
         Returns:
             AnalysisResult with prefix and success status
         """
         if extra_args is None:
             extra_args = []
+        if network_type not in _NETWORK_TYPES:
+            return AnalysisResult(
+                prefix, False, output_path,
+                f"Unsupported network algorithm: {network_type}",
+            )
         FileService.ensure_directory(output_path)
 
         # Tracks whether _process_haplotypes() wrote its output files.
@@ -113,6 +167,7 @@ class AnalysisService:
 
         produced_aligned_fasta = ""
         try:
+            self._check_cancelled()
             # ── Step 1: Write input FASTA ──────────────────────────────────────
             input_fasta = os.path.join(output_path, f"{prefix}.fasta")
             self.file_service.write_analysis_fasta(input_fasta, taxons)
@@ -140,87 +195,155 @@ class AnalysisService:
             produced_aligned_fasta = aligned_fasta if os.path.isfile(aligned_fasta) else ""
 
             self._update_progress(30)
+            self._check_cancelled()
 
             # ── Step 3: Ensure UTF-8 encoding ─────────────────────────────────
             FileService.ensure_utf8(aligned_fasta)
 
             # ── Step 4: Process haplotypes → PHYLIP + supporting files ─────────
             file_suffix = os.path.join(output_path, prefix)
-            taxon_lookup = {t.name: (t.continuous_traits, t.discrete_traits) for t in taxons}
+            taxon_lookup = {
+                str(t.name).strip(): (t.continuous_traits, t.discrete_traits)
+                for t in taxons
+            }
             self._log("Processing haplotypes...")
             hap_ok, has_continuous_traits = self._process_haplotypes(
                 aligned_fasta, file_suffix, taxon_lookup)
             if not hap_ok:
                 return AnalysisResult(prefix, False, output_path,
-                                      "Haplotype processing failed")
+                                      "Haplotype processing failed",
+                                      aligned_fasta=produced_aligned_fasta)
 
             # CSV / mapping files are now on disk — haplotype tab can be shown
             haplotype_ready = True
             self._update_progress(50)
+            self._check_cancelled()
 
-            # ── Step 5: Run fastHaN ────────────────────────────────────────────
-            self._log(f"Building {network_type} haplotype network with fastHaN...")
-            network_executable = self._get_network_executable()
-            exe_path = os.path.join(self._get_platform_lib_path(), network_executable)
-            seq_phy_file = f"{file_suffix}_seq.phy"
-
-            if not os.path.isfile(exe_path):
-                self._log(f"Network executable not found: {exe_path}")
-                return AnalysisResult(prefix, False, output_path,
-                                      f"Executable not found: {network_executable}",
-                                      haplotype_ready=haplotype_ready)
-
+            # ── Step 5: Run selected network engine ───────────────────────────
             success = True
+            failure_message: Optional[str] = None
+            engine_name = {
+                "mcan": "McAN",
+                "rmst": "RMST",
+            }.get(network_type, "fastHaN")
+            self._log(f"Building {network_type} haplotype network with {engine_name}...")
+
+            # Never let a failed rerun reuse a GML left by the same project
+            # prefix. Every engine must create the result for this invocation.
+            gml_file = f"{file_suffix}.gml"
+            if os.path.isfile(gml_file):
+                os.remove(gml_file)
             try:
-                cmd = [exe_path, network_type, "-i", seq_phy_file] + extra_args + ["-o", file_suffix]
-                self._log(f"Running: {' '.join(cmd)}")
-                process = subprocess.run(
-                    cmd,
-                    cwd=output_path,
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',
-                    errors='replace',
-                    timeout=600,
-                )
-                if process.stdout:
-                    self._log(f"fastHaN stdout: {process.stdout.strip()}")
-                if process.stderr:
-                    self._log(f"fastHaN stderr: {process.stderr.strip()}")
-                if process.returncode != 0:
-                    self._log(f"fastHaN exited with code {process.returncode}")
-                    success = False
-            except subprocess.TimeoutExpired:
-                self._log("fastHaN timed out after 600 seconds")
+                if network_type == "mcan":
+                    exe_path = self._get_mcan_executable_path()
+                    if not exe_path or not os.path.isfile(exe_path):
+                        expected = exe_path or "McAN"
+                        self._log(f"McAN executable not found: {expected}")
+                        return AnalysisResult(
+                            prefix, False, output_path,
+                            f"McAN executable not found: {expected}",
+                            haplotype_ready=haplotype_ready,
+                            has_continuous_traits=has_continuous_traits,
+                            aligned_fasta=produced_aligned_fasta,
+                        )
+                    self._run_mcan(
+                        exe_path, aligned_fasta, file_suffix, extra_args, output_path,
+                        mcan_vcf_input=mcan_vcf_input,
+                        selected_names=[taxon.name for taxon in taxons],
+                    )
+                elif network_type == "rmst":
+                    rmst_options = parse_rmst_options(extra_args)
+                    rmst_result = build_rmst_network(
+                        f"{file_suffix}_hap.fasta",
+                        f"{file_suffix}_seq.meta.csv",
+                        file_suffix,
+                        rmst_options,
+                        cancel_requested=self._cancel_callback,
+                    )
+                    self._log(
+                        "RMST completed: "
+                        f"{len(rmst_result.nodes)} nodes, {len(rmst_result.edges)} edges, "
+                        f"{rmst_result.included_site_count}/"
+                        f"{rmst_result.alignment_length} retained sites "
+                        f"({rmst_result.method})"
+                    )
+                    for warning in rmst_result.warnings:
+                        self._log(f"RMST warning: {warning}")
+                else:
+                    network_executable = self._get_network_executable()
+                    exe_path = os.path.join(self._get_platform_lib_path(), network_executable)
+                    seq_phy_file = f"{file_suffix}_seq.phy"
+                    if not os.path.isfile(exe_path):
+                        self._log(f"Network executable not found: {exe_path}")
+                        return AnalysisResult(
+                            prefix, False, output_path,
+                            f"Executable not found: {network_executable}",
+                            haplotype_ready=haplotype_ready,
+                            has_continuous_traits=has_continuous_traits,
+                            aligned_fasta=produced_aligned_fasta,
+                        )
+                    cmd = [exe_path, network_type, "-i", seq_phy_file]
+                    cmd += extra_args + ["-o", file_suffix]
+                    self._log(f"Running: {' '.join(cmd)}")
+                    process = self.process_runner.run(
+                        cmd,
+                        cwd=output_path,
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace',
+                        timeout=600,
+                        cancel_requested=self._cancel_callback,
+                    )
+                    self._log_process_output("fastHaN", process.stdout, process.stderr)
+                    if process.returncode != 0:
+                        raise AnalysisEngineError(
+                            f"fastHaN exited with code {process.returncode}"
+                        )
+            except ProcessTimedOut:
+                self._log(f"{engine_name} timed out after 600 seconds")
                 success = False
-            except (FileNotFoundError, PermissionError, OSError) as e:
-                self._log(f"Network construction error: {e}")
+                failure_message = f"{engine_name} timed out after 600 seconds"
+            except (McanAdapterError, RMSTError, AnalysisEngineError,
+                    FileNotFoundError, PermissionError, OSError) as e:
+                self._log(f"{engine_name} network construction error: {e}")
                 self._log(traceback.format_exc())
                 success = False
+                failure_message = f"{engine_name} network construction error: {e}"
 
             self._update_progress(70)
+            self._check_cancelled()
 
             # ── Step 6: Check GML output ───────────────────────────────────────
-            gml_file = f"{file_suffix}.gml"
             if not os.path.isfile(gml_file):
-                self._log("GML network file was not created by fastHaN")
+                self._log(f"GML network file was not created by {engine_name}")
                 success = False
+                if failure_message is None:
+                    failure_message = f"GML network file was not created by {engine_name}"
 
             if success:
                 # ── Step 7: Generate visualization ────────────────────────────
+                self._check_cancelled()
                 self._log("Generating visualization...")
                 success = self._generate_visualization(
                     prefix, output_path, has_continuous_traits)
+                if not success:
+                    failure_message = "Network visualization generation failed"
 
             self._update_progress(100)
 
+        except (ProcessCancelled, RMSTCancelled):
+            self._log("Analysis cancelled by user")
+            return AnalysisResult(prefix, False, output_path, "Analysis cancelled",
+                                  haplotype_ready=haplotype_ready,
+                                  aligned_fasta=produced_aligned_fasta,
+                                  cancelled=True)
         except Exception as e:
             self._log(f"Analysis error: {str(e)}")
             self._log(traceback.format_exc())
             return AnalysisResult(prefix, False, output_path, str(e),
                                   haplotype_ready=haplotype_ready)
 
-        return AnalysisResult(prefix, success, output_path,
+        return AnalysisResult(prefix, success, output_path, failure_message,
                               haplotype_ready=haplotype_ready,
                               has_continuous_traits=has_continuous_traits,
                               aligned_fasta=produced_aligned_fasta)
@@ -250,35 +373,59 @@ class AnalysisService:
         """
         FileService.ensure_directory(output_path)
         input_fasta = os.path.join(output_path, f"{prefix}.fasta")
-        output_fasta = os.path.join(output_path, f"{prefix}_aln.fasta")
+        if config.tool == "mafft":
+            output_extension = ".aln" if config.mafft_clustalout else ".fasta"
+            displayable_fasta = not config.mafft_clustalout
+        else:
+            output_extension = {
+                "fasta": ".fasta",
+                "html": ".html",
+                "msf": ".msf",
+                "clw": ".aln",
+                "clwstrict": ".aln",
+            }.get(config.muscle_output_format, ".fasta")
+            displayable_fasta = config.muscle_output_format == "fasta"
+        output_file = os.path.join(output_path, f"{prefix}_aln{output_extension}")
 
         try:
+            self._check_cancelled()
             self.file_service.write_analysis_fasta(input_fasta, taxons)
             self._log(f"Input FASTA written: {input_fasta}")
 
             if config.tool == "muscle":
                 extra_args = config.to_muscle_extra_args()
                 self._log(f"Running MUSCLE with args: {extra_args}")
-                ok = self._run_muscle_alignment(input_fasta, output_fasta,
+                ok = self._run_muscle_alignment(input_fasta, output_file,
                                                 extra_args=extra_args)
                 tool_name = "MUSCLE"
             else:
                 method_args = config.to_mafft_method_args()
                 add_inputorder = not config.mafft_reorder
                 self._log(f"Running MAFFT with args: {method_args}")
-                ok = self._run_mafft_alignment(input_fasta, output_fasta,
+                ok = self._run_mafft_alignment(input_fasta, output_file,
                                                method_args=method_args,
                                                add_inputorder=add_inputorder)
                 tool_name = "MAFFT"
 
             if ok:
-                self._log(f"{tool_name} alignment succeeded → {output_fasta}")
-                return AlignmentResult(success=True, output_file=output_fasta)
+                self._log(f"{tool_name} alignment succeeded → {output_file}")
+                return AlignmentResult(
+                    success=True,
+                    output_file=output_file,
+                    displayable_fasta=displayable_fasta,
+                )
             else:
                 return AlignmentResult(
                     success=False,
                     error_message=f"{tool_name} alignment failed or binary not found")
 
+        except ProcessCancelled:
+            self._log("Alignment cancelled by user")
+            return AlignmentResult(
+                success=False,
+                error_message="Alignment cancelled",
+                cancelled=True,
+            )
         except Exception as e:
             self._log(f"Alignment error: {e}")
             return AlignmentResult(success=False, error_message=str(e))
@@ -324,12 +471,12 @@ class AnalysisService:
                 order_flag = ["--inputorder"] if add_inputorder else []
                 cmd = [mafft_cmd] + order_flag + method_args + [input_file]
                 with open(output_file, 'w', encoding='utf-8') as out_f:
-                    process = subprocess.run(
+                    process = self.process_runner.run(
                         cmd,
                         cwd=work_dir,
                         stdout=out_f,
-                        stderr=subprocess.PIPE,
-                        timeout=600
+                        timeout=600,
+                        cancel_requested=self._cancel_callback,
                     )
 
                 stderr_text = process.stderr
@@ -353,7 +500,7 @@ class AnalysisService:
                         os.remove(output_file)
                     except OSError:
                         pass
-            except subprocess.TimeoutExpired:
+            except ProcessTimedOut:
                 self._log("MAFFT timed out")
                 if os.path.isfile(output_file):
                     try:
@@ -398,7 +545,11 @@ class AnalysisService:
             ):
                 try:
                     cmd = base_args + extra_args
-                    process = subprocess.run(cmd, capture_output=True, timeout=600)
+                    process = self.process_runner.run(
+                        cmd,
+                        timeout=600,
+                        cancel_requested=self._cancel_callback,
+                    )
 
                     for stream_bytes, label in ((process.stdout, "MUSCLE"), (process.stderr, "MUSCLE")):
                         if stream_bytes:
@@ -422,7 +573,7 @@ class AnalysisService:
                         except OSError:
                             pass
                     break  # this candidate doesn't exist; try next
-                except subprocess.TimeoutExpired:
+                except ProcessTimedOut:
                     self._log(f"MUSCLE timed out: {muscle_cmd}")
                     if os.path.isfile(output_file):
                         try:
@@ -433,17 +584,6 @@ class AnalysisService:
         return False
 
     # ── Haplotype processing ────────────────────────────────────────────────────
-
-    def _parse_analysis_header(self, header: str) -> str:
-        """
-        Parse analysis FASTA header.
-
-        Expected format: name (plain sequence name only)
-
-        Returns:
-            name
-        """
-        return header
 
     def _process_haplotypes(self, aligned_fasta: str, output_prefix: str,
                             taxon_lookup: dict = None) -> Tuple[bool, bool]:
@@ -475,134 +615,164 @@ class AnalysisService:
         if taxon_lookup is None:
             taxon_lookup = {}
 
-        # Determine upfront whether any taxon carries a meaningful continuous trait.
-        has_continuous = any(
-            cont.strip() not in ("", "0")
-            for cont, _ in taxon_lookup.values()
-        )
-
         try:
-            # ── Read aligned FASTA ────────────────────────────────────────────
-            sequences: List[Tuple[str, str]] = []
-            # each entry: (name, sequence)
+            # ── Read aligned FASTA through the shared strict parser ───────────
+            records = read_fasta(aligned_fasta)
+            calculation = identify_haplotypes(records, self._check_cancelled)
+            assignment_map = calculation.assignment_map()
 
-            encoding = FileService.detect_encoding(aligned_fasta)
-            with open(aligned_fasta, 'r', encoding=encoding) as f:
-                current_header: Optional[str] = None
-                seq_lines: List[str] = []
+            # Only traits belonging to samples that survived/read from the
+            # alignment affect this result.  This prevents a stale lookup entry
+            # from creating a trait configuration file for unrelated samples.
+            traits_by_sample = {}
+            for record in calculation.records:
+                continuous, discrete = taxon_lookup.get(record.name, ("0", ""))
+                traits_by_sample[record.name] = (
+                    "0" if continuous is None else str(continuous),
+                    "" if discrete is None else str(discrete),
+                )
+            has_continuous = any(
+                has_meaningful_continuous_trait(continuous)
+                for continuous, _ in traits_by_sample.values()
+            )
 
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    if line.startswith('>'):
-                        if current_header is not None and seq_lines:
-                            seq = ''.join(seq_lines).upper()
-                            name = self._parse_analysis_header(current_header)
-                            sequences.append((name, seq))
-                        current_header = line[1:]
-                        seq_lines = []
-                    else:
-                        seq_lines.append(line)
-
-                if current_header is not None and seq_lines:
-                    seq = ''.join(seq_lines).upper()
-                    name = self._parse_analysis_header(current_header)
-                    sequences.append((name, seq))
-
-            if not sequences:
-                self._log("No sequences found in aligned FASTA")
-                return False, False
-
-            seq_len = len(sequences[0][1])
-
-            # ── Identify unique haplotypes ────────────────────────────────────
-            seq_to_hap: dict = {}  # sequence_str  → hap_name
-            hap_sequences: dict = {}  # hap_name      → sequence_str
-            hap_info: dict = {}  # hap_name      → [(name, cont, disc)]
-            hap_counter = 0
-
-            for name, seq in sequences:
-                hap_name = seq_to_hap.get(seq)
-                if hap_name is None:
-                    hap_counter += 1
-                    hap_name = f"H{hap_counter}"
-                    seq_to_hap[seq] = hap_name
-                    hap_sequences[hap_name] = seq
-                    hap_info[hap_name] = []
-                cont, disc = taxon_lookup.get(name, ("0", ""))
-                hap_info[hap_name].append((name, cont, disc))
-
-            hap_names = list(hap_sequences.keys())
             self._log(
-                f"Identified {len(hap_names)} unique haplotypes from {len(sequences)} sequences")
+                f"Identified {len(calculation.haplotypes)} unique haplotypes "
+                f"from {len(calculation.records)} sequences")
 
-            # ── Write _seq.fasta ──────────────────────────────────────────────
-            # All sequences with original sequence IDs (no analysis metadata in header).
-            with open(f"{output_prefix}_seq.fasta", 'w', encoding='utf-8') as f:
-                for name, seq in sequences:
-                    f.write(f">{name}\n{seq}\n")
+            # Generate every result in a temporary directory first.  A parse,
+            # write, or cancellation failure therefore cannot leave a mixture
+            # of old and partially-written haplotype files behind.
+            output_directory = os.path.dirname(os.path.abspath(output_prefix))
+            os.makedirs(output_directory, exist_ok=True)
+            output_stem = os.path.basename(output_prefix)
+            with tempfile.TemporaryDirectory(
+                prefix=f".{output_stem}_hap_", dir=output_directory,
+            ) as temporary_directory:
+                temporary_prefix = os.path.join(temporary_directory, output_stem)
+                generated_suffixes = self._write_haplotype_outputs(
+                    calculation,
+                    temporary_prefix,
+                    traits_by_sample,
+                    assignment_map,
+                    has_continuous,
+                )
+                self._check_cancelled()
+                for suffix in generated_suffixes:
+                    os.replace(
+                        temporary_prefix + suffix,
+                        output_prefix + suffix,
+                    )
 
-            # ── Write _seq.phy (fastHaN input) ────────────────────────────────
-            # All sequences in PHYLIP format with full original names.
-            seq_phy = f"{output_prefix}_seq.phy"
-            with open(seq_phy, 'w', encoding='utf-8') as f:
-                f.write(f" {len(sequences)} {seq_len}\n")
-                for name, seq in sequences:
-                    f.write(f"{name} {seq}\n")
-
-            # ── Write _hap.fasta ──────────────────────────────────────────────
-            # Non-redundant unique haplotype sequences labeled H1, H2, …
-            with open(f"{output_prefix}_hap.fasta", 'w', encoding='utf-8') as f:
-                for hap_name in hap_names:
-                    f.write(f">{hap_name}\n{hap_sequences[hap_name]}\n")
-
-            # ── Write _seq.meta.csv ───────────────────────────────────────────
-            # Per-sample metadata: replaces both the old .meta and _seq2hap.csv files.
-            with open(f"{output_prefix}_seq.meta.csv", 'w', encoding='utf-8', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(
-                    ['sequence_name', 'haplotype', 'continuous_traits', 'discrete_traits'])
-                for name, seq in sequences:
-                    cont, disc = taxon_lookup.get(name, ("0", ""))
-                    writer.writerow([name, seq_to_hap[seq], cont, disc])
-
-            # ── Write _traitconf.csv (only when meaningful continuous traits exist) ──
-            # Continuous trait per sequence: seqname;continuous_traits
-            if has_continuous:
-                with open(f"{output_prefix}_traitconf.csv", 'w', encoding='utf-8') as f:
-                    for name, _ in sequences:
-                        cont, _ = taxon_lookup.get(name, ("0", ""))
-                        f.write(f"{name};{cont}\n")
-
-            # ── Write _hap_trait.csv ──────────────────────────────────────────
-            with open(f"{output_prefix}_hap_trait.csv", 'w', encoding='utf-8', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(
-                    ['haplotype', 'total_quantity', 'continuous_traits',
-                     'discrete_traits', 'samples'])
-                for hap_name in hap_names:
-                    members = hap_info[hap_name]
-                    total_qty = len(members)
-                    cont_traits = members[0][1] if members else "0"
-                    disc_traits = ";".join(sorted({m[2] for m in members if m[2]}))
-                    samples = ";".join(m[0] for m in members)
-                    writer.writerow([hap_name, total_qty, cont_traits, disc_traits, samples])
-
-            # ── Write _seq_trait.csv ──────────────────────────────────────────
-            with open(f"{output_prefix}_seq_trait.csv", 'w', encoding='utf-8', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(['name', 'quantity', 'continuous_traits', 'discrete_traits'])
-                for name, _ in sequences:
-                    cont, disc = taxon_lookup.get(name, ("0", ""))
-                    writer.writerow([name, 1, cont, disc])
+            # A successful rerun without continuous traits must not reuse a
+            # trait configuration left by an earlier run with the same prefix.
+            traitconf_path = f"{output_prefix}_traitconf.csv"
+            if not has_continuous and os.path.isfile(traitconf_path):
+                os.remove(traitconf_path)
 
             return True, has_continuous
 
+        except ProcessCancelled:
+            raise
         except Exception as e:
             self._log(f"Haplotype processing error: {str(e)}")
             self._log(traceback.format_exc())
             return False, False
+
+    def _write_haplotype_outputs(
+        self,
+        calculation: HaplotypeCalculation,
+        output_prefix: str,
+        traits_by_sample: dict,
+        assignment_map: dict,
+        has_continuous: bool,
+    ) -> Tuple[str, ...]:
+        """Write one internally consistent set of haplotype result files."""
+        generated_suffixes = [
+            "_seq.fasta",
+            "_seq.phy",
+            "_hap.fasta",
+            "_seq.meta.csv",
+            "_hap_trait.csv",
+            "_seq_trait.csv",
+        ]
+
+        with open(f"{output_prefix}_seq.fasta", "w", encoding="utf-8", newline="\n") as handle:
+            for record in calculation.records:
+                self._check_cancelled()
+                handle.write(f">{record.name}\n{record.sequence}\n")
+
+        write_phylip(f"{output_prefix}_seq.phy", calculation.records)
+
+        with open(f"{output_prefix}_hap.fasta", "w", encoding="utf-8", newline="\n") as handle:
+            for haplotype in calculation.haplotypes:
+                self._check_cancelled()
+                handle.write(f">{haplotype.name}\n{haplotype.sequence}\n")
+
+        with open(
+            f"{output_prefix}_seq.meta.csv", "w", encoding="utf-8", newline="",
+        ) as handle:
+            writer = csv.writer(handle)
+            writer.writerow([
+                "sequence_name", "haplotype", "continuous_traits", "discrete_traits",
+            ])
+            for record in calculation.records:
+                self._check_cancelled()
+                continuous, discrete = traits_by_sample[record.name]
+                writer.writerow([
+                    record.name, assignment_map[record.name], continuous, discrete,
+                ])
+
+        if has_continuous:
+            generated_suffixes.append("_traitconf.csv")
+            with open(
+                f"{output_prefix}_traitconf.csv", "w", encoding="utf-8", newline="\n",
+            ) as handle:
+                for record in calculation.records:
+                    self._check_cancelled()
+                    continuous, _ = traits_by_sample[record.name]
+                    # tcsBU splits this legacy format on semicolons before it
+                    # normalizes identifiers, so protect valid sample names
+                    # that themselves contain the delimiter.
+                    trait_name = record.name.replace(";", "_")
+                    handle.write(f"{trait_name};{continuous}\n")
+
+        with open(
+            f"{output_prefix}_hap_trait.csv", "w", encoding="utf-8", newline="",
+        ) as handle:
+            writer = csv.writer(handle)
+            writer.writerow([
+                "haplotype", "total_quantity", "continuous_traits",
+                "discrete_traits", "samples",
+            ])
+            for haplotype in calculation.haplotypes:
+                self._check_cancelled()
+                member_traits = [traits_by_sample[name] for name in haplotype.samples]
+                continuous_values = list(dict.fromkeys(
+                    str(continuous) for continuous, _ in member_traits
+                ))
+                discrete_values = sorted({
+                    str(discrete) for _, discrete in member_traits if str(discrete)
+                })
+                writer.writerow([
+                    haplotype.name,
+                    haplotype.sample_count,
+                    ";".join(continuous_values),
+                    ";".join(discrete_values),
+                    ";".join(haplotype.samples),
+                ])
+
+        with open(
+            f"{output_prefix}_seq_trait.csv", "w", encoding="utf-8", newline="",
+        ) as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["name", "quantity", "continuous_traits", "discrete_traits"])
+            for record in calculation.records:
+                self._check_cancelled()
+                continuous, discrete = traits_by_sample[record.name]
+                writer.writerow([record.name, 1, continuous, discrete])
+
+        return tuple(generated_suffixes)
 
     def run_haplotype_calculation(self, taxons: List[TaxonData], output_path: str,
                                   prefix: str, config) -> AnalysisResult:
@@ -628,6 +798,7 @@ class AnalysisService:
         produced_aligned_fasta = ""
 
         try:
+            self._check_cancelled()
             # ── Step 1: Write input FASTA ──────────────────────────────────────
             input_fasta = os.path.join(output_path, f"{prefix}.fasta")
             self.file_service.write_analysis_fasta(input_fasta, taxons)
@@ -635,51 +806,52 @@ class AnalysisService:
 
             # ── Step 2: Alignment ──────────────────────────────────────────────
             aligned_fasta = os.path.join(output_path, f"{prefix}_aln.fasta")
-            needs_alignment = not self._are_sequences_aligned(taxons)
-
-            if needs_alignment:
-                if config.tool == "muscle":
-                    extra_args = config.to_muscle_extra_args()
-                    self._log("Running MUSCLE alignment...")
-                    aligned = self._run_muscle_alignment(input_fasta, aligned_fasta,
-                                                         extra_args=extra_args)
-                    if not aligned:
-                        self._log("MUSCLE failed, trying MAFFT...")
-                        aligned = self._run_mafft_alignment(input_fasta, aligned_fasta)
-                else:
-                    method_args = config.to_mafft_method_args()
-                    add_inputorder = not config.mafft_reorder
-                    self._log("Running MAFFT alignment...")
-                    aligned = self._run_mafft_alignment(input_fasta, aligned_fasta,
-                                                        method_args=method_args,
-                                                        add_inputorder=add_inputorder)
-                    if not aligned:
-                        self._log("MAFFT failed, trying MUSCLE...")
-                        aligned = self._run_muscle_alignment(input_fasta, aligned_fasta)
-
+            # This workflow explicitly asks the user for an aligner/config, so
+            # always align even when raw sequences happen to have equal length.
+            if config.tool == "muscle":
+                extra_args = config.to_muscle_extra_args(force_fasta=True)
+                self._log("Running MUSCLE alignment...")
+                aligned = self._run_muscle_alignment(input_fasta, aligned_fasta,
+                                                     extra_args=extra_args)
                 if not aligned:
-                    return AnalysisResult(prefix, False, output_path,
-                                          "Sequence alignment failed")
+                    self._log("MUSCLE failed, trying MAFFT...")
+                    aligned = self._run_mafft_alignment(input_fasta, aligned_fasta)
             else:
-                FileService.safe_copy(input_fasta, aligned_fasta)
-                self._log("Sequences already aligned — skipping alignment step")
+                method_args = config.to_mafft_method_args(force_fasta=True)
+                add_inputorder = not config.mafft_reorder
+                self._log("Running MAFFT alignment...")
+                aligned = self._run_mafft_alignment(input_fasta, aligned_fasta,
+                                                    method_args=method_args,
+                                                    add_inputorder=add_inputorder)
+                if not aligned:
+                    self._log("MAFFT failed, trying MUSCLE...")
+                    aligned = self._run_muscle_alignment(input_fasta, aligned_fasta)
+
+            if not aligned:
+                return AnalysisResult(prefix, False, output_path,
+                                      "Sequence alignment failed")
 
             produced_aligned_fasta = aligned_fasta if os.path.isfile(aligned_fasta) else ""
             self._update_progress(50)
+            self._check_cancelled()
 
             # ── Step 3: Ensure UTF-8 ───────────────────────────────────────────
             FileService.ensure_utf8(aligned_fasta)
 
             # ── Step 4: Process haplotypes ─────────────────────────────────────
             file_suffix = os.path.join(output_path, prefix)
-            taxon_lookup = {t.name: (t.continuous_traits, t.discrete_traits) for t in taxons}
+            taxon_lookup = {
+                str(t.name).strip(): (t.continuous_traits, t.discrete_traits)
+                for t in taxons
+            }
             self._log("Processing haplotypes...")
             hap_ok, has_continuous_traits = self._process_haplotypes(
                 aligned_fasta, file_suffix, taxon_lookup)
 
             if not hap_ok:
                 return AnalysisResult(prefix, False, output_path,
-                                      "Haplotype processing failed")
+                                      "Haplotype processing failed",
+                                      aligned_fasta=produced_aligned_fasta)
 
             haplotype_ready = True
             self._update_progress(100)
@@ -690,11 +862,113 @@ class AnalysisService:
                                   has_continuous_traits=has_continuous_traits,
                                   aligned_fasta=produced_aligned_fasta)
 
+        except ProcessCancelled:
+            self._log("Haplotype calculation cancelled by user")
+            return AnalysisResult(
+                prefix, False, output_path, "Haplotype calculation cancelled",
+                haplotype_ready=haplotype_ready,
+                aligned_fasta=produced_aligned_fasta,
+                cancelled=True,
+            )
         except Exception as e:
             self._log(f"Haplotype calculation error: {str(e)}")
             self._log(traceback.format_exc())
             return AnalysisResult(prefix, False, output_path, str(e),
                                   haplotype_ready=haplotype_ready)
+
+    # ── McAN adapter ────────────────────────────────────────────────────────────
+
+    def _run_mcan(self, executable: str, aligned_fasta: str, output_prefix: str,
+                  extra_args: List[str], cwd: str,
+                  mcan_vcf_input: Optional[McanVcfInput] = None,
+                  selected_names: Sequence[str] = ()) -> None:
+        """Prepare, execute and adapt one isolated McAN network run."""
+        options = parse_mcan_options(extra_args)
+        if mcan_vcf_input is not None:
+            if options.reference_name or options.exclude_ambiguous_sites:
+                raise McanAdapterError(
+                    "Reference selection and ambiguous-site filtering apply only "
+                    "to aligned FASTA McAN input, not native VCF input"
+                )
+            prepared = prepare_mcan_vcf_input(
+                mcan_vcf_input,
+                output_prefix,
+                selected_names,
+                check_cancelled=self._check_cancelled,
+            )
+            self._log("Using original VCF and metadata as native McAN input")
+        else:
+            prepared = prepare_mcan_input(
+                aligned_fasta,
+                output_prefix,
+                options,
+                check_cancelled=self._check_cancelled,
+            )
+        self._log(
+            "McAN input prepared: "
+            f"{len(prepared.alias_to_name)} samples, "
+            f"{prepared.included_site_count}/{prepared.sequence_length} sites"
+        )
+
+        graphml_file = os.path.join(prepared.output_directory, "haplotype_loci.graphml")
+        json_file = os.path.join(prepared.output_directory, "haplotype_loci.json")
+        time_file = os.path.join(prepared.output_directory, "time")
+        for stale_output in (graphml_file, json_file, time_file):
+            if os.path.isfile(stale_output):
+                os.remove(stale_output)
+
+        input_args = (
+            ["--vcf", prepared.vcf_file]
+            if prepared.vcf_file
+            else ["--mutation", prepared.mutation_file]
+        )
+        cmd = [executable] + input_args + [
+            "--meta", prepared.metadata_file,
+            "--sitemask", prepared.site_mask_file,
+            "--outDir", prepared.output_directory,
+            "--oGraphML",
+            "--oJSON",
+            "--nthread", str(options.threads),
+        ]
+        self._log(f"Running: {' '.join(cmd)}")
+        process = self.process_runner.run(
+            cmd,
+            cwd=cwd,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=600,
+            cancel_requested=self._cancel_callback,
+        )
+        self._log_process_output("McAN", process.stdout, process.stderr)
+        if process.returncode != 0:
+            raise AnalysisEngineError(f"McAN exited with code {process.returncode}")
+        if not os.path.isfile(graphml_file) or os.path.getsize(graphml_file) == 0:
+            raise McanAdapterError("McAN did not create haplotype_loci.graphml")
+
+        gml_file = output_prefix + ".gml"
+        convert_graphml_to_tcsbu_gml(
+            graphml_file, gml_file, prepared.alias_to_name
+        )
+        self._log(f"McAN GraphML converted for tcsBU: {gml_file}")
+
+    def _log_process_output(self, program: str, stdout, stderr) -> None:
+        if stdout:
+            text = str(stdout).strip()
+            if program == "McAN":
+                # McAN 1.2 prints unsigned-clock underflow as enormous negative
+                # timing values on current macOS.  They are not run failures
+                # and obscure the useful progress messages in NetST's log.
+                text = "\n".join(
+                    line for line in text.splitlines()
+                    if not (line.startswith("-") and " s for " in line)
+                ).strip()
+            if text:
+                self._log(f"{program} stdout: {text}")
+        if stderr:
+            text = str(stderr).strip()
+            if text:
+                self._log(f"{program} stderr: {text}")
 
     # ── Visualization helpers ───────────────────────────────────────────────────
 
@@ -796,18 +1070,41 @@ class AnalysisService:
 
         return candidates[0]
 
+    def _get_mcan_executable_path(self) -> str:
+        """Return a bundled McAN executable or an explicit environment override."""
+        override = os.environ.get("NETST_MCAN_EXECUTABLE", "").strip()
+        if override:
+            return os.path.abspath(os.path.expanduser(override))
+
+        platform_lib = self._get_platform_lib_path()
+        if self._is_windows():
+            candidates = ["McAN.exe", "mcan.exe", "McAN", "mcan"]
+        else:
+            candidates = ["McAN", "mcan"]
+
+        for name in candidates:
+            path = os.path.join(platform_lib, name)
+            if os.path.isfile(path):
+                return path
+        return os.path.join(platform_lib, candidates[0])
+
     def _get_platform_lib_path(self) -> str:
         """Get the platform-specific lib subdirectory path.
 
         Returns:
             lib/win       on Windows
-            lib/mac_arm64 on macOS
+            lib/mac_arm64 on Apple Silicon macOS
+            lib/mac_intel (or lib/) on Intel macOS
             lib/          on Linux (fallback)
         """
         if self._is_windows():
             return os.path.join(self.lib_path, "win")
         elif self._is_mac():
-            return os.path.join(self.lib_path, "mac_arm64")
+            arch = platform.machine().lower()
+            if 'arm' in arch or 'aarch64' in arch:
+                return os.path.join(self.lib_path, "mac_arm64")
+            intel_path = os.path.join(self.lib_path, "mac_intel")
+            return intel_path if os.path.isdir(intel_path) else self.lib_path
         else:
             return self.lib_path
 
