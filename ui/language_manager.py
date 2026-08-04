@@ -40,24 +40,127 @@ class LanguageManager:
             'menu_load_sequence': {'cn': '导入 FASTA...', 'en': 'Import FASTA...'},
             'menu_load_nexus': {'cn': '导入 NEXUS...', 'en': 'Import NEXUS...'},
             'menu_load_phylip': {'cn': '导入 PHYLIP...', 'en': 'Import PHYLIP...'},
-            'menu_load_vcf': {'cn': '导入 VCF 与 metadata...', 'en': 'Import VCF and Metadata...'},
-            'menu_load_csv_traits': {'cn': '导入CSV性状...', 'en': 'Load CSV Traits...'},
+            'menu_load_vcf': {'cn': '导入 VCF...', 'en': 'Import VCF...'},
+            'menu_load_csv_traits': {'cn': '导入 metadata...', 'en': 'Load Metadata...'},
             'menu_export_sequence': {'cn': '导出序列数据...', 'en': 'Export Sequence Data...'},
-            'menu_export_traits': {'cn': '导出性状数据...', 'en': 'Export Trait Data...'},
+            'menu_export_traits': {'cn': '导出 metadata...', 'en': 'Export Metadata...'},
             'menu_exit': {'cn': '退出', 'en': 'Exit'},
 
-            # CSV Traits Import Dialog
-            'dlg_csv_title': {'cn': '从CSV导入性状', 'en': 'Import Traits from CSV'},
+            # Metadata Import Dialog (CSV / TSV)
+            'dlg_csv_title': {'cn': '从文件导入 metadata', 'en': 'Import Metadata from File'},
             'dlg_csv_mapping': {'cn': '列映射', 'en': 'Column Mapping'},
             'dlg_csv_seq_name': {'cn': '序列名称列:', 'en': 'Sequence Name Column:'},
-            'dlg_csv_discrete': {'cn': '离散性状列:', 'en': 'Discrete Traits Column:'},
-            'dlg_csv_continuous': {'cn': '连续性状列:', 'en': 'Continuous Traits Column:'},
+            'dlg_csv_discrete': {'cn': '分类型性状（分组）列:', 'en': 'Categorical Trait (group) Column:'},
+            'dlg_csv_continuous': {'cn': '数值型性状列:', 'en': 'Numeric Trait Column:'},
             'dlg_csv_preview': {'cn': '数据预览（前几行）', 'en': 'Data Preview (first rows)'},
             'option_none': {'cn': '-- 无 --', 'en': '-- None --'},
+            'dlg_csv_hint': {
+                'cn': '为每一列指定角色。必须且仅有一列为样本名，且至少一个分类型性状（作为分组）。',
+                'en': 'Tag each column. Exactly one Sample Name and at least one Categorical '
+                      'trait (the group) are required.'},
+            'dlg_csv_col_header': {'cn': '列', 'en': 'Column'},
+            'dlg_csv_col_role': {'cn': '角色', 'en': 'Role'},
+            'dlg_csv_col_trait': {'cn': '性状名称', 'en': 'Trait name'},
+            'dlg_csv_col_conversion': {
+                'cn': '连续型转换', 'en': 'Continuous conversion'},
+            'dlg_csv_group': {'cn': '分组（内环）性状:', 'en': 'Group (inner ring) trait:'},
+            'role_ignore': {'cn': '忽略', 'en': 'Ignore'},
+            'role_name': {'cn': '样本名', 'en': 'Sample Name'},
+            'role_discrete': {'cn': '分类型数据', 'en': 'Categorical'},
+            'role_continuous': {'cn': '数值型数据', 'en': 'Numeric'},
+            'msg_csv_need_one_name': {'cn': '请且仅选择一列作为样本名。',
+                                      'en': 'Select exactly one Sample Name column.'},
+            'msg_csv_trait_name_empty': {'cn': '每个性状列都需要一个名称。', 'en': 'Every trait column needs a name.'},
+            'msg_csv_trait_name_dup': {'cn': '性状名称必须唯一：{name}', 'en': 'Trait names must be unique: {name}'},
+            'msg_csv_need_discrete': {
+                'cn': '至少需要一个分类型性状作为分组。',
+                'en': 'At least one Categorical trait is required to serve as the group.'},
+            # Continuous metadata conversion
+            'dlg_transform_title': {
+                'cn': '转换连续型性状：{name}',
+                'en': 'Convert Continuous Trait: {name}'},
+            'transform_hint': {
+                'cn': '选择如何把原始文本转换为数值。空单元格保持为空，源文件不会被修改。',
+                'en': 'Choose how source text is converted to numbers. Blank cells remain '
+                      'blank; the source file is not modified.'},
+            'transform_options': {'cn': '转换规则', 'en': 'Conversion rule'},
+            'transform_mode': {'cn': '输入类型:', 'en': 'Input type:'},
+            'transform_number': {'cn': '普通数值', 'en': 'Plain number'},
+            'transform_date': {'cn': '日期 / 时间', 'en': 'Date / time'},
+            'transform_measurement': {
+                'cn': '带单位测量值', 'en': 'Measurement with unit'},
+            'transform_date_unit': {'cn': '输出时间单位:', 'en': 'Output time unit:'},
+            'transform_start_date': {'cn': '起始日期:', 'en': 'Start date:'},
+            'transform_start_auto': {
+                'cn': '留空 = 本列最早的有效日期',
+                'en': 'Blank = earliest valid date'},
+            'transform_quantity': {'cn': '测量类型:', 'en': 'Measurement type:'},
+            'transform_target_unit': {'cn': '输出单位:', 'en': 'Output unit:'},
+            'transform_bare_unit': {
+                'cn': '无后缀数值采用的单位:',
+                'en': 'Unit for values without a suffix:'},
+            'transform_length': {'cn': '长度', 'en': 'Length'},
+            'transform_mass': {'cn': '质量', 'en': 'Mass'},
+            'transform_temperature': {'cn': '温度', 'en': 'Temperature'},
+            'transform_days': {'cn': '天', 'en': 'Days'},
+            'transform_months': {'cn': '月', 'en': 'Months'},
+            'transform_years': {'cn': '年', 'en': 'Years'},
+            'transform_earliest': {'cn': '最早日期', 'en': 'earliest date'},
+            'transform_summary_number': {'cn': '普通数值', 'en': 'Plain number'},
+            'transform_summary_date': {
+                'cn': '日期 → {unit}（{origin}）',
+                'en': 'Date → {unit} ({origin})'},
+            'transform_summary_measurement': {
+                'cn': '{quantity} → {unit}',
+                'en': '{quantity} → {unit}'},
+            'transform_preview': {'cn': '转换预览', 'en': 'Conversion Preview'},
+            'transform_preview_input': {'cn': '原始值', 'en': 'Source value'},
+            'transform_preview_output': {'cn': '转换后数值', 'en': 'Converted number'},
+            'msg_transform_invalid': {
+                'cn': '无法转换该列：{error}',
+                'en': 'Cannot convert this column: {error}'},
+            'msg_transform_valid': {
+                'cn': '可转换 {count} 个非空值。',
+                'en': '{count} non-empty values can be converted.'},
+            'msg_csv_transform_invalid': {
+                'cn': '性状“{name}”无法转换：{error}',
+                'en': 'Trait {name!r} cannot be converted: {error}'},
+            # Metadata tab
+            'tab_metadata': {'cn': 'Metadata', 'en': 'Metadata'},
+            'metadata_tab_hint': {
+                'cn': '样本名、序列或网络拓扑变化时需要重新构建单倍型网络；性状类型、分组、是否显示和颜色变化只更新网络可视化配置。',
+                'en': 'Sample-name, sequence, or topology changes require rebuilding the '
+                      'haplotype network. Trait type, group, visibility, and colour '
+                      'changes only refresh its visualization configuration.'},
+            'btn_apply_metadata': {
+                'cn': '应用可视化配置',
+                'en': 'Apply Visualization Config'},
+            'btn_reset': {'cn': '重置', 'en': 'Reset'},
+            'metadata_col_trait': {'cn': '性状', 'en': 'Trait'},
+            'metadata_col_type': {'cn': '类型', 'en': 'Type'},
+            'metadata_col_group': {'cn': '分组', 'en': 'Group'},
+            'metadata_col_visualize': {'cn': '可视化', 'en': 'Visualize'},
+            'metadata_col_colors': {'cn': '颜色', 'en': 'Colours'},
+            'metadata_edit_colors': {'cn': '编辑…', 'en': 'Edit…'},
+            'metadata_gradient_low': {'cn': '低值颜色', 'en': 'Low value'},
+            'metadata_gradient_high': {'cn': '高值颜色', 'en': 'High value'},
+            'dlg_gradient_title': {
+                'cn': '数值型性状渐变颜色', 'en': 'Numeric Trait Gradient'},
+            'msg_metadata_keep_discrete': {
+                'cn': '必须至少保留一个分类型性状作为分组。',
+                'en': 'At least one categorical trait is required as the group.'},
+            'msg_invalid_hex_color': {
+                'cn': '请输入有效的十六进制颜色，例如 #3B82F6。',
+                'en': 'Enter a valid hexadecimal colour such as #3B82F6.'},
+            'dlg_colors_title': {'cn': '类别颜色', 'en': 'Category Colours'},
+            'dlg_colors_pick': {'cn': '选择颜色', 'en': 'Pick a colour'},
+            'label_group_trait': {'cn': '按性状分组:', 'en': 'Group samples by:'},
 
             # Analysis Menu
             'menu_analysis': {'cn': '分析', 'en': 'Analysis'},
-            'menu_build_haplotype_network': {'cn': '构建单倍型网络...', 'en': 'Build Haplotype Network...'},
+            'menu_build_haplotype_network': {
+                'cn': '构建 / 重新构建单倍型网络...',
+                'en': 'Build / Rebuild Haplotype Network...'},
             'menu_mafft_auto': {'cn': 'Auto (自动选择)', 'en': 'Auto (Automatic)'},
             'menu_mafft_fftns1': {'cn': 'FFT-NS-1 (极快但粗糙)', 'en': 'FFT-NS-1 (Very Fast)'},
             'menu_mafft_fftns2': {'cn': 'FFT-NS-2 (快速)', 'en': 'FFT-NS-2 (Fast)'},
@@ -193,8 +296,8 @@ class LanguageManager:
             'alg_mjn': {'cn': 'MJN（中间连接网络）', 'en': 'MJN (Median-Joining Network)'},
             'alg_rmst': {'cn': 'RMST（随机化最小生成树）', 'en': 'RMST (Randomized Minimum Spanning Tree)'},
             'alg_mcan': {
-                'cn': 'McAN 最小代价有向生成树网络',
-                'en': 'McAN Minimum-cost Arborescence Network'},
+                'cn': 'McAN (最小代价有向生成树网络)',
+                'en': 'McAN (Minimum-cost Arborescence Network)'},
             'btn_ok': {'cn': '确定', 'en': 'OK'},
             'btn_cancel': {'cn': '取消', 'en': 'Cancel'},
 
@@ -208,13 +311,18 @@ class LanguageManager:
             'menu_english': {'cn': 'English', 'en': 'English'},
 
             # VCF import and format conversion
-            'dlg_vcf_import_title': {'cn': '导入 VCF 与 metadata', 'en': 'Import VCF and Metadata'},
+            'dlg_vcf_import_title': {'cn': '导入 VCF', 'en': 'Import VCF'},
             'dlg_vcf_file': {'cn': 'VCF 文件:', 'en': 'VCF file:'},
-            'dlg_vcf_metadata': {'cn': 'metadata 文件:', 'en': 'Metadata file:'},
+            'dlg_vcf_metadata': {'cn': 'metadata 文件（可选）:', 'en': 'Metadata file (optional):'},
             'dlg_vcf_reference': {'cn': '参考 FASTA（可选）:', 'en': 'Reference FASTA (optional):'},
             'dlg_vcf_import_note': {
-                'cn': '未提供参考 FASTA 时，将生成仅包含变异位点的比对序列；提供参考后可重建全长比对。',
-                'en': 'Without a reference FASTA, NetST imports a variable-site alignment; with a reference it reconstructs a full-length alignment.'},
+                'cn': '样本 metadata 与其他格式一致，导入后从样本名中解析。metadata 文件可选：'
+                      '提供 McAN 六列 TSV 且样本名保持不变时，可启用 McAN 原生 VCF 分析。'
+                      '未提供参考 FASTA 时生成仅含变异位点的比对，提供参考后可重建全长比对。',
+                'en': 'Sample metadata is parsed from the sample IDs after import, like the other formats. '
+                      'A metadata file is optional: a McAN six-column TSV enables native McAN VCF analysis '
+                      'while the sample names are unchanged. Without a reference FASTA NetST imports a '
+                      'variable-site alignment; with a reference it reconstructs a full-length alignment.'},
             'dlg_convert_title': {'cn': '序列格式转换', 'en': 'Sequence Format Conversion'},
             'dlg_convert_input': {'cn': '输入文件:', 'en': 'Input file:'},
             'dlg_convert_input_format': {'cn': '输入格式:', 'en': 'Input format:'},
@@ -238,9 +346,11 @@ class LanguageManager:
             'filter_sequence_formats': {
                 'cn': '序列文件 (*.fasta *.fas *.fa *.nex *.nexus *.nxs *.phy *.phylip *.vcf *.vcf.gz);;所有文件 (*.*)',
                 'en': 'Sequence Files (*.fasta *.fas *.fa *.nex *.nexus *.nxs *.phy *.phylip *.vcf *.vcf.gz);;All Files (*.*)'},
-            'msg_vcf_metadata_required': {
-                'cn': '请选择有效的 VCF 文件和 metadata 文件。',
-                'en': 'Select an existing VCF file and metadata file.'},
+            'msg_vcf_required': {
+                'cn': '请选择有效的 VCF 文件。',
+                'en': 'Select an existing VCF file.'},
+            'msg_metadata_not_found': {'cn': '所选 metadata 文件不存在。',
+                                       'en': 'The selected metadata file does not exist.'},
             'msg_reference_not_found': {'cn': '所选参考 FASTA 不存在。',
                                         'en': 'The selected reference FASTA does not exist.'},
             'msg_conversion_paths_required': {
@@ -259,9 +369,12 @@ class LanguageManager:
                                         'en': 'Format conversion completed:\n{path}'},
             'msg_conversion_failed': {'cn': '格式转换失败：{error}',
                                       'en': 'Format conversion failed: {error}'},
+            'log_vcf_native_available': {
+                'cn': '样本名保持不变时，McAN 可原生读取该 VCF 与 metadata。',
+                'en': 'McAN can read this VCF and metadata natively while the imported sample names are unchanged.'},
             'log_vcf_metadata_not_native': {
-                'cn': 'metadata 已导入，但不是 McAN 六列 TSV；McAN 将使用转换后的比对序列。',
-                'en': 'Metadata was imported, but it is not McAN six-column TSV; McAN will use the converted alignment.'},
+                'cn': 'metadata 已导入，但不是 McAN 六列 TSV；McAN 将使用转换后的比对序列，而非原生 VCF 模式。',
+                'en': 'Metadata was imported, but it is not McAN six-column TSV; McAN will use the converted alignment instead of native VCF mode.'},
             'log_vcf_loaded': {
                 'cn': '已载入 {samples} 个 VCF 样本和 {records} 条变异记录，生成{mode}（{length}个位点）。',
                 'en': 'Loaded {samples} VCF samples and {records} variant records as a {mode} ({length} sites).'},
@@ -297,11 +410,19 @@ class LanguageManager:
             'column_id': {'cn': '编号', 'en': 'ID'},
             'column_name': {'cn': '名称', 'en': 'Name'},
             'column_sequence': {'cn': '序列', 'en': 'Sequence'},
-            'column_discrete_traits': {'cn': '离散性状', 'en': 'Discrete Traits'},
-            'column_continuous_traits': {'cn': '连续性状', 'en': 'Continuous Traits'},
+            'column_discrete_traits': {'cn': '分类型数据', 'en': 'Categorical Data'},
+            'column_continuous_traits': {'cn': '数值型数据', 'en': 'Numeric Data'},
             'tooltip_sequence': {
-                'cn': '长度: {length} bp\n点击单元格可查看或编辑完整序列',
-                'en': 'Length: {length} bp\nClick the cell to view or edit the full sequence'
+                'cn': '长度: {length} bp\n序列为只读内容',
+                'en': 'Length: {length} bp\nSequence is read-only'
+            },
+            'dlg_export_network_image': {
+                'cn': '保存网络图片',
+                'en': 'Save Network Image'
+            },
+            'dlg_save_web_export': {
+                'cn': '保存导出文件',
+                'en': 'Save Exported File'
             },
 
             # Log Tab / Output Panel
@@ -388,8 +509,8 @@ class LanguageManager:
             'dlg_std_replace': {'cn': '替换', 'en': 'Replace'},
             'dlg_std_split_using': {'cn': '按分隔符拆分:', 'en': 'Split names using:'},
             'dlg_std_use_as_name': {'cn': '作为新名称', 'en': 'Use as the new name'},
-            'dlg_std_use_as_discrete': {'cn': '作为离散性状', 'en': 'Use as discrete trait'},
-            'dlg_std_use_as_continuous': {'cn': '作为连续性状', 'en': 'Use as continuous trait'},
+            'dlg_std_use_as_discrete': {'cn': '作为分类型性状', 'en': 'Use as categorical trait'},
+            'dlg_std_use_as_continuous': {'cn': '作为数值型性状', 'en': 'Use as numeric trait'},
             'dlg_std_numbering': {'cn': '使用序号作为序列名', 'en': 'Use numbering as seq names'},
             'dlg_std_preview_names': {'cn': '预览名称:', 'en': 'Preview Names:'},
             'dlg_std_split_results': {'cn': '拆分结果:', 'en': 'Split Results:'},
@@ -399,8 +520,8 @@ class LanguageManager:
             'dlg_load_nexus_title': {'cn': '导入 NEXUS 文件', 'en': 'Import NEXUS File'},
             'dlg_load_phylip_title': {'cn': '导入 PHYLIP 文件', 'en': 'Import PHYLIP File'},
             'dlg_export_sequences_title': {'cn': '导出序列数据', 'en': 'Export Sequence Data'},
-            'dlg_export_traits_title': {'cn': '导出性状数据', 'en': 'Export Trait Data'},
-            'dlg_load_csv_title': {'cn': '载入 CSV 性状文件', 'en': 'Load CSV Traits File'},
+            'dlg_export_traits_title': {'cn': '导出 metadata', 'en': 'Export Metadata'},
+            'dlg_load_csv_title': {'cn': '载入 metadata 文件', 'en': 'Load Metadata File'},
             'dlg_select_output': {'cn': '选择输出目录', 'en': 'Select Output Folder'},
             'filter_fasta': {
                 'cn': 'FASTA 文件 (*.fas *.fasta *.fa *.fna *.ffn);;所有文件 (*.*)',
@@ -423,9 +544,10 @@ class LanguageManager:
             'filter_export_vcf': {
                 'cn': 'VCF 文件 (*.vcf)', 'en': 'VCF Files (*.vcf)'},
             'filter_export_traits': {
-                'cn': 'CSV 文件 (*.csv)', 'en': 'CSV Files (*.csv)'},
-            'filter_csv': {'cn': 'CSV 文件 (*.csv);;所有文件 (*.*)',
-                           'en': 'CSV Files (*.csv);;All Files (*.*)'},
+                'cn': 'CSV 文件 (*.csv);;TSV 文件 (*.tsv)',
+                'en': 'CSV Files (*.csv);;TSV Files (*.tsv)'},
+            'filter_csv': {'cn': 'metadata 文件 (*.csv *.tsv *.txt);;所有文件 (*.*)',
+                           'en': 'Metadata Files (*.csv *.tsv *.txt);;All Files (*.*)'},
 
             # Common message box titles / text
             'title_warning': {'cn': '警告', 'en': 'Warning'},
@@ -434,7 +556,7 @@ class LanguageManager:
             'title_about': {'cn': '关于', 'en': 'About'},
             'title_validation_error': {'cn': '数据校验错误', 'en': 'Validation Error'},
             'title_name_mismatch': {'cn': '名称不匹配', 'en': 'Name Mismatch Error'},
-            'title_update_traits': {'cn': '更新性状', 'en': 'Update Traits'},
+            'title_update_traits': {'cn': '更新 metadata', 'en': 'Update Metadata'},
             'title_duplicate_names': {'cn': '名称重复', 'en': 'Duplicate Names'},
             'title_alignment_failed': {'cn': '比对失败', 'en': 'Alignment Failed'},
             'title_tcsbu_help': {'cn': 'TCS-BU 帮助', 'en': 'TCS-BU Help'},
@@ -448,18 +570,21 @@ class LanguageManager:
             'msg_no_export': {'cn': '没有可导出的数据!', 'en': 'No data to export!'},
             'msg_export_files_complete': {
                 'cn': '导出完成：\n{paths}', 'en': 'Export completed:\n{paths}'},
-            'msg_load_seq_first': {'cn': '请先载入序列文件再导入性状!',
-                                   'en': 'Please load a sequence file first before importing traits!'},
-            'msg_csv_empty': {'cn': 'CSV 文件为空!', 'en': 'The CSV file is empty!'},
-            'msg_csv_no_header': {'cn': 'CSV 文件缺少表头行!', 'en': 'The CSV file has no header row!'},
-            'msg_csv_no_data': {'cn': 'CSV 文件没有数据行!', 'en': 'The CSV file contains no data rows!'},
+            'msg_load_seq_first': {'cn': '请先载入序列文件再导入 metadata!',
+                                   'en': 'Please load a sequence file first before importing metadata!'},
+            'msg_csv_empty': {'cn': '文件为空!', 'en': 'The file is empty!'},
+            'msg_csv_no_header': {'cn': '文件缺少表头行!', 'en': 'The file has no header row!'},
+            'msg_csv_no_data': {'cn': '文件没有数据行!', 'en': 'The file contains no data rows!'},
             'msg_csv_need_name_col': {'cn': '必须选择序列名称列!', 'en': 'Sequence Name column must be selected!'},
             'msg_load_failed': {'cn': '加载文件失败: {err}', 'en': 'Failed to load file: {err}'},
             'msg_export_failed': {'cn': '导出失败: {err}', 'en': 'Failed to export: {err}'},
-            'msg_csv_import_failed': {'cn': '导入 CSV 性状失败:\n{err}', 'en': 'Failed to import CSV traits:\n{err}'},
+            'msg_csv_import_failed': {'cn': '导入 metadata 失败:\n{err}', 'en': 'Failed to import metadata:\n{err}'},
             'msg_set_output_first': {'cn': '请先设置输出目录!', 'en': 'Please set output directory first!'},
             'msg_enter_project_name': {'cn': '请输入项目名称!', 'en': 'Please enter a project name!'},
             'msg_load_data_first': {'cn': '请先加载数据!', 'en': 'Please load data first!'},
+            'msg_build_network_first': {
+                'cn': '当前没有可复用的单倍型网络。请先构建网络，再应用可视化配置。',
+                'en': 'There is no reusable haplotype network. Build it first, then apply the visualization configuration.'},
             'msg_select_seq_first': {'cn': '请先选择序列!', 'en': 'Please select sequences first!'},
             'msg_analysis_failed': {'cn': '分析失败: {err}', 'en': 'Analysis failed: {err}'},
             'msg_hap_calc_failed': {'cn': '单倍型计算失败:\n{err}', 'en': 'Haplotype calculation failed:\n{err}'},
@@ -489,8 +614,8 @@ class LanguageManager:
                 'en': 'Sequence names cannot contain spaces, tabs, or line breaks (ID: {id}, name: {name}).'
             },
             'msg_validation_invalid_continuous': {
-                'cn': "连续性状“{value}”不是数值（ID: {id}，名称: {name}）。",
-                'en': "Continuous trait '{value}' is not numeric (ID: {id}, name: {name})."
+                'cn': "数值型性状“{value}”不是有效数值（ID: {id}，名称: {name}）。",
+                'en': "Numeric trait '{value}' is not numeric (ID: {id}, name: {name})."
             },
             'msg_validation_duplicate_names': {
                 'cn': '所选序列中存在重复名称，无法建立可靠映射:\n{names}',
@@ -521,9 +646,9 @@ class LanguageManager:
             'msg_pdf_not_found': {'cn': '{name} 帮助 PDF 未找到:\n{path}',
                                   'en': '{name} help PDF not found:\n{path}'},
             'msg_traits_overwrite': {
-                'cn': '部分序列已存在性状数据。\n是否使用 CSV 中的数据覆盖已有性状?',
-                'en': 'Trait data already exists for some sequences.\n'
-                      'Do you want to overwrite the existing traits with the CSV data?',
+                'cn': '部分序列已存在 metadata。\n是否使用文件中的数据覆盖已有 metadata?',
+                'en': 'Metadata already exists for some sequences.\n'
+                      'Do you want to overwrite the existing metadata with the imported file?',
             },
             'msg_name_mismatch_header': {'cn': '序列名称不匹配:\n', 'en': 'Sequence name mismatch detected:\n'},
             'msg_name_mismatch_missing': {'cn': '数据表中存在但 CSV 中缺失的序列:',
@@ -567,6 +692,7 @@ class LanguageManager:
                 'cn': '描述网络组件、环、中心性、割点和桥；拓扑中心不等同于祖先或传播源。',
                 'en': 'Describes components, cycles, centrality, articulation points, and bridges; topological centrality does not imply ancestry or origin.'},
             'report_overview': {'cn': '概览', 'en': 'Overview'},
+            'report_charts': {'cn': '图表', 'en': 'Visualizations'},
             'report_metric': {'cn': '指标', 'en': 'Metric'},
             'report_value': {'cn': '数值', 'en': 'Value'},
             'report_warnings': {'cn': '警告', 'en': 'Warnings'},
@@ -584,7 +710,8 @@ class LanguageManager:
                 'en': 'Cancellation requested; stopping interpretation analysis…'},
 
             # Runtime logs and analysis guidance
-            'log_cancel_requested': {'cn': '已请求取消，正在停止外部进程…', 'en': 'Cancellation requested; stopping external process…'},
+            'log_cancel_requested': {'cn': '已请求取消，正在停止外部进程…',
+                                     'en': 'Cancellation requested; stopping external process…'},
             'log_app_started': {'cn': '应用程序已启动', 'en': 'Application started'},
             'log_working_directory': {'cn': '工作目录: {path}', 'en': 'Working directory: {path}'},
             'log_loading_file': {'cn': '正在载入: {path}', 'en': 'Loading: {path}'},
@@ -594,42 +721,58 @@ class LanguageManager:
                 'cn': '已从 {format} 导入 {count} 条序列',
                 'en': 'Loaded {count} sequences from {format}'},
             'log_exported_sequences': {'cn': '序列已导出至: {path}', 'en': 'Sequences exported to: {path}'},
-            'log_exported_traits': {'cn': '性状已导出至: {path}', 'en': 'Traits exported to: {path}'},
-            'log_csv_cancelled': {'cn': '用户取消了 CSV 性状导入', 'en': 'CSV trait import cancelled by user'},
-            'log_csv_existing_kept': {'cn': '已取消 CSV 性状导入，保留原有性状', 'en': 'CSV trait import cancelled; existing traits kept'},
-            'log_csv_imported': {'cn': '已从 CSV 更新 {count} 条序列的性状', 'en': 'Traits imported from CSV: {count} sequences updated'},
+            'log_exported_traits': {'cn': 'metadata 已导出至: {path}', 'en': 'Metadata exported to: {path}'},
+            'log_csv_cancelled': {'cn': '用户取消了 metadata 导入', 'en': 'Metadata import cancelled by user'},
+            'log_csv_existing_kept': {'cn': '已取消 metadata 导入，保留原有 metadata',
+                                      'en': 'Metadata import cancelled; existing metadata kept'},
+            'log_csv_imported': {'cn': '已从文件更新 {count} 条序列的 metadata',
+                                 'en': 'Metadata imported: {count} sequences updated'},
             'log_no_discrete_selected': {
-                'cn': '所选数据无离散性状；网络将使用默认分组，无法按组着色。',
-                'en': 'Selected data has no discrete traits; the network will use the Default group.'
+                'cn': '所选数据无分类型性状；网络将使用默认分组，无法按组着色。',
+                'en': 'Selected data has no categorical traits; the network will use the Default group.'
             },
             'log_no_continuous_selected': {
-                'cn': '所选数据无有效连续性状；将生成基础网络，但不能进行连续性状可视化。',
-                'en': 'Selected data has no valid continuous traits; continuous-trait visualization is unavailable.'
+                'cn': '所选数据无有效数值型性状；将生成基础网络，但不能进行数值梯度可视化。',
+                'en': 'Selected data has no valid numeric traits; numeric-gradient visualization is unavailable.'
             },
-            'log_starting_network': {'cn': '开始 {algorithm} 网络分析…', 'en': 'Starting {algorithm} network analysis…'},
+            'log_starting_network': {'cn': '开始 {algorithm} 网络分析…',
+                                     'en': 'Starting {algorithm} network analysis…'},
+            'log_updating_network_metadata': {
+                'cn': '正在更新已有单倍型网络的可视化配置（不重新比对、不重建拓扑）…',
+                'en': 'Refreshing the existing haplotype-network visualization configuration '
+                      '(no realignment or topology rebuild)…'},
             'log_project': {'cn': '项目: {prefix}', 'en': 'Project: {prefix}'},
             'log_output_directory': {'cn': '输出目录: {path}', 'en': 'Output directory: {path}'},
             'log_analysis_cancelled': {'cn': '分析已取消。', 'en': 'Analysis cancelled.'},
             'log_analysis_completed': {'cn': '分析完成。', 'en': 'Analysis completed.'},
             'log_loading_visualization': {'cn': '正在载入网络可视化…', 'en': 'Loading network visualization…'},
             'log_analysis_failed': {'cn': '分析失败: {error}', 'en': 'Analysis failed: {error}'},
-            'log_network_page_failed': {'cn': '网络页面载入失败，未能注入可视化数据。', 'en': 'Network view page failed to load; visualization was not injected.'},
-            'log_starting_alignment': {'cn': '开始使用 {tool} 比对 {count} 条序列…', 'en': 'Starting {tool} alignment for {count} sequences…'},
+            'log_network_page_failed': {'cn': '网络页面载入失败，未能注入可视化数据。',
+                                        'en': 'Network view page failed to load; visualization was not injected.'},
+            'log_starting_alignment': {'cn': '开始使用 {tool} 比对 {count} 条序列…',
+                                       'en': 'Starting {tool} alignment for {count} sequences…'},
             'log_alignment_cancelled': {'cn': '序列比对已取消。', 'en': 'Alignment cancelled.'},
             'log_alignment_completed': {'cn': '序列比对完成 → {path}', 'en': 'Alignment completed → {path}'},
             'log_alignment_failed': {'cn': '序列比对失败: {error}', 'en': 'Alignment failed: {error}'},
-            'log_starting_haplotype': {'cn': '开始使用 {tool} 比对并计算 {count} 条序列的单倍型…', 'en': 'Starting haplotype calculation with {tool} for {count} sequences…'},
+            'log_starting_haplotype': {'cn': '开始使用 {tool} 比对并计算 {count} 条序列的单倍型…',
+                                       'en': 'Starting haplotype calculation with {tool} for {count} sequences…'},
             'log_haplotype_cancelled': {'cn': '单倍型计算已取消。', 'en': 'Haplotype calculation cancelled.'},
             'log_haplotype_completed': {'cn': '单倍型计算完成。', 'en': 'Haplotype calculation completed.'},
             'log_haplotype_failed': {'cn': '单倍型计算失败: {error}', 'en': 'Haplotype calculation failed: {error}'},
-            'log_loading_alignment_view': {'cn': '正在后台载入比对结果…', 'en': 'Loading alignment view in background…'},
-            'log_alignment_view_issue': {'cn': '比对结果视图存在问题: {error}', 'en': 'Alignment view loaded with issue: {error}'},
+            'log_loading_alignment_view': {'cn': '正在后台载入比对结果…',
+                                           'en': 'Loading alignment view in background…'},
+            'log_alignment_view_issue': {'cn': '比对结果视图存在问题: {error}',
+                                         'en': 'Alignment view loaded with issue: {error}'},
             'log_alignment_view_ready': {'cn': '比对结果视图已就绪。', 'en': 'Alignment view ready.'},
-            'log_loading_haplotype_view': {'cn': '正在后台载入单倍型结果…', 'en': 'Loading haplotype view in background…'},
+            'log_loading_haplotype_view': {'cn': '正在后台载入单倍型结果…',
+                                           'en': 'Loading haplotype view in background…'},
             'log_haplotype_view_ready': {'cn': '单倍型结果视图已就绪。', 'en': 'Haplotype view ready.'},
-            'log_haplotype_view_issue': {'cn': '单倍型结果不完整: {error}', 'en': 'Haplotype result is incomplete: {error}'},
-            'log_no_discrete_traits': {'cn': '数据中无离散性状，无法进行分组着色。', 'en': 'Data has no discrete traits; group coloring is unavailable.'},
-            'log_no_continuous_traits': {'cn': '数据中无有效连续性状，无法进行连续性状可视化。', 'en': 'Data has no valid continuous traits; continuous-trait visualization is unavailable.'},
+            'log_haplotype_view_issue': {'cn': '单倍型结果不完整: {error}',
+                                         'en': 'Haplotype result is incomplete: {error}'},
+            'log_no_discrete_traits': {'cn': '数据中无分类型性状，无法进行分组着色。',
+                                       'en': 'Data has no categorical traits; group coloring is unavailable.'},
+            'log_no_continuous_traits': {'cn': '数据中无有效数值型性状，无法进行数值梯度可视化。',
+                                         'en': 'Data has no valid numeric traits; numeric-gradient visualization is unavailable.'},
         }
 
     def set_language(self, lang: str):

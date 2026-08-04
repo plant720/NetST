@@ -82,7 +82,7 @@ _ALGORITHMS = [
     ("msn", "alg_msn", "MSN (Minimum Spanning Network)"),
     ("mjn", "alg_mjn", "MJN (Median-Joining Network)"),
     ("rmst", "alg_rmst", "RMST (Randomized Minimum Spanning Tree)"),
-    ("mcan", "alg_mcan", "McAN Minimum-cost Arborescence Network"),
+    ("mcan", "alg_mcan", "McAN (Minimum-cost Arborescence Network)"),
 ]
 
 

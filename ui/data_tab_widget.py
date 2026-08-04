@@ -120,6 +120,9 @@ class DataTabWidget(QWidget):
         self.table_view.setModel(model)
         model.dataChanged.connect(self._on_data_changed)
         model.layoutChanged.connect(self._on_layout_changed)
+        # Trait columns are rebuilt via begin/endResetModel when the metadata
+        # schema changes; re-apply the default widths each time.
+        model.modelReset.connect(self._apply_column_widths)
         self._apply_column_widths()
 
     def _apply_column_widths(self):

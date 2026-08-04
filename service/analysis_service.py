@@ -5,6 +5,7 @@ Corresponds to the analysis_network and related methods in VB.NET.
 import csv
 import os
 import platform
+import re
 import sys
 import tempfile
 import traceback
@@ -17,7 +18,10 @@ from service.format_conversion_service import (
     read_fasta,
     write_phylip,
 )
-from service.gen_network_config import generate_network_config
+from service.gen_network_config import (
+    generate_network_config,
+    generate_network_config_from_assignments,
+)
 from service.haplotype_service import HaplotypeCalculation, identify_haplotypes
 from service.mcan_adapter import (
     McanAdapterError,
@@ -78,6 +82,7 @@ class AnalysisResult:
     # Distinguishes an intentional user cancellation from an analysis failure.
     cancelled: bool = False
 
+
 class AnalysisService:
     """Service for running haplotype network analyses."""
 
@@ -126,7 +131,8 @@ class AnalysisService:
     def run_network_analysis(self, network_type: str, taxons: List[TaxonData],
                              output_path: str, prefix: str,
                              extra_args: List[str] = None,
-                             mcan_vcf_input: Optional[McanVcfInput] = None) -> AnalysisResult:
+                             mcan_vcf_input: Optional[McanVcfInput] = None,
+                             group_colors: Optional[dict] = None) -> AnalysisResult:
         """
         Run haplotype network analysis.
 
@@ -325,7 +331,8 @@ class AnalysisService:
                 self._check_cancelled()
                 self._log("Generating visualization...")
                 success = self._generate_visualization(
-                    prefix, output_path, has_continuous_traits)
+                    prefix, output_path, has_continuous_traits,
+                    group_colors=group_colors)
                 if not success:
                     failure_message = "Network visualization generation failed"
 
@@ -347,6 +354,125 @@ class AnalysisService:
                               haplotype_ready=haplotype_ready,
                               has_continuous_traits=has_continuous_traits,
                               aligned_fasta=produced_aligned_fasta)
+
+    def refresh_network_metadata(self, taxons: List[TaxonData],
+                                 output_path: str, prefix: str,
+                                 group_colors: Optional[dict] = None) -> AnalysisResult:
+        """Reapply metadata to an existing network without rebuilding it.
+
+        The haplotype-network topology (the ``.gml``) is a function of the
+        aligned sequences alone, so changing only the metadata never changes it.
+        This reuses the existing sample-to-haplotype mapping and untouched GML,
+        changing only tcsBU's hapconf/groupconf/traitconf, embedding JavaScript,
+        and visualization HTML. No alignment, haplotype identification, network
+        engine, or unrelated analysis output is rerun or rewritten.
+
+        Sequences are matched to their metadata by name; a sample that was
+        renamed since the build simply falls back to empty metadata instead of
+        failing, and a genuinely changed alignment should be rebuilt instead.
+        """
+        FileService.ensure_directory(output_path)
+        file_suffix = os.path.join(output_path, prefix)
+        gml_file = f"{file_suffix}.gml"
+        aligned_fasta = f"{file_suffix}_aln.fasta"
+        assignment_file = f"{file_suffix}_seq.meta.csv"
+
+        try:
+            if not os.path.isfile(gml_file):
+                return AnalysisResult(
+                    prefix, False, output_path,
+                    "No haplotype network was found for this project; "
+                    "build the network first.")
+            if not os.path.isfile(assignment_file):
+                return AnalysisResult(
+                    prefix, False, output_path,
+                    "The sample-to-haplotype mapping for this project is missing; "
+                    "rebuild the network before updating its metadata.")
+
+            self._check_cancelled()
+            taxon_lookup = {
+                str(t.name).strip(): t
+                for t in taxons
+            }
+            assignments = []
+            continuous_rows = []
+            with open(
+                    assignment_file, "r", encoding="utf-8", newline="",
+            ) as handle:
+                reader = csv.DictReader(handle)
+                required = {"sequence_name", "haplotype"}
+                if not required.issubset(reader.fieldnames or ()):
+                    return AnalysisResult(
+                        prefix, False, output_path,
+                        "The existing sample-to-haplotype mapping is invalid.")
+                for row in reader:
+                    sample = str(row.get("sequence_name", "")).strip()
+                    haplotype = str(row.get("haplotype", "")).strip()
+                    if not sample or not haplotype:
+                        continue
+                    taxon = taxon_lookup.get(sample)
+                    group = (
+                                str(taxon.discrete_traits).strip()
+                                if taxon is not None else ""
+                            ) or "Default"
+                    continuous = (
+                        str(taxon.continuous_traits).strip()
+                        if taxon is not None else ""
+                    )
+                    assignments.append((sample, group, haplotype))
+                    continuous_rows.append((sample, continuous))
+            if not assignments:
+                return AnalysisResult(
+                    prefix, False, output_path,
+                    "The existing sample-to-haplotype mapping has no usable rows.")
+
+            has_continuous_traits = any(
+                has_meaningful_continuous_trait(value)
+                for _, value in continuous_rows
+            )
+            traitconf_path = f"{file_suffix}_traitconf.csv"
+            if has_continuous_traits:
+                with open(
+                        traitconf_path, "w", encoding="utf-8", newline="\n",
+                ) as handle:
+                    for sample, value in continuous_rows:
+                        handle.write(f"{sample.replace(';', '_')};{value or '0'}\n")
+            elif os.path.isfile(traitconf_path):
+                os.remove(traitconf_path)
+
+            self._log("Refreshing tcsBU metadata configuration...")
+            generate_network_config_from_assignments(
+                gml_file, assignments, file_suffix,
+                has_continuous_traits=has_continuous_traits,
+                group_colors=group_colors,
+            )
+            js_file = f"{file_suffix}.js"
+            if not os.path.isfile(js_file):
+                return AnalysisResult(
+                    prefix, False, output_path,
+                    "tcsBU configuration generation failed.")
+            self._generate_network_html(f"{file_suffix}.html", js_file)
+
+            self._update_progress(90)
+            self._check_cancelled()
+            self._update_progress(100)
+            return AnalysisResult(
+                prefix, True, output_path, None,
+                haplotype_ready=True,
+                has_continuous_traits=has_continuous_traits,
+                aligned_fasta=aligned_fasta if os.path.isfile(aligned_fasta) else "")
+
+        except ProcessCancelled:
+            self._log("Metadata update cancelled by user")
+            return AnalysisResult(
+                prefix, False, output_path, "Metadata update cancelled",
+                haplotype_ready=os.path.isfile(f"{file_suffix}_seq.meta.csv"),
+                aligned_fasta=aligned_fasta if os.path.isfile(aligned_fasta) else "",
+                cancelled=True)
+        except Exception as e:
+            self._log(f"Metadata update error: {str(e)}")
+            self._log(traceback.format_exc())
+            return AnalysisResult(prefix, False, output_path, str(e))
 
     # ── Alignment helpers ───────────────────────────────────────────────────────
 
@@ -647,7 +773,7 @@ class AnalysisService:
             os.makedirs(output_directory, exist_ok=True)
             output_stem = os.path.basename(output_prefix)
             with tempfile.TemporaryDirectory(
-                prefix=f".{output_stem}_hap_", dir=output_directory,
+                    prefix=f".{output_stem}_hap_", dir=output_directory,
             ) as temporary_directory:
                 temporary_prefix = os.path.join(temporary_directory, output_stem)
                 generated_suffixes = self._write_haplotype_outputs(
@@ -680,12 +806,12 @@ class AnalysisService:
             return False, False
 
     def _write_haplotype_outputs(
-        self,
-        calculation: HaplotypeCalculation,
-        output_prefix: str,
-        traits_by_sample: dict,
-        assignment_map: dict,
-        has_continuous: bool,
+            self,
+            calculation: HaplotypeCalculation,
+            output_prefix: str,
+            traits_by_sample: dict,
+            assignment_map: dict,
+            has_continuous: bool,
     ) -> Tuple[str, ...]:
         """Write one internally consistent set of haplotype result files."""
         generated_suffixes = [
@@ -710,7 +836,7 @@ class AnalysisService:
                 handle.write(f">{haplotype.name}\n{haplotype.sequence}\n")
 
         with open(
-            f"{output_prefix}_seq.meta.csv", "w", encoding="utf-8", newline="",
+                f"{output_prefix}_seq.meta.csv", "w", encoding="utf-8", newline="",
         ) as handle:
             writer = csv.writer(handle)
             writer.writerow([
@@ -726,7 +852,7 @@ class AnalysisService:
         if has_continuous:
             generated_suffixes.append("_traitconf.csv")
             with open(
-                f"{output_prefix}_traitconf.csv", "w", encoding="utf-8", newline="\n",
+                    f"{output_prefix}_traitconf.csv", "w", encoding="utf-8", newline="\n",
             ) as handle:
                 for record in calculation.records:
                     self._check_cancelled()
@@ -738,7 +864,7 @@ class AnalysisService:
                     handle.write(f"{trait_name};{continuous}\n")
 
         with open(
-            f"{output_prefix}_hap_trait.csv", "w", encoding="utf-8", newline="",
+                f"{output_prefix}_hap_trait.csv", "w", encoding="utf-8", newline="",
         ) as handle:
             writer = csv.writer(handle)
             writer.writerow([
@@ -763,7 +889,7 @@ class AnalysisService:
                 ])
 
         with open(
-            f"{output_prefix}_seq_trait.csv", "w", encoding="utf-8", newline="",
+                f"{output_prefix}_seq_trait.csv", "w", encoding="utf-8", newline="",
         ) as handle:
             writer = csv.writer(handle)
             writer.writerow(["name", "quantity", "continuous_traits", "discrete_traits"])
@@ -910,10 +1036,29 @@ class AnalysisService:
             f"{prepared.included_site_count}/{prepared.sequence_length} sites"
         )
 
-        graphml_file = os.path.join(prepared.output_directory, "haplotype_loci.graphml")
-        json_file = os.path.join(prepared.output_directory, "haplotype_loci.json")
-        time_file = os.path.join(prepared.output_directory, "time")
-        for stale_output in (graphml_file, json_file, time_file):
+        # McAN 1.2 and 1.4 use incompatible output switches and semantics.
+        # Probe the selected executable so native Apple Silicon, Windows and
+        # NETST_MCAN_EXECUTABLE overrides all receive the arguments they
+        # actually support.
+        output_option = self._probe_mcan_output_option(executable)
+        mcan_output_target = os.path.join(prepared.output_directory, "mcan")
+        graphml_candidates = (
+            mcan_output_target + ".haplonet.graphml",
+            mcan_output_target + ".graphml",
+            os.path.join(mcan_output_target, "haplotype_loci.graphml"),
+            os.path.join(prepared.output_directory, "haplotype_loci.graphml"),
+        )
+        json_candidates = (
+            mcan_output_target + ".haplonet.json",
+            mcan_output_target + ".json",
+            os.path.join(mcan_output_target, "haplotype_loci.json"),
+            os.path.join(prepared.output_directory, "haplotype_loci.json"),
+        )
+        time_candidates = (
+            os.path.join(mcan_output_target, "time"),
+            os.path.join(prepared.output_directory, "time"),
+        )
+        for stale_output in graphml_candidates + json_candidates + time_candidates:
             if os.path.isfile(stale_output):
                 os.remove(stale_output)
 
@@ -922,10 +1067,15 @@ class AnalysisService:
             if prepared.vcf_file
             else ["--mutation", prepared.mutation_file]
         )
+        output_argument = (
+            prepared.output_directory
+            if output_option == "--outDir"
+            else mcan_output_target
+        )
         cmd = [executable] + input_args + [
             "--meta", prepared.metadata_file,
             "--sitemask", prepared.site_mask_file,
-            "--outDir", prepared.output_directory,
+            output_option, output_argument,
             "--oGraphML",
             "--oJSON",
             "--nthread", str(options.threads),
@@ -943,8 +1093,15 @@ class AnalysisService:
         self._log_process_output("McAN", process.stdout, process.stderr)
         if process.returncode != 0:
             raise AnalysisEngineError(f"McAN exited with code {process.returncode}")
-        if not os.path.isfile(graphml_file) or os.path.getsize(graphml_file) == 0:
-            raise McanAdapterError("McAN did not create haplotype_loci.graphml")
+        graphml_file = next(
+            (path for path in graphml_candidates
+             if os.path.isfile(path) and os.path.getsize(path) > 0),
+            "",
+        )
+        if not graphml_file:
+            raise McanAdapterError(
+                "McAN completed but did not create a supported GraphML output"
+            )
 
         gml_file = output_prefix + ".gml"
         convert_graphml_to_tcsbu_gml(
@@ -952,16 +1109,41 @@ class AnalysisService:
         )
         self._log(f"McAN GraphML converted for tcsBU: {gml_file}")
 
+    def _probe_mcan_output_option(self, executable: str) -> str:
+        """Return the output option supported by the selected McAN binary."""
+        probe = self.process_runner.run(
+            [executable, "--help"],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+            cancel_requested=self._cancel_callback,
+        )
+        help_text = "\n".join(
+            str(value) for value in (probe.stdout, probe.stderr) if value
+        )
+        if "--outDir" in help_text:
+            return "--outDir"
+        if re.search(r"(?:^|[\s,])--out(?:\s|$)", help_text):
+            return "--out"
+        raise McanAdapterError(
+            "Cannot determine whether this McAN executable supports "
+            "--outDir or --out"
+        )
+
     def _log_process_output(self, program: str, stdout, stderr) -> None:
         if stdout:
             text = str(stdout).strip()
             if program == "McAN":
-                # McAN 1.2 prints unsigned-clock underflow as enormous negative
-                # timing values on current macOS.  They are not run failures
-                # and obscure the useful progress messages in NetST's log.
+                # Some McAN builds print unsigned-clock underflow as enormous
+                # negative timing values. They are not run failures and obscure
+                # the useful progress messages in NetST's log.
                 text = "\n".join(
                     line for line in text.splitlines()
-                    if not (line.startswith("-") and " s for " in line)
+                    if not (
+                        (line.startswith("-") and " s for " in line)
+                        or line.startswith("Total time used: -")
+                    )
                 ).strip()
             if text:
                 self._log(f"{program} stdout: {text}")
@@ -973,7 +1155,8 @@ class AnalysisService:
     # ── Visualization helpers ───────────────────────────────────────────────────
 
     def _generate_visualization(self, prefix: str, output_path: str,
-                                has_continuous_traits: bool = False) -> bool:
+                                has_continuous_traits: bool = False,
+                                group_colors: Optional[dict] = None) -> bool:
         """Generate visualization files from GML network output."""
         try:
             gml_file = os.path.join(output_path, f"{prefix}.gml")
@@ -981,7 +1164,8 @@ class AnalysisService:
             out_prefix = os.path.join(output_path, prefix)
 
             generate_network_config(gml_file, hap_file, out_prefix,
-                                    has_continuous_traits=has_continuous_traits)
+                                    has_continuous_traits=has_continuous_traits,
+                                    group_colors=group_colors)
 
             js_file = os.path.join(output_path, f"{prefix}.js")
             if os.path.isfile(js_file):
@@ -1076,17 +1260,31 @@ class AnalysisService:
         if override:
             return os.path.abspath(os.path.expanduser(override))
 
-        platform_lib = self._get_platform_lib_path()
         if self._is_windows():
             candidates = ["McAN.exe", "mcan.exe", "McAN", "mcan"]
+            search_directories = [self._get_platform_lib_path()]
+        elif self._is_mac():
+            candidates = ["McAN", "mcan"]
+            search_directories = [
+                self._get_platform_lib_path(),
+                os.path.join(self.lib_path, "mac_arm64"),
+                os.path.join(self.lib_path, "mac_intel"),
+                self.lib_path,
+            ]
         else:
             candidates = ["McAN", "mcan"]
+            search_directories = [self._get_platform_lib_path()]
 
-        for name in candidates:
-            path = os.path.join(platform_lib, name)
-            if os.path.isfile(path):
-                return path
-        return os.path.join(platform_lib, candidates[0])
+        seen = set()
+        for directory in search_directories:
+            if directory in seen:
+                continue
+            seen.add(directory)
+            for name in candidates:
+                path = os.path.join(directory, name)
+                if os.path.isfile(path):
+                    return path
+        return os.path.join(search_directories[0], candidates[0])
 
     def _get_platform_lib_path(self) -> str:
         """Get the platform-specific lib subdirectory path.
@@ -1101,10 +1299,17 @@ class AnalysisService:
             return os.path.join(self.lib_path, "win")
         elif self._is_mac():
             arch = platform.machine().lower()
-            if 'arm' in arch or 'aarch64' in arch:
-                return os.path.join(self.lib_path, "mac_arm64")
+            arm_path = os.path.join(self.lib_path, "mac_arm64")
             intel_path = os.path.join(self.lib_path, "mac_intel")
-            return intel_path if os.path.isdir(intel_path) else self.lib_path
+            preferred = arm_path if ('arm' in arch or 'aarch64' in arch) else intel_path
+            if os.path.isdir(preferred):
+                return preferred
+            # An x86_64 Python process running through Rosetta can still be
+            # hosted on Apple Silicon and launch the tools in mac_arm64.
+            # Prefer the only bundled macOS tool directory over falling back
+            # to lib/, where no executables are stored.
+            available = [path for path in (arm_path, intel_path) if os.path.isdir(path)]
+            return available[0] if len(available) == 1 else self.lib_path
         else:
             return self.lib_path
 

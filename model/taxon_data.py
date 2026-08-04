@@ -2,13 +2,22 @@
 Data model representing a single taxon/sequence entry.
 Corresponds to the rows in the VB.NET DataGridView.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
+from typing import Dict
 
 
 @dataclass
 class TaxonData:
-    """Data model for a single taxon/sequence entry."""
+    """Data model for a single taxon/sequence entry.
+
+    ``discrete_traits`` and ``continuous_traits`` hold the *group* and *primary
+    continuous* trait values respectively, kept for backward compatibility with
+    the classic single-trait pipeline. ``traits`` holds every named trait value
+    (including those two) so a project can carry several traits per sample; the
+    project-level :class:`~model.trait_schema.TraitSchema` describes their type
+    and how each is visualized.
+    """
 
     id: int = 0
     name: str = ""
@@ -18,6 +27,12 @@ class TaxonData:
     quantity: int = 1
     organism: str = ""
     selected: bool = True
+    traits: Dict[str, str] = field(default_factory=dict)
+
+    def trait_value(self, name: str, default: str = "") -> str:
+        """Return the value for a named trait, or ``default`` if absent."""
+        value = self.traits.get(name)
+        return default if value is None else str(value)
 
     @property
     def display_sequence(self) -> str:
@@ -67,7 +82,8 @@ class TaxonData:
             'continuous_traits': self.continuous_traits,
             'quantity': self.quantity,
             'organism': self.organism,
-            'selected': self.selected
+            'selected': self.selected,
+            'traits': dict(self.traits),
         }
 
     @classmethod
@@ -81,7 +97,8 @@ class TaxonData:
             continuous_traits=data.get('continuous_traits', '0'),
             quantity=data.get('quantity', 1),
             organism=data.get('organism', ''),
-            selected=data.get('selected', True)
+            selected=data.get('selected', True),
+            traits=dict(data.get('traits') or {}),
         )
 
     def __str__(self) -> str:

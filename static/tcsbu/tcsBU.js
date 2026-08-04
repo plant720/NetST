@@ -31,6 +31,13 @@ $(function () {
     var labelNode = {}, highlightNode = [], seqHapFlag = false, distanceFlag = false;
     var highlightLink = [], labelLink = {};
 
+    var edgeWeightFlag = false;
+    // When Edge Weight is enabled, Edge Line Width remains the base stroke.
+    // Edges with fewer changes are drawn up to this many times thicker.
+    var edgeWeightScale = 2;
+
+    var undoStack = [];
+
     /*
      * Tracks whether a hapconf file has been loaded and how many columns it had (2 or 3).
      * hapconfLoaded: true after a successful loadHaplotypes call.
@@ -44,7 +51,7 @@ $(function () {
      * variables that determine if clicks delete nodes/links
      */
 
-    var deletelink = false, deletenode = false, outlinenodes = false;
+    var deletelink = false, deletenode = false;
 
     /*
      * Define some default values for 'force-directed layout' algorithm
@@ -80,10 +87,13 @@ $(function () {
     var clickLink, clickNode;
 
     /*
-     * Default line width
+     * Default line widths. nodeLineWidth is the stroke around each node circle
+     * and edgeLineWidth is the stroke of the links (edges). Both are exposed in
+     * the Advanced dialog's "Node and Edge Settings".
      */
 
-    var linewidth = 1;
+    var nodeLineWidth = 0;
+    var edgeLineWidth = 1;
 
     var typeid = 0;
 
@@ -94,6 +104,23 @@ $(function () {
      * Inner ring is only drawn after traits are added.
      */
     var hasTrait = false;
+
+    /*
+     * NetST multi-trait metadata rendering. When a metadata config is loaded
+     * (window.loadMetaConfig), each visualized trait is drawn as a concentric
+     * ring around the node — the group innermost, then outward — instead of the
+     * classic single group pie + continuous outer ring. Standalone tcsBU (no
+     * metaconf) keeps the classic rendering, so the sidebar stays usable.
+     */
+    var hasMeta = false;
+    var metaConfig = null;           // {ring_width, traits:[...], nodes:{id:{rings:[...]}}}
+    var pendingMetaConfig = null;    // config awaiting the async graph load
+    var metaRingRatio = 0.5;
+    var metaRingLineWidth = 0.1;
+    // Relative widths of non-group rings, ordered from inner to outer.
+    // Missing entries use 1, so each ring defaults to nodeRadius * metaRingRatio.
+    var metaRingScales = [];
+    var metaArc = null;
     /*
      * Default zoom
      */
@@ -225,13 +252,16 @@ $(function () {
                         radius: nodeList[nd].radius,
                     });
                 }
+                nodeList[nd].timeProportions.sort(function (a, b) {
+                    return Number(a.time) - Number(b.time);
+                });
 
 
                 /*
                  * Find the target svg element (node). If it exists, apply changes
                  */
 
-                if (svg) {
+                if (svg && !hasMeta) {
                     var n = svg.selectAll('.node')
                     path = n.selectAll('.outer-path').data(function (d) {
                         return pie(d.proportions);
@@ -251,11 +281,7 @@ $(function () {
                         .style('fill', function (d) {
                             if (d.data.pattern === 'none') return d.data.color; else return d.data.pattern;
                         });
-                    if (outlinenodes) {
-                        path.style('stroke-width', linewidth).style('stroke', '#000000');
-                    } else {
-                        path.style('stroke-width', '0').style('stroke', 'none');
-                    }
+                    path.style('stroke-width', '0').style('stroke', 'none');
 
                     subpath = n.selectAll('.subpath').data(function (d) {
                         return subPie(d.timeProportions);
@@ -282,11 +308,7 @@ $(function () {
                      * .style('stroke-width', '0')
                      * .style('stroke', 'none');
                      */
-                    if (outlinenodes) {
-                        subpath.style('stroke-width', linewidth).style('stroke', '#000000');
-                    } else {
-                        subpath.style('stroke-width', '0').style('stroke', 'none');
-                    }
+                    subpath.style('stroke-width', '0').style('stroke', 'none');
                     path.exit().remove();
                     subpath.exit().remove();
 
@@ -426,7 +448,7 @@ $(function () {
 
     /**
      * Map a timecolor hex string (range "08"–"f7") to a gradient color.
-     * t=0 → low time (dark/saturated), t=1 → high time (light/pale).
+     * t=0 → low endpoint, t=1 → high endpoint.
      * mode: 0=gray, 1=red, 2=green, 3=blue
      */
     function tcGradient(tc, mode) {
@@ -437,7 +459,8 @@ $(function () {
             return ('0' + Math.round(n).toString(16)).slice(-2);
         };
         if (mode === 0) {
-            r = g = b = v;
+            // Default continuous scale: gray (#BDBDBD) → black (#000000).
+            r = g = b = 189 * (1 - t);
         } else if (mode === 1) {
             r = 155 + 100 * t;
             g = 28 + 137 * t;
@@ -457,8 +480,457 @@ $(function () {
     }
 
     function openAdvancedSettings() {
+        $('#advNodeRadius').val(standardRadius);
+        $('#advNodeLineWidth').val(nodeLineWidth);
+        $('#advEdgeLineWidth').val(edgeLineWidth);
+        $('#advEdgeWeightScale').val(edgeWeightScale);
+        $('#advMetaRingLineWidth').val(metaRingLineWidth);
+        $('#advTextOffset').val(textOffset);
+        $('#advMetaRingRatio').val(metaRingRatio);
+        $('#advMetaRingScales').val(metaRingScales.join(', '));
+        var ringNames = [];
+        if (metaConfig && metaConfig.traits) {
+            ringNames = metaConfig.traits.filter(function (trait) {
+                return !trait.group;
+            }).map(function (trait) {
+                return trait.name;
+            });
+        }
+        $('#advMetaRingOrder').text(ringNames.length
+            ? 'Current order: ' + ringNames.join(' \u2192 ')
+            : 'No outer metadata rings are currently loaded.');
+        $('#adv-layout-error').hide();
         var overlay = $('#advanced-settings-overlay');
         overlay.toggle();
+    }
+
+    /*
+     * NetST metadata rings.
+     *
+     * loadMetaConfig receives a config precomputed by NetST: for each GML node
+     * id, a list of rings (group first, then outward). A discrete ring carries
+     * segments {value, color}; a continuous ring carries a single solid color.
+     * The per-node ring geometry is derived at draw time so it tracks the
+     * frequency-scaled node radius and the current ring width.
+     */
+    function loadMetaConfig(config) {
+        if (!config || !config.nodes) return;
+        // The graph loads asynchronously (FileReader). If it is not parsed yet,
+        // remember the config and apply it once loadGraph finishes.
+        pendingMetaConfig = config;
+        if (nodeList && nodeList.length > 0) applyMetaConfig();
+    }
+
+    function applyMetaConfig() {
+        var config = pendingMetaConfig;
+        if (!config || !config.nodes) return;
+        metaConfig = config;
+        if (typeof config.ring_ratio === 'number' && config.ring_ratio > 0) {
+            metaRingRatio = config.ring_ratio;
+        } else if (typeof config.ring_width === 'number' && config.ring_width > 0) {
+            metaRingRatio = config.ring_width / standardRadius;
+        }
+        for (var i = 0; i < nodeList.length; i++) {
+            var entry = config.nodes[nodeList[i].id];
+            nodeList[i].metaRings = (entry && entry.rings) ? entry.rings : [];
+        }
+        hasMeta = true;
+        hasTrait = true;
+        pendingMetaConfig = null;
+        populateMetaGroupsFromConfig();
+        if (svg) updateSVG();
+    }
+
+    function metaTraitByName(name) {
+        if (!metaConfig || !metaConfig.traits) return null;
+        for (var i = 0; i < metaConfig.traits.length; i++) {
+            if (metaConfig.traits[i].name === name) return metaConfig.traits[i];
+        }
+        return null;
+    }
+
+    function metaGroupTrait() {
+        if (!metaConfig || !metaConfig.traits) return null;
+        for (var i = 0; i < metaConfig.traits.length; i++) {
+            if (metaConfig.traits[i].group) return metaConfig.traits[i];
+        }
+        return null;
+    }
+
+    function normalizedMetaColor(color, fallback) {
+        var text = String(color || '').trim();
+        if (text[0] !== '#') text = '#' + text;
+        if (/^#[0-9a-f]{3}$/i.test(text)) {
+            text = '#' + text[1] + text[1] + text[2] + text[2] + text[3] + text[3];
+        }
+        return /^#[0-9a-f]{6}$/i.test(text) ? text.toUpperCase() : (fallback || '#DDDDDD');
+    }
+
+    function metaHashColor(label) {
+        var hash = 0;
+        var text = String(label || '');
+        for (var i = 0; i < text.length; i++) {
+            hash = ((hash * 131) + text.charCodeAt(i)) & 0xFFFFFF;
+        }
+        return '#' + ((hash | 0x202020) >>> 0).toString(16).slice(-6).padStart(6, '0').toUpperCase();
+    }
+
+    function metaCategoryColor(trait, label) {
+        var categories = trait.categories || (trait.categories = []);
+        for (var i = 0; i < categories.length; i++) {
+            if (String(categories[i].label) === String(label)) {
+                return normalizedMetaColor(categories[i].color, '#DDDDDD');
+            }
+        }
+        var color = metaHashColor(label);
+        if (label !== '') categories.push({label: label, color: color});
+        return color;
+    }
+
+    function metaLerpColor(low, high, fraction) {
+        function rgb(value, fallback) {
+            var text = normalizedMetaColor(value, fallback).substr(1);
+            return [
+                parseInt(text.substr(0, 2), 16),
+                parseInt(text.substr(2, 2), 16),
+                parseInt(text.substr(4, 2), 16)
+            ];
+        }
+
+        var lo = rgb(low, '#BDBDBD');
+        var hi = rgb(high, '#000000');
+        var t = Math.max(0, Math.min(1, Number(fraction)));
+
+        function channel(index) {
+            return Math.round(lo[index] + (hi[index] - lo[index]) * t)
+                .toString(16).padStart(2, '0');
+        }
+
+        return ('#' + channel(0) + channel(1) + channel(2)).toUpperCase();
+    }
+
+    function refreshMetaLegend() {
+        if (legend !== 1) return;
+        $('.legend').remove();
+        d3.selectAll('.meta-legend-gradient').remove();
+        legend = 0;
+        insertLegend();
+    }
+
+    function rebuildMetaTraitRings(traitName, redraw) {
+        if (!hasMeta || !metaConfig || !metaConfig.sample_values) return;
+        var trait = metaTraitByName(traitName);
+        if (!trait) return;
+        var numeric = trait.kind === 'continuous';
+        var low = numeric && trait.gradient ? trait.gradient[0] : '#BDBDBD';
+        var high = numeric && trait.gradient ? trait.gradient[1] : '#000000';
+        var vmin = Number(trait.vmin);
+        var vmax = Number(trait.vmax);
+        if (!isFinite(vmin)) vmin = 0;
+        if (!isFinite(vmax)) vmax = 1;
+        var span = vmax - vmin;
+
+        nodeList.forEach(function (node) {
+            if (!node.metaRings || node.nodestyle !== 1) return;
+            var ring = null;
+            for (var r = 0; r < node.metaRings.length; r++) {
+                if (node.metaRings[r].trait === traitName) {
+                    ring = node.metaRings[r];
+                    break;
+                }
+            }
+            if (!ring) return;
+            var samples = String(node.name || '').split('\n').filter(function (sample) {
+                return sample.trim() !== '';
+            });
+            var counts = {};
+            var order = [];
+            var missing = 0;
+            samples.forEach(function (sample) {
+                var row = metaConfig.sample_values[sample.trim()] || {};
+                var raw = row[traitName];
+                if (raw === undefined || String(raw).trim() === '') {
+                    missing += 1;
+                    return;
+                }
+                var value = numeric ? Number(raw) : String(raw).trim();
+                if (numeric && !isFinite(value)) {
+                    missing += 1;
+                    return;
+                }
+                var key = String(value);
+                if (!Object.prototype.hasOwnProperty.call(counts, key)) {
+                    counts[key] = {value: value, count: 0};
+                    order.push(key);
+                }
+                counts[key].count += 1;
+            });
+
+            var segments = [];
+            if (numeric) {
+                var weighted = 0;
+                var validCount = 0;
+                order.sort(function (a, b) {
+                    return counts[a].value - counts[b].value;
+                });
+                order.forEach(function (key) {
+                    var item = counts[key];
+                    var fraction = span === 0 ? 0.5 : (item.value - vmin) / span;
+                    segments.push({
+                        label: item.value,
+                        value: item.count,
+                        color: metaLerpColor(low, high, fraction)
+                    });
+                    weighted += item.value * item.count;
+                    validCount += item.count;
+                });
+                if (missing) segments.push({label: '', value: missing, color: '#FFFFFF'});
+                if (!segments.length) segments.push({label: '', value: 1, color: '#FFFFFF'});
+                ring.value = validCount ? weighted / validCount : null;
+                ring.color = validCount
+                    ? metaLerpColor(low, high, span === 0 ? 0.5 : (ring.value - vmin) / span)
+                    : '#FFFFFF';
+            } else {
+                var categoryOrder = [];
+                (trait.categories || []).forEach(function (entry) {
+                    var key = String(entry.label);
+                    if (Object.prototype.hasOwnProperty.call(counts, key)) categoryOrder.push(key);
+                });
+                order.forEach(function (key) {
+                    if (categoryOrder.indexOf(key) < 0) categoryOrder.push(key);
+                });
+                categoryOrder.forEach(function (key) {
+                    segments.push({
+                        label: counts[key].value,
+                        value: counts[key].count,
+                        color: metaCategoryColor(trait, counts[key].value)
+                    });
+                });
+                if (missing) segments.push({label: '', value: missing, color: '#DDDDDD'});
+                if (!segments.length) segments.push({label: '', value: 1, color: '#DDDDDD'});
+            }
+            ring.segments = segments;
+        });
+        if (redraw !== false && svg) {
+            updateSVG();
+            refreshMetaLegend();
+        }
+    }
+
+    function populateMetaGroupsFromConfig() {
+        if (!metaConfig || !metaConfig.traits) return;
+        var groupTrait = metaGroupTrait();
+        if (groupTrait && w2ui.groups) {
+            var groups = [{recid: 'Default', color: 'ffffff', pattern: 'none', editable: false}];
+            (groupTrait.categories || []).forEach(function (entry) {
+                var label = String(entry.label || '').trim();
+                if (!label || label === 'Default') return;
+                groups.push({
+                    recid: label,
+                    color: normalizedMetaColor(entry.color, '#DDDDDD').substr(1),
+                    pattern: 'none'
+                });
+            });
+            w2ui.groups.clear();
+            w2ui.groups.add(groups);
+            w2ui.groups.refresh();
+        }
+    }
+
+    function syncMetaGroupColor(groupName, color) {
+        var trait = metaGroupTrait();
+        if (!trait) return;
+        var normalized = normalizedMetaColor(color, '#DDDDDD');
+        var found = false;
+        (trait.categories || []).forEach(function (entry) {
+            if (String(entry.label) === String(groupName)) {
+                entry.color = normalized;
+                found = true;
+            }
+        });
+        if (!found && groupName !== 'Default') {
+            (trait.categories || (trait.categories = [])).push({
+                label: groupName, color: normalized
+            });
+        }
+        rebuildMetaTraitRings(trait.name);
+    }
+
+    function syncMetaGroupName(oldName, newName) {
+        var trait = metaGroupTrait();
+        if (!trait || oldName === newName) return;
+        (trait.categories || []).forEach(function (entry) {
+            if (String(entry.label) === String(oldName)) entry.label = newName;
+        });
+        var values = metaConfig.sample_values || {};
+        Object.keys(values).forEach(function (sample) {
+            if (String(values[sample][trait.name]) === String(oldName)) {
+                values[sample][trait.name] = newName;
+            }
+        });
+        rebuildMetaTraitRings(trait.name);
+    }
+
+    function syncMetaHaplotypeGroup(sample, group) {
+        var trait = metaGroupTrait();
+        if (!trait || !metaConfig.sample_values) return;
+        if (!metaConfig.sample_values[sample]) metaConfig.sample_values[sample] = {};
+        metaConfig.sample_values[sample][trait.name] = group;
+        rebuildMetaTraitRings(trait.name);
+    }
+
+    function syncAllMetaHaplotypeGroups(redraw) {
+        var trait = metaGroupTrait();
+        if (!trait || !metaConfig || !metaConfig.sample_values || !w2ui.haplotypes) return;
+        w2ui.haplotypes.records.forEach(function (record) {
+            if (!metaConfig.sample_values[record.recid]) {
+                metaConfig.sample_values[record.recid] = {};
+            }
+            metaConfig.sample_values[record.recid][trait.name] =
+                record.group || 'Default';
+        });
+        rebuildMetaTraitRings(trait.name, redraw);
+    }
+
+    function computeMetaSegments(d) {
+        var rings = d.metaRings;
+        if (d.nodestyle === 0 || !rings || rings.length === 0) {
+            d.metaOuterRadius = d.radius;
+            return [];
+        }
+        var segments = [];
+        var base = d.radius;
+        var ringWidth = base * metaRingRatio;
+        var currentOuter = base;
+        for (var k = 0; k < rings.length; k++) {
+            var ring = rings[k] || {};
+            var parts = ring.segments || [];
+            if (k > 0) {
+                var allMissing = parts.length > 0 && parts.every(function (p) {
+                    return p.label === '' || p.label === undefined || p.label === null;
+                });
+                if (allMissing) continue;
+            }
+            var inner = 0;
+            var outer = base;
+            if (k > 0) {
+                var scale = Number(metaRingScales[k - 1]);
+                if (!isFinite(scale) || scale <= 0) scale = 1;
+                inner = currentOuter;
+                outer = inner + ringWidth * scale;
+                currentOuter = outer;
+            }
+            var ringKind = ring.kind || 'categorical';
+            if (ring.kind === 'continuous' && parts.length === 0) {
+                segments.push({
+                    inner: inner, outer: outer, startAngle: 0,
+                    endAngle: 2 * Math.PI, color: ring.color || '#ffffff',
+                    kind: ringKind,
+                });
+                continue;
+            }
+            var total = 0;
+            for (var s = 0; s < parts.length; s++) total += (parts[s].value || 0);
+            if (total <= 0) {
+                segments.push({
+                    inner: inner, outer: outer, startAngle: 0,
+                    endAngle: 2 * Math.PI, color: '#ffffff',
+                    kind: ringKind,
+                });
+                continue;
+            }
+            var angle = 0;
+            for (var p = 0; p < parts.length; p++) {
+                var frac = (parts[p].value || 0) / total;
+                var start = angle;
+                var end = angle + frac * 2 * Math.PI;
+                segments.push({
+                    inner: inner, outer: outer, startAngle: start,
+                    endAngle: end, color: parts[p].color || '#ffffff',
+                    kind: ringKind,
+                });
+                angle = end;
+            }
+        }
+        d.metaOuterRadius = currentOuter;
+        return segments;
+    }
+
+    function renderedNodeRadius(d) {
+        if (hasMeta) return d.metaOuterRadius || d.radius;
+        if (d.nodestyle === 1 && hasTrait && styleid !== 1 && styleid !== 2) {
+            return d.radius * outerRadiusCoeff;
+        }
+        return d.radius;
+    }
+
+    /*
+     * McAN/RMST writes Changes as a scalar graph distance (for example "2").
+     * Older GML producers may instead write a list of mutation tokens, so keep
+     * a small compatibility fallback that counts those tokens.
+     */
+    function edgeChangeValue(changes) {
+        if (typeof changes === 'number') {
+            return isFinite(changes) ? Math.max(0, changes) : 0;
+        }
+        var text = $.trim(String(changes === undefined || changes === null ? '' : changes));
+        if (text === '') return 0;
+        var scalar = Number(text);
+        if (isFinite(scalar)) return Math.max(0, scalar);
+        var tokens = text.split(/[\s,;]+/).filter(function (token) {
+            return token !== '';
+        });
+        return tokens.length;
+    }
+
+    function edgeWeightLevels() {
+        var levels = linkList.map(function (edge) {
+            return edgeChangeValue(edge.changes);
+        }).filter(function (value, index, values) {
+            return values.indexOf(value) === index;
+        });
+        levels.sort(function (a, b) {
+            return a - b;
+        });
+        return levels;
+    }
+
+    function edgeWeightStrokeWidth(edge, levels) {
+        var changes = edgeChangeValue(edge ? edge.changes : 0);
+        var levelIndex = levels.indexOf(changes);
+        if (levelIndex < 0) levelIndex = levels.length - 1;
+        // Spread the distinct Changes levels across the complete width range.
+        // The curve deliberately increases contrast between adjacent levels.
+        var normalized = levels.length > 1 ? levelIndex / (levels.length - 1) : 0;
+        var emphasis = Math.pow(1 - normalized, 1.5);
+        var multiplier = 1 + (edgeWeightScale - 1) * emphasis;
+        return edgeLineWidth * multiplier;
+    }
+
+    function drawMetaRings(nodeSelection) {
+        var metapath = nodeSelection.selectAll('.meta-path').remove();
+        metapath = nodeSelection.selectAll('.meta-path').data(function (d) {
+            return d.metaSegments || [];
+        });
+        metapath.enter()
+            .append('path')
+            .attr('class', 'meta-path')
+            .attr('d', function (d) {
+                return metaArc(d);
+            })
+            .style('fill', function (d) {
+                return d.color;
+            });
+        metapath
+            .style('stroke-width', function (d) {
+                if (d.kind === 'continuous') return Math.max(metaRingLineWidth * 0.3, 0.1);
+                return metaRingLineWidth;
+            })
+            .style('stroke', function (d) {
+                if (d.kind === 'continuous') return metaRingLineWidth > 0 ? '#666666' : 'none';
+                return metaRingLineWidth > 0 ? '#000000' : 'none';
+            });
+        metapath.exit().remove();
     }
 
     function updateSVG() {
@@ -470,17 +942,25 @@ $(function () {
             .attr('id', function (d) {
                 return d.id;
             })
-            .on('click', clickLink)
-            .append('title')
-            .text(function (d) {
-                return d.changes;
-            });
-        link.style('stroke-width', linewidth).style('stroke', '#000000');
+            .on('click', clickLink);
+        var weightLevels = edgeWeightFlag ? edgeWeightLevels() : [];
+        if (edgeWeightFlag) {
+            link.style('stroke-width', function (d) {
+                return edgeWeightStrokeWidth(d, weightLevels);
+            })
+                .style('stroke', '#000000');
+        } else {
+            link.style('stroke-width', edgeLineWidth).style('stroke', '#000000');
+        }
         link.exit().remove();
 
         // Apply link highlight and per-link changes labels.
         highlightLink.forEach(function (lid) {
-            svg.select('#' + lid).style({'stroke': '#FF0000', 'stroke-width': linewidth * 3});
+            svg.select('#' + lid)
+                .style('stroke', '#FF0000')
+                .style('stroke-width', function (d) {
+                    return (edgeWeightFlag ? edgeWeightStrokeWidth(d, weightLevels) : edgeLineWidth) * 3;
+                });
         });
         Object.keys(labelLink).forEach(function (lid) {
             var ldata = linkList.find(function (l) {
@@ -492,6 +972,7 @@ $(function () {
                     var el = d3.select(this.parentNode);
                     el.append('text')
                         .attr('class', 'link-label-info')
+                        .attr('data-lid', lid)
                         .attr('x', function () {
                             return (ldata.source.x + ldata.target.x) / 2;
                         })
@@ -508,6 +989,12 @@ $(function () {
                 });
         });
 
+        if (hasMeta) {
+            for (var mi = 0; mi < nodeList.length; mi++) {
+                nodeList[mi].metaSegments = computeMetaSegments(nodeList[mi]);
+            }
+        }
+
         node = svg.selectAll('.node').remove();
         node = svg.selectAll('.node').data(nodeList);
         node.enter().append('g')
@@ -520,82 +1007,71 @@ $(function () {
             .append('circle')
             .attr('class', 'node-circle')
             .attr('r', function (d) {
-                if (d.nodestyle === 1) {
-                    if (!hasTrait || styleid === 1 || styleid === 2) return d.radius; else return d.radius * outerRadiusCoeff;
-                } else {
-                    return d.radius;
-                }
-            })
-            .append('title')
-            .text(function (d) {
-                return d.name;
+                return renderedNodeRadius(d);
             });
 
         node.style('stroke-width', function () {
-            return linewidth * 2;
+            return nodeLineWidth;
         }).style('stroke', '#000000').style('fill', '#000000');
         node.exit().remove();
 
 
-        // Draw the outer-ring pie sectors (primary group coloring)
-        path = node.selectAll('.outer-path').remove();
-        path = node.selectAll('.outer-path').data(function (d) {
-            return pie(d.proportions);
-        });
-
-        path.enter()
-            .append('path')
-            .attr('class', "outer-path")
-            .attr('d', function (d) {
-                if (isInnerNode(d) || !hasTrait) {
-                    return sector(d)
-                } else {
-                    if (styleid === 1) return sector(d); else if (styleid === 2) return sectorNull(d); else return sectorOuter(d);
-                }
-            })
-            .style('fill', function (d) {
-                if (d.data.pattern === 'none') return d.data.color; else return d.data.pattern;
-            });
-        if (outlinenodes) {
-            path.style('stroke-width', linewidth / 2).style('stroke', '#000000');
+        if (hasMeta) {
+            // NetST multi-trait rings replace the classic group pie + outer ring.
+            drawMetaRings(node);
         } else {
+            // Draw the outer-ring pie sectors (primary group coloring)
+            path = node.selectAll('.outer-path').remove();
+            path = node.selectAll('.outer-path').data(function (d) {
+                return pie(d.proportions);
+            });
+
+            path.enter()
+                .append('path')
+                .attr('class', "outer-path")
+                .attr('d', function (d) {
+                    if (isInnerNode(d) || !hasTrait) {
+                        return sector(d)
+                    } else {
+                        if (styleid === 1) return sector(d); else if (styleid === 2) return sectorNull(d); else return sectorOuter(d);
+                    }
+                })
+                .style('fill', function (d) {
+                    if (d.data.pattern === 'none') return d.data.color; else return d.data.pattern;
+                });
             path.style('stroke-width', '0').style('stroke', 'none');
-        }
-        path.exit().remove();
+            path.exit().remove();
 
-        // Draw the inner sub-ring pie sectors (time/continuous trait coloring)
-        subpath = node.selectAll('.subpath').remove();
-        subpath = node.selectAll('.subpath').data(function (d) {
-            return subPie(d.timeProportions);
-        });
-
-        subpath.enter()
-            .append('path')
-            .attr('class', 'subpath')
-            .attr('d', function (d) {
-                if (isInnerNode(d) || !hasTrait) {
-                    return sectorNull(d);
-                } else {
-                    if (styleid === 1) return sectorNull(d); else if (styleid === 2) return sector(d); else return sectorSmall(d);
-                }
-            })
-            .style('fill', function (d) {
-                return tcGradient(d.data.timecolor, typeid);
+            // Draw the inner sub-ring pie sectors (time/continuous trait coloring)
+            subpath = node.selectAll('.subpath').remove();
+            subpath = node.selectAll('.subpath').data(function (d) {
+                return subPie(d.timeProportions);
             });
 
-        /*
-         * These two commands may be used to implement
-         * a stroke between arcs in the pie
-         * .style('stroke-width', '0')
-         * .style('stroke', 'none');
-         */
-        if (outlinenodes) {
-            subpath.style('stroke-width', linewidth / 2).style('stroke', '#000000');
-        } else {
-            subpath.style('stroke-width', '0').style('stroke', 'none');
-        }
+            subpath.enter()
+                .append('path')
+                .attr('class', 'subpath')
+                .attr('d', function (d) {
+                    if (isInnerNode(d) || !hasTrait) {
+                        return sectorNull(d);
+                    } else {
+                        if (styleid === 1) return sectorNull(d); else if (styleid === 2) return sector(d); else return sectorSmall(d);
+                    }
+                })
+                .style('fill', function (d) {
+                    return tcGradient(d.data.timecolor, typeid);
+                });
 
-        subpath.exit().remove();
+            /*
+             * These two commands may be used to implement
+             * a stroke between arcs in the pie
+             * .style('stroke-width', '0')
+             * .style('stroke', 'none');
+             */
+            subpath.style('stroke-width', '0').style('stroke', 'none');
+
+            subpath.exit().remove();
+        }
 
         linkText = svg.selectAll(".link-text").remove();
         if (distanceFlag) {
@@ -618,7 +1094,7 @@ $(function () {
         highlightNode.forEach(function (name) {
             // Build a CSS selector, escaping any newline characters in the node name.
             var selector = '#' + name.replaceAll("\n", "\\a ");
-            d3.select(selector).select(".node-circle").style({'stroke': '#FF0000', 'stroke-width': linewidth * 4});
+            d3.select(selector).select(".node-circle").style({'stroke': '#FF0000', 'stroke-width': nodeLineWidth * 3});
         });
 
         Object.entries(labelNode).forEach(([key, value]) => {
@@ -628,11 +1104,7 @@ $(function () {
                 .append('text')
                 .attr('class', 'node-text')
                 .attr('dx', function (d) {
-                    if (d.nodestyle === 1) {
-                        if (!hasTrait || styleid === 1 || styleid === 2) return textOffset + d.radius; else return textOffset + d.radius * outerRadiusCoeff;
-                    } else {
-                        return textOffset + d.radius;
-                    }
+                    return textOffset + renderedNodeRadius(d);
                 })
                 .attr('dy', '.35em')
                 .text(value.join(";"))
@@ -650,15 +1122,7 @@ $(function () {
                         .append('text')
                         .attr('class', 'node_hap')
                         .attr('dx', function (d) {
-                            if (d.nodestyle === 1) {
-                                if (!hasTrait || styleid === 1 || styleid === 2) {
-                                    return textOffset + d.radius;
-                                } else {
-                                    return textOffset + d.radius * outerRadiusCoeff;
-                                }
-                            } else {
-                                return textOffset + d.radius;
-                            }
+                            return textOffset + renderedNodeRadius(d);
                         })
                         .attr('dy', '.50em')
                         .text(d.hap)
@@ -666,6 +1130,57 @@ $(function () {
                         .style("stroke-width", '0.2px')
                         .style('font-size', '13px');
                 });
+        }
+
+        resolveNodeLabelCollisions();
+    }
+
+    function resolveNodeLabelCollisions() {
+        var labels = [];
+        svg.selectAll('.node-text, .node_hap').each(function () {
+            var el = d3.select(this);
+            var parent = d3.select(this.parentNode);
+            var datum = parent.datum();
+            if (!datum) return;
+            var bbox;
+            try {
+                bbox = this.getBBox();
+            } catch (e) {
+                return;
+            }
+            labels.push({
+                el: el,
+                x: datum.x + (parseFloat(el.attr('dx')) || 0),
+                y: datum.y + (parseFloat(el.attr('dy')) || 0),
+                w: bbox.width,
+                h: bbox.height,
+                dx: parseFloat(el.attr('dx')) || 0,
+                dy: parseFloat(el.attr('dy')) || 0,
+                datum: datum
+            });
+        });
+        for (var i = 0; i < labels.length; i++) {
+            for (var j = i + 1; j < labels.length; j++) {
+                var a = labels[i], b = labels[j];
+                var overlapX = (a.w + b.w) / 2 - Math.abs((a.x + a.w / 2) - (b.x + b.w / 2));
+                var overlapY = (a.h + b.h) / 2 - Math.abs((a.y) - (b.y));
+                if (overlapX > 0 && overlapY > 0) {
+                    var shift = overlapY / 2 + 2;
+                    if (a.y <= b.y) {
+                        a.dy -= shift;
+                        a.y -= shift;
+                        b.dy += shift;
+                        b.y += shift;
+                    } else {
+                        a.dy += shift;
+                        a.y += shift;
+                        b.dy -= shift;
+                        b.y -= shift;
+                    }
+                    a.el.attr('dy', a.dy + 'px');
+                    b.el.attr('dy', b.dy + 'px');
+                }
+            }
         }
     }
 
@@ -846,6 +1361,8 @@ $(function () {
                                     if (svg) classify(v[i], e.value_new, e.value_original);
                                 }
                             }
+                            if (hasMeta) syncMetaGroupName(
+                                e.value_original, e.value_new);
                         }
                         break;
                     case 1: // Change a color
@@ -873,6 +1390,7 @@ $(function () {
                                 if (svg) classify(v[i], e.recid, e.recid);
                             }
                         }
+                        if (hasMeta) syncMetaGroupColor(e.recid, e.value_new);
                         break;
 
                     case 2: // Change a pattern
@@ -1014,6 +1532,11 @@ $(function () {
                 }
 
                 classify(e.index, e.value_new, e.value_original);
+                if (hasMeta) {
+                    syncMetaHaplotypeGroup(
+                        w2ui.haplotypes.records[e.index].recid,
+                        w2ui.haplotypes.records[e.index].group);
+                }
             }, onEditField: function () {
                 var items = [];
                 var grplist = w2ui.groups.records;
@@ -1026,77 +1549,151 @@ $(function () {
         if (w2ui.haplotypes) return w2ui.haplotypes; else return null;
     }
 
-    /*
-     * The traits (characters) grid.
-     * Displays a list of sequence IDs and their continuous time trait values read
-     * from a semicolon-delimited traitconf file (seqname;value, no header row).
-     */
-    function getTraitsGrid() {
-
-        /*
-         * Append a hidden <input> element at the end of the body. This will serve as an anchor
-         * used by button 'loadTraits' to browse files for reading a traitconf file
-         * (semicolon-delimited, first column = seqname, second column = continuous time value).
-         */
-
-        $('body').append('<input id="loadTraits" type="file" />');
-
-        /*
-         * After selecting a file, this triggers the loadTraits function.
-         */
-
-        $('#loadTraits').on('change', function (e) {
-            loadTraits(e);
-        });
-
-        $().w2grid({
-            name: 'characters', multiSelect: false, show: {
-                header: false,
-                toolbar: true,
-                footer: true,
-                lineNumbers: false,
-                toolbarSearch: false,
-                toolbarInput: false,
-                toolbarReload: false,
-                toolbarColumns: false,
-                toolbarAdd: false,
-                toolbarDelete: false,
-                toolbarEdit: false
-            }, columns: [{
-                field: 'recid', caption: 'ID', size: '55%', sortable: true, resizable: true
-            }, {
-                field: 'traitValue', caption: 'Value', size: '45%', sortable: true, resizable: true
-            }], toolbar: {
-                items: [{
-                    type: 'button', id: 'load_characters', text: 'Load', icon: 'icon-folder-open'
-                }, {
-                    type: 'button', id: 'save_characters', text: 'Save', icon: 'icon-file-save'
-                }], onClick: function (e) {
-                    switch (e.target) {
-                        case 'load_characters':
-                            if (!hapconfLoaded) {
-                                w2alert('Please load a haplotype configuration file first<br>before importing a trait configuration file.', 'No haplotype data!');
-                            } else {
-                                $('#loadTraits').click();
-                            }
-                            break;
-                        case 'save_characters':
-                            saveTraits();
-                            break;
-                    }
-                }
-            }
-        });
-
-        // Return the grid object if successfully created, otherwise null.
-        if (w2ui.characters) return w2ui.characters; else return null;
+    function formatMetaLegendNumber(value) {
+        var number = Number(value);
+        if (!isFinite(number)) return '';
+        return String(parseFloat(number.toPrecision(6)));
     }
 
+    /*
+     * Draw one draggable legend containing every visible metadata ring in the
+     * same inner-to-outer order as the nodes. Discrete traits get categorical
+     * swatches; continuous traits get their own low-to-high gradient and
+     * numeric range.
+     */
+    function insertMetaLegend(svgEl) {
+        var traits = (metaConfig && metaConfig.traits) || [];
+        if (traits.length === 0) return;
+
+        var coords = {x: 50, y: 100};
+        var legendG = svgEl.append('g')
+            .datum(coords)
+            .attr('transform', 'translate(' + coords.x + ',' + coords.y + ')')
+            .attr('class', 'legend legend-meta')
+            .style('cursor', 'move');
+        var background = legendG.append('rect')
+            .attr('class', 'meta-legend-background')
+            .attr('fill', 'white')
+            .attr('stroke', '#555')
+            .attr('stroke-width', 0.7)
+            .attr('rx', 3);
+        var content = legendG.append('g')
+            .attr('class', 'meta-legend-content')
+            .attr('transform', 'translate(10,10)');
+        var cursorY = 0;
+
+        for (var t = 0; t < traits.length; t++) {
+            var trait = traits[t] || {};
+            var kind = trait.kind === 'continuous' ? 'Numeric' : 'Categorical';
+            var title = 'Ring ' + (t + 1) + ' \u00b7 ' + (trait.name || 'Trait');
+            if (trait.group) title += ' [Group]';
+            title += ' \u00b7 ' + kind;
+
+            content.append('text')
+                .attr('x', 0).attr('y', cursorY + 12)
+                .style('font-size', '12px')
+                .style('font-weight', 'bold')
+                .text(title);
+            cursorY += 22;
+
+            if (trait.kind === 'continuous') {
+                var gradient = trait.gradient || ['#BDBDBD', '#000000'];
+                var gradientId = 'metaLegendGradient' + t;
+                var defs = svgEl.select('defs');
+                if (defs.empty()) defs = svgEl.append('defs');
+                var linear = defs.append('linearGradient')
+                    .attr('id', gradientId)
+                    .attr('class', 'meta-legend-gradient')
+                    .attr('x1', '0%').attr('y1', '0%')
+                    .attr('x2', '100%').attr('y2', '0%');
+                linear.append('stop')
+                    .attr('offset', '0%')
+                    .attr('stop-color', gradient[0] || '#BDBDBD');
+                linear.append('stop')
+                    .attr('offset', '100%')
+                    .attr('stop-color', gradient[1] || '#000000');
+
+                content.append('rect')
+                    .attr('x', 0).attr('y', cursorY)
+                    .attr('width', 170).attr('height', 16)
+                    .attr('fill', 'url(#' + gradientId + ')')
+                    .attr('stroke', '#777').attr('stroke-width', 0.5);
+                content.append('text')
+                    .attr('x', 0).attr('y', cursorY + 30)
+                    .style('font-size', '10px')
+                    .text(formatMetaLegendNumber(trait.vmin));
+                content.append('text')
+                    .attr('x', 170).attr('y', cursorY + 30)
+                    .attr('text-anchor', 'end')
+                    .style('font-size', '10px')
+                    .text(formatMetaLegendNumber(trait.vmax));
+                cursorY += 40;
+            } else {
+                var categories = (trait.categories || []).slice();
+                if (trait.has_missing) {
+                    categories.push({label: '(missing)', color: '#DDDDDD'});
+                }
+                if (categories.length === 0) {
+                    categories.push({label: '(unassigned)', color: '#DDDDDD'});
+                }
+                var columnCount = categories.length > 10 ? 2 : 1;
+                var rowCount = Math.ceil(categories.length / columnCount);
+                var columnWidth = 155;
+                for (var c = 0; c < categories.length; c++) {
+                    var column = Math.floor(c / rowCount);
+                    var row = c % rowCount;
+                    var x = column * columnWidth;
+                    var y = cursorY + row * 18;
+                    content.append('rect')
+                        .attr('x', x).attr('y', y)
+                        .attr('width', 13).attr('height', 13)
+                        .attr('fill', categories[c].color || '#DDDDDD')
+                        .attr('stroke', '#777').attr('stroke-width', 0.5);
+                    content.append('text')
+                        .attr('x', x + 19).attr('y', y + 11)
+                        .style('font-size', '10px')
+                        .text(categories[c].label || '(missing)');
+                }
+                cursorY += rowCount * 18 + 4;
+            }
+
+            if (t < traits.length - 1) {
+                content.append('line')
+                    .attr('x1', 0).attr('x2', 170)
+                    .attr('y1', cursorY + 2).attr('y2', cursorY + 2)
+                    .attr('stroke', '#DDDDDD').attr('stroke-width', 0.7);
+                cursorY += 10;
+            }
+        }
+
+        var box = content.node().getBBox();
+        background
+            .attr('x', 0).attr('y', 0)
+            .attr('width', Math.max(205, box.width + 20))
+            .attr('height', Math.max(35, box.height + 20));
+
+        var dragLegend = d3.behavior.drag()
+            .on('drag', function (d) {
+                d.x += d3.event.dx;
+                d.y += d3.event.dy;
+                d3.select(this)
+                    .attr('transform', 'translate(' + d.x + ',' + d.y + ')');
+            })
+            .on('dragstart', function () {
+                d3.event.sourceEvent.stopPropagation();
+            });
+        legendG.call(dragLegend);
+    }
 
     function insertLegend() {
         if (legend === 0) {
             legend = 1;
             var svgEl = d3.select('svg');
+
+            if (hasMeta && metaConfig) {
+                insertMetaLegend(svgEl);
+                return;
+            }
 
             // styleid 0 (Dual-Trait) or 1 (Category): show group legend
             if (styleid === 0 || styleid === 1) {
@@ -1120,7 +1717,6 @@ $(function () {
                 var maxColor = tcGradient('f7', typeid);
 
                 var gradBarW = 20, gradBarH = 120;
-                // Same x column as group legend; if also showing groups, place below them
                 var gradX = 50;
                 var gradY = 140;
                 if (styleid === 0) {
@@ -1197,6 +1793,7 @@ $(function () {
             legend = 0;
             $('.legend').remove();
             d3.select('#legendGradient').remove();
+            d3.selectAll('.meta-legend-gradient').remove();
         }
     }
 
@@ -1204,18 +1801,21 @@ $(function () {
      * Construct the layout
      */
 
-    function getLayout(style, groups, haplotypes, characters) {
+    function getLayout(style, groups, haplotypes) {
         $('#layout').w2layout({
             name: 'Layout', padding: 0, panels: [
                 {type: 'top', size: 40, resizable: false, style: style},
                 {
-                    type: 'left', size: 350, maxSize: 350, resizable: true, title: 'Data', style: style, tabs: {
+                    type: 'left', size: 350, resizable: true, title: 'Data', style: style, tabs: {
                         name: 'tabs',
                         active: 'tab1',
-                        tabs: [{id: 'tab2', text: 'Groups'}, {id: 'tab1', text: 'Haplotypes'}, {
-                            id: 'tab3',
-                            text: 'Traits'
-                        },],
+                        // Trait visualization is configured in NetST's
+                        // Metadata tab; this panel keeps only editable group
+                        // and haplotype assignments.
+                        tabs: [
+                            {id: 'tab2', text: 'Groups'},
+                            {id: 'tab1', text: 'Haplotypes'}
+                        ],
                         onClick: function (id) {
                             switch (id.target) {
                                 case 'tab1':
@@ -1224,18 +1824,21 @@ $(function () {
                                 case 'tab2':
                                     w2ui.Layout.content('left', groups);
                                     break;
-                                case 'tab3':
-                                    w2ui.Layout.content('left', characters);
-                                    break;
                             }
                         }
 
                     }
-                }, {type: 'right', size: 280, resizable: false, title: 'Haplotype Network Info', style: style}, {
+                }, {type: 'right', size: 280, resizable: true, title: 'Haplotype Network Info', style: style}, {
                     type: 'main', size: '100%', overflow: 'hidden', style: style, toolbar: {
                         items: [{
-                            id: 'btn-svgsave', type: 'button', text: 'Save SVG', icon: 'icon-file-svg', disabled: true
-                        }, //{ id: 'btn-pdfsave', type: 'button', text: 'Save PDF', icon: 'icon-file-pdf-o', disabled: true },
+                            id: 'btn-saveimage', type: 'menu', text: 'Save Image', icon: 'icon-file-svg',
+                            disabled: true, items: [
+                                {id: 'svg', text: 'SVG (vector)'},
+                                {id: 'png', text: 'PNG'},
+                                {id: 'jpg', text: 'JPG'},
+                                {id: 'pdf', text: 'PDF'}
+                            ]
+                        },
                             {type: 'break'}, {
                                 id: 'btn-zoomin',
                                 class: 'zoom-btn',
@@ -1265,31 +1868,6 @@ $(function () {
                                 disabled: true,
                                 checked: false
                             }, {type: 'break'}, {
-                                id: 'btn-outline',
-                                type: 'check',
-                                text: 'Outline',
-                                icon: 'icon-outline',
-                                disabled: true,
-                                checked: false
-                            }, {
-                                id: 'btn-time',
-                                type: 'menu',
-                                text: 'Circle Center',
-                                icon: 'icon-circles-2',
-                                disabled: true,
-                                items: [{text: 'Gray', typeid: "0"}, {text: 'Red', typeid: "1"}, {
-                                    text: 'Green', typeid: "2"
-                                }, {text: 'Blue', typeid: "3"}]
-                            }, {
-                                id: 'btn-style',
-                                type: 'menu',
-                                text: 'Style',
-                                icon: 'icon-cross-4',
-                                disabled: true,
-                                items: [{text: 'Dual-Trait', styleid: "0"}, {text: 'Category', styleid: "1"}, {
-                                    text: 'Continuous', styleid: "2"
-                                },]
-                            }, {type: 'break'}, {
                                 id: 'btn-legend',
                                 type: 'check',
                                 text: 'Legend',
@@ -1312,6 +1890,19 @@ $(function () {
                                 icon: 'icon-label',
                                 disabled: true,
                                 checked: false
+                            }, {
+                                id: 'btn-edgeweight',
+                                type: 'check',
+                                text: 'Edge Weight',
+                                icon: 'icon-line-width',
+                                disabled: true,
+                                checked: false
+                            }, {type: 'break'}, {
+                                id: 'btn-undo',
+                                type: 'button',
+                                text: 'Undo',
+                                icon: 'icon-label',
+                                disabled: true
                             }, {type: 'break'}, {
                                 id: 'btn-advanced',
                                 type: 'button',
@@ -1327,13 +1918,6 @@ $(function () {
                                 case 'btn-delnode':
                                     deletenode = !e.item.checked;
                                     break;
-                                case 'btn-svgsave':
-                                    saveSVG();
-                                    break;
-                                case 'btn-outline':
-                                    outlinenodes = !e.item.checked;
-                                    if (svg) updateSVG();
-                                    break;
                                 case 'btn-zoomin':
                                     zoomByFactor(1.2);
                                     break;
@@ -1347,25 +1931,22 @@ $(function () {
                                     insertHaplotype();
                                     break;
                                 case 'btn-distance':
-                                    insertDistance()
+                                    insertDistance();
+                                    break;
+                                case 'btn-edgeweight':
+                                    toggleEdgeWeight();
+                                    break;
+                                case 'btn-undo':
+                                    undoDelete();
                                     break;
                                 case 'btn-advanced':
                                     openAdvancedSettings();
                                     break;
-                                default:
-                                    if (target.indexOf('btn-time:') !== -1) {
-                                        typeid = parseInt(e.subItem.typeid);
-                                        if (svg) updateSVG();
-                                    }
-                                    if (target.indexOf('btn-style:') !== -1) {
-                                        var requestedStyle = parseInt(e.subItem.styleid);
-                                        if (!hasTrait && requestedStyle !== 1) {
-                                            w2alert('Please load trait data first before selecting<br>Dual-Trait or Continuous style.', 'Trait data required!');
-                                        } else {
-                                            styleid = requestedStyle;
-                                            if (svg) updateSVG();
-                                        }
-                                    }
+                            }
+                            if (target.indexOf('btn-saveimage:') === 0) {
+                                saveImage(target.split(':')[1]);
+                            } else if (target === 'btn-saveimage' && e.subItem) {
+                                saveImage(e.subItem.id);
                             }
                         },
                     },
@@ -1815,6 +2396,10 @@ $(function () {
             hapconfColumns = 0;
             seqHapFlag = false;
             styleid = 1;
+            // Clear any metadata rings from a previous graph; a pending config
+            // (set after this load was queued) is preserved and applied below.
+            hasMeta = false;
+            metaConfig = null;
 
             /*
              * Clear any haplotypes present in the haplotypes' grid
@@ -1865,6 +2450,10 @@ $(function () {
              */
 
             svgStart();
+
+            // Apply a NetST metadata ring config that arrived before the graph
+            // finished parsing (loadMetaConfig is synchronous; this onload is not).
+            if (pendingMetaConfig) applyMetaConfig();
 
         };
         reader.readAsText(input.files[0]);
@@ -1994,8 +2583,9 @@ $(function () {
      * Reads a traitconf file (semicolon-delimited, no header row).
      * Each line has the format: seqname;value
      * where seqname is a sequence ID and value is a continuous time trait.
-     * Updates matching haplotype time values, rebuilds timeProportions in nodeList,
-     * and populates the 'characters' grid with columns ID and Value.
+     * Updates matching haplotype time values and rebuilds timeProportions.
+     * In standalone mode the Traits grid gets one generic trait summary; when
+     * NetST metadata is active its named trait catalog always takes precedence.
      */
     function loadTraits(e) {
 
@@ -2003,14 +2593,11 @@ $(function () {
 
         if (input.files.length !== 1) return;
 
-        var fileInput = document.getElementById('loadTraits');
-
         var reader = new FileReader();
 
         reader.onload = function () {
             var text = reader.result;
             var lines = text.split('\n');
-            var traitsInfo = [];
 
             // Collect seqname → value pairs from the file
             var traitMap = {};
@@ -2026,7 +2613,6 @@ $(function () {
                 seqname = seqname.replace(/[\W]/g, "_");
                 if (/^\d+$/.test(seqname[0])) seqname = 'L' + seqname;
                 traitMap[seqname] = value;
-                traitsInfo.push({recid: seqname, traitValue: value});
             }
 
             // Compute minTime/maxTime by matching seqnames directly against nodeList names.
@@ -2048,7 +2634,7 @@ $(function () {
             });
 
             // Determine style and build color scale.
-            // Also mirror time/timecolor onto haplotype records for characters grid display.
+            // Mirror time/timecolor onto haplotype records for classic rendering.
             var colorScale = null;
             if (minTime !== maxTime) {
                 styleid = 0;
@@ -2059,7 +2645,7 @@ $(function () {
                 styleid = 1;
             }
 
-            // Update haplotype records with time and timecolor values (used by characters grid).
+            // Update haplotype records with time and timecolor values.
             w2ui.haplotypes.records.forEach(function (haplo) {
                 if (Object.prototype.hasOwnProperty.call(traitMap, haplo.recid)) {
                     haplo.time = traitMap[haplo.recid];
@@ -2098,21 +2684,21 @@ $(function () {
                         });
                     }
                 });
+                // Continuous sectors must follow numeric order around the ring,
+                // independent of the original sample order in the haplotype.
+                node.timeProportions.sort(function (a, b) {
+                    return Number(a.time) - Number(b.time);
+                });
             });
-
-            w2ui.characters.clear();
-            w2ui.characters.add(traitsInfo);
 
             hasTrait = true;
             if (svg) updateSVG();
         };
 
         /*
-         * Capture the file reference before clearing the input, so readAsText
-         * still receives a valid Blob (clearing fileInput.value invalidates input.files).
+         * Capture the embedded or user-provided file reference.
          */
         var file = input.files[0];
-        fileInput.value = "";
         reader.readAsText(file);
     }
 
@@ -2263,7 +2849,9 @@ $(function () {
                     w2ui.Layout_main_toolbar.disable('btn-haplotype');
                 }
 
+                if (hasMeta) syncAllMetaHaplotypeGroups(false);
                 updateSVG();
+                if (hasMeta) refreshMetaLegend();
                 w2ui.haplotypes.refresh();
             } else {
                 w2alert('This seems not to be a formatted "Haplotype" file!<br>' + '(CSV text file with haplotype and group names     <br>' + 'separated by a semicolon. Please hit the Help button.', 'No haplotypes loaded!');
@@ -2351,27 +2939,136 @@ $(function () {
         }
     }
 
-    function saveTraits() {
-        if (filesave) {
-            var list = [];
-            if (w2ui.characters.records.length > 0) {
-                for (var i = 0; i < w2ui.characters.records.length; i++) {
-                    list.push(w2ui.characters.records[i].recid + ';' + w2ui.characters.records[i].traitValue + '\n');
-                }
-                var blob = new Blob(list, {type: "text/plain;charset=utf-8"}, {endings: "native"});
-                saveAs(blob, "traits.csv");
-            }
-        } else {
-            w2alert('FileSaver.js is not supported! Use a modern browser...<br>' + 'FileSaver.js is supported by Firefox 20+, Chrome, Chrome<br>' + 'for Android, IE 10+, Opera 15+ and Safari 6.1+', 'FileSave.js is unsupported!');
+    function serializedNetworkSVG() {
+        var source = document.getElementById('SVG');
+        if (!source) return null;
+
+        var clone = source.cloneNode(true);
+
+        // Frame the *entire* drawing — every node, link, label and legend —
+        // rather than the visible panel, so nothing is cropped no matter how the
+        // user has panned or zoomed. getBBox on the root <svg> returns the union
+        // of all rendered geometry (in the svg's own coordinate system, i.e. at
+        // the current zoom), including content that lies outside the viewport.
+        var box = null;
+        try {
+            box = source.getBBox();
+        } catch (e) {
+            box = null;
         }
+        var pad = 24;
+        var minX, minY, width, height;
+        if (box && isFinite(box.width) && isFinite(box.height)
+            && box.width > 0 && box.height > 0) {
+            minX = box.x - pad;
+            minY = box.y - pad;
+            width = Math.max(1, Math.round(box.width + 2 * pad));
+            height = Math.max(1, Math.round(box.height + 2 * pad));
+        } else {
+            // Nothing measurable (empty graph) — fall back to the visible panel.
+            var rect = source.getBoundingClientRect();
+            minX = 0;
+            minY = 0;
+            width = Math.max(1, Math.round(rect.width || $('#gview').width() || 1));
+            height = Math.max(1, Math.round(rect.height || $('#gview').height() || 1));
+        }
+
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+        clone.setAttribute('viewBox', minX + ' ' + minY + ' ' + width + ' ' + height);
+        clone.setAttribute('width', width);
+        clone.setAttribute('height', height);
+        clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+        var bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        bg.setAttribute('x', minX);
+        bg.setAttribute('y', minY);
+        bg.setAttribute('width', width);
+        bg.setAttribute('height', height);
+        bg.setAttribute('fill', '#FFFFFF');
+        clone.insertBefore(bg, clone.firstChild);
+
+        return {
+            markup: '<?xml version="1.0" encoding="UTF-8"?>\n' +
+                new XMLSerializer().serializeToString(clone),
+            width: width,
+            height: height
+        };
     }
 
-    function saveSVG() {
-        if (filesave) {
-            var d = $('#gview');
-            var blob = new Blob([d.html()], {type: "text/plain;charset=utf-8"});
-            saveAs(blob, "network.svg");
+    function saveImage(format) {
+        if (!filesave) {
+            w2alert('FileSaver.js is not supported! Use a modern browser...',
+                'Image export is unsupported');
+            return;
         }
+        var imageFormat = String(format || 'svg').toLowerCase();
+        if (imageFormat === 'jpeg') imageFormat = 'jpg';
+        if (['svg', 'png', 'jpg', 'pdf'].indexOf(imageFormat) === -1) {
+            w2alert('Unsupported image format: ' + imageFormat, 'Image export failed');
+            return;
+        }
+
+        var exported = serializedNetworkSVG();
+        if (!exported) {
+            w2alert('Build or load a network before exporting an image.',
+                'No network to export');
+            return;
+        }
+        var svgBlob = new Blob(
+            [exported.markup], {type: 'image/svg+xml;charset=utf-8'});
+        if (imageFormat === 'svg') {
+            saveAs(svgBlob, 'network.svg');
+            return;
+        }
+
+        if (imageFormat === 'pdf') {
+            window._pdfSvgPayload = {
+                markup: exported.markup,
+                width: exported.width,
+                height: exported.height
+            };
+            var triggerBlob = new Blob(['pdf'], {type: 'application/octet-stream'});
+            saveAs(triggerBlob, 'network.netst-pdf-trigger');
+            return;
+        }
+
+        var objectUrl = URL.createObjectURL(svgBlob);
+        var rasterImage = new Image();
+        rasterImage.onload = function () {
+            var scale = 3;
+            var maxSide = 12000;
+            var longest = Math.max(exported.width, exported.height);
+            if (longest * scale > maxSide) {
+                scale = Math.max(0.5, maxSide / longest);
+            }
+            var canvas = document.createElement('canvas');
+            canvas.width = Math.round(exported.width * scale);
+            canvas.height = Math.round(exported.height * scale);
+            var context = canvas.getContext('2d');
+            if (imageFormat === 'jpg') {
+                context.fillStyle = '#FFFFFF';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            context.setTransform(scale, 0, 0, scale, 0, 0);
+            context.drawImage(rasterImage, 0, 0, exported.width, exported.height);
+            URL.revokeObjectURL(objectUrl);
+            var mime = imageFormat === 'jpg' ? 'image/jpeg' : 'image/png';
+            canvas.toBlob(function (blob) {
+                if (!blob) {
+                    w2alert('The browser could not create the image file.',
+                        'Image export failed');
+                    return;
+                }
+                saveAs(blob, 'network.' + imageFormat);
+            }, mime, imageFormat === 'jpg' ? 0.95 : undefined);
+        };
+        rasterImage.onerror = function () {
+            URL.revokeObjectURL(objectUrl);
+            w2alert('The SVG could not be rendered as a raster image.',
+                'Image export failed');
+        };
+        rasterImage.src = objectUrl;
     }
 
     function zoomByFactor(factor) {
@@ -2388,6 +3085,101 @@ $(function () {
                 .scale(newScale)
                 .translate([c[0] + (t[0] - c[0]) / scale * newScale, c[1] + (t[1] - c[1]) / scale * newScale])
                 .event(svg.transition().duration(350));
+        }
+    }
+
+    function pushUndoSnapshot() {
+        undoStack.push({
+            nodes: JSON.parse(JSON.stringify(nodeList.map(function (n) {
+                return {
+                    id: n.id, name: n.name, radius: n.radius, nodestyle: n.nodestyle,
+                    proportions: n.proportions, timeProportions: n.timeProportions,
+                    metaRings: n.metaRings, hap: n.hap, x: n.x, y: n.y
+                };
+            }))),
+            edges: JSON.parse(JSON.stringify(edgeList))
+        });
+        if (undoStack.length > 20) undoStack.shift();
+        w2ui.Layout_main_toolbar.enable('btn-undo');
+    }
+
+    function undoDelete() {
+        if (undoStack.length === 0) return;
+        var snapshot = undoStack.pop();
+        if (undoStack.length === 0) w2ui.Layout_main_toolbar.disable('btn-undo');
+        nodeList.length = 0;
+        edgeList.length = 0;
+        snapshot.nodes.forEach(function (sn) {
+            nodeList.push(sn);
+        });
+        snapshot.edges.forEach(function (se) {
+            edgeList.push(se);
+        });
+        linkList.length = 0;
+        for (var i = 0; i < edgeList.length; i++) {
+            var pair = nodeList.filter(function (e) {
+                return (e.id === edgeList[i].source) || (e.id === edgeList[i].target);
+            });
+            if (pair.length === 2) linkList.push({
+                source: pair[0], target: pair[1],
+                id: "Link_" + pair[0].id + "-" + pair[1].id,
+                ldist: pair[0].radius + pair[1].radius + defaultLinkDistance + defaultDistance,
+                changes: edgeList[i].changes
+            });
+        }
+        if (hasMeta) {
+            for (var mi = 0; mi < nodeList.length; mi++) {
+                nodeList[mi].metaSegments = computeMetaSegments(nodeList[mi]);
+            }
+        }
+        updateSVG();
+    }
+
+    function toggleEdgeWeight() {
+        edgeWeightFlag = !edgeWeightFlag;
+        updateSVG();
+    }
+
+    function searchNode(query) {
+        if (!query || !nodeList || nodeList.length === 0) return;
+        query = query.trim().toLowerCase();
+        var found = null;
+        for (var i = 0; i < nodeList.length; i++) {
+            var n = nodeList[i];
+            if (n.nodestyle !== 1) continue;
+            var names = n.name ? n.name.split('\n') : [];
+            for (var j = 0; j < names.length; j++) {
+                if (names[j].trim().toLowerCase().indexOf(query) >= 0) {
+                    found = n;
+                    break;
+                }
+            }
+            if (found) break;
+            if (n.hap && n.hap.toLowerCase().indexOf(query) >= 0) {
+                found = n;
+                break;
+            }
+        }
+        if (!found) {
+            w2alert('No node found matching "' + query.replace(/</g, '&lt;') + '"', 'Search');
+            return;
+        }
+        highlightNode = [found.name];
+        updateSVG();
+        if (zoom && found.x !== undefined && found.y !== undefined) {
+            var w = $('#gview').width();
+            var h = $('#gview').height();
+            var s = zoom.scale();
+            var tx = w / 2 - found.x * s;
+            var ty = h / 2 - found.y * s;
+            zoom.translate([tx, ty])
+                .event(svg.transition().duration(500));
+        }
+        if (typeof clickNode === 'function') {
+            var savedDeleteNode = deletenode;
+            deletenode = false;
+            clickNode(found);
+            deletenode = savedDeleteNode;
         }
     }
 
@@ -2553,6 +3345,22 @@ $(function () {
         sectorNull = d3.svg.arc()
             .outerRadius(0)
             .innerRadius(0);
+
+        // Arc generator for NetST metadata rings; each datum carries its own
+        // inner/outer radius and start/end angle (see computeMetaSegments).
+        metaArc = d3.svg.arc()
+            .innerRadius(function (d) {
+                return d.inner;
+            })
+            .outerRadius(function (d) {
+                return d.outer;
+            })
+            .startAngle(function (d) {
+                return d.startAngle;
+            })
+            .endAngle(function (d) {
+                return d.endAngle;
+            });
         /*
          * Create SVG patterns for the groups defined (except for default group 0)
          */
@@ -2599,7 +3407,7 @@ $(function () {
                 if (!ldata) return;
                 var linkEl = svg.select('#' + lid);
                 if (!linkEl.empty()) {
-                    d3.select(linkEl.node().parentNode).select('.link-label-info')
+                    svg.select('.link-label-info[data-lid="' + lid + '"]')
                         .attr('x', (ldata.source.x + ldata.target.x) / 2)
                         .attr('y', (ldata.source.y + ldata.target.y) / 2);
                 }
@@ -2630,7 +3438,11 @@ $(function () {
 
         clickNode = function (e) {
             if (deletenode) {
+                pushUndoSnapshot();
                 nodeList.splice(nodeList.indexOf(e), 1);
+                edgeList = edgeList.filter(function (edge) {
+                    return edge.source !== e.id && edge.target !== e.id;
+                });
                 var toSplice = linkList.filter(function (l) {
                     return (l.source === e) || (l.target === e);
                 });
@@ -2697,12 +3509,52 @@ $(function () {
                 var activeGroups = node.proportions.filter(function (p) {
                     return p.value > 0;
                 });
-                if (activeGroups.length > 0) {
+                if (!hasMeta && activeGroups.length > 0) {
                     html += '<tr><td style="color:#666; padding:3px 0; vertical-align:top; white-space:nowrap;">Groups:</td><td style="padding:3px 4px;">';
                     activeGroups.forEach(function (p) {
                         html += '<div style="margin:2px 0; display:flex; align-items:center;">' +
                             '<span style="display:inline-block; width:12px; height:12px; background:' + p.color + '; border:1px solid #ccc; border-radius:2px; margin-right:5px; flex-shrink:0;"></span>' +
                             '<span>' + p.group + ': <b>' + p.value + '</b></span></div>';
+                    });
+                    html += '</td></tr>';
+                }
+
+                if (hasMeta && node.metaRings && node.metaRings.length > 0) {
+                    html += '<tr><td style="color:#666; padding:3px 0; vertical-align:top; white-space:nowrap;">Metadata:</td><td style="padding:3px 4px;">';
+                    node.metaRings.forEach(function (ring) {
+                        html += '<div style="margin:2px 0 6px 0;">' +
+                            '<div style="font-weight:bold; font-size:11px;">' +
+                            (ring.trait || 'Trait') + '</div>';
+                        if (ring.kind === 'continuous') {
+                            html += '<div style="display:flex; align-items:center;">' +
+                                '<span style="display:inline-block; width:12px; height:12px; background:' +
+                                (ring.color || '#fff') +
+                                '; border:1px solid #ccc; border-radius:2px; margin-right:5px;"></span>' +
+                                '<span>Mean: ' + (ring.value === null || ring.value === undefined
+                                    ? '(missing)' : formatMetaLegendNumber(ring.value)) +
+                                '</span></div>';
+                            if ((ring.segments || []).length > 1) {
+                                ring.segments.forEach(function (segment) {
+                                    html += '<div style="display:flex; align-items:center; margin-left:8px;">' +
+                                        '<span style="display:inline-block; width:10px; height:10px; background:' +
+                                        (segment.color || '#fff') +
+                                        '; border:1px solid #ccc; border-radius:2px; margin-right:5px;"></span>' +
+                                        '<span>' + (segment.label === '' ? '(missing)' :
+                                            formatMetaLegendNumber(segment.label)) +
+                                        ': <b>' + segment.value + '</b></span></div>';
+                                });
+                            }
+                        } else {
+                            (ring.segments || []).forEach(function (segment) {
+                                html += '<div style="display:flex; align-items:center;">' +
+                                    '<span style="display:inline-block; width:12px; height:12px; background:' +
+                                    (segment.color || '#ddd') +
+                                    '; border:1px solid #ccc; border-radius:2px; margin-right:5px;"></span>' +
+                                    '<span>' + (segment.label || '(missing)') + ': <b>' +
+                                    segment.value + '</b></span></div>';
+                            });
+                        }
+                        html += '</div>';
                     });
                     html += '</td></tr>';
                 }
@@ -2838,7 +3690,13 @@ $(function () {
 
         clickLink = function (e) {
             if (deletelink) {
+                pushUndoSnapshot();
                 linkList.splice(linkList.indexOf(e), 1);
+                var srcId = e.source.id, tgtId = e.target.id;
+                edgeList = edgeList.filter(function (edge) {
+                    return !((edge.source === srcId && edge.target === tgtId) ||
+                        (edge.source === tgtId && edge.target === srcId));
+                });
                 updateSVG();
             } else {
                 showLinkInfo(e);
@@ -2946,13 +3804,15 @@ $(function () {
         // Do not mess with this
         //$('#chargeDistance').attr('value', chrgdist);
         $('#gravity').attr('value', grav);
-        $('#lwidth').attr('value', linewidth);
         $('#typeid').attr('value', typeid);
-        $('#advStandRadius').attr('value', standardRadius);
-        $('#advLineWidth').attr('value', linewidth);
-        $('#advOuterRadiusCoeff').attr('value', outerRadiusCoeff);
-        $('#advInnerRadiusCoeff').attr('value', innerRadiusCoeff);
+        $('#advNodeRadius').attr('value', standardRadius);
+        $('#advNodeLineWidth').attr('value', nodeLineWidth);
+        $('#advEdgeLineWidth').attr('value', edgeLineWidth);
+        $('#advEdgeWeightScale').attr('value', edgeWeightScale);
+        $('#advMetaRingLineWidth').attr('value', metaRingLineWidth);
         $('#advTextOffset').attr('value', textOffset);
+        $('#advMetaRingRatio').attr('value', metaRingRatio);
+        $('#advMetaRingScales').attr('value', metaRingScales.join(', '));
 
         /*
          * Disable 'start' button
@@ -2988,7 +3848,7 @@ $(function () {
          * Enable editing buttons
          */
 
-        w2ui.Layout_main_toolbar.enable('btn-dellink', 'btn-delnode', 'btn-svgsave', 'btn-outline', 'btn-zoomin', 'btn-zoomout', 'btn-legend', 'btn-time', 'btn-style', 'btn-distance', 'btn-advanced');
+        w2ui.Layout_main_toolbar.enable('btn-dellink', 'btn-delnode', 'btn-saveimage', 'btn-zoomin', 'btn-zoomout', 'btn-legend', 'btn-distance', 'btn-edgeweight', 'btn-advanced');
         // btn-haplotype is only enabled after a 3-column hapconf file is loaded
         w2ui.Layout_main_toolbar.disable('btn-haplotype');
 
@@ -3027,19 +3887,32 @@ $(function () {
         const groups = getGroupsGrid(style);
         const haplotypes = getHaplotypesGrid(style);
 
-        const characters = getTraitsGrid(style);
-
         /*
          * Create a new layout
          */
 
-        const layout = getLayout(style, groups, haplotypes, characters);
+        const layout = getLayout(style, groups, haplotypes);
 
-        layout.html('top', '<div style="float: left;"><button id="loadData" class="w2ui-btn">Load Data</button></div><div style="float: right;"><button id="help" class="w2ui-btn">Help</button></div>');
+        layout.html('top',
+            '<div style="float: left;">' +
+            '<button id="toggleLeft" class="w2ui-btn netst-toggle-btn" title="Show/hide the Data panel">' +
+            '<span class="netst-toggle-icon">&#171;</span> Data</button>' +
+            '<button id="loadData" class="w2ui-btn">Load Data</button>' +
+            '</div>' +
+            '<div style="float: right;">' +
+            '<button id="help" class="w2ui-btn">Help</button>' +
+            '<button id="toggleRight" class="w2ui-btn netst-toggle-btn" title="Show/hide the Haplotype Network Info panel">' +
+            'Info <span class="netst-toggle-icon">&#187;</span></button>' +
+            '</div>');
         // layout.html('top', '');
         layout.html('left', w2ui.haplotypes);
         layout.html('right',
             '<div style="display:flex; flex-direction:column; height:100%; box-sizing:border-box;">' +
+            '<div style="padding:8px 10px; border-bottom:1px solid #e0e0e0; display:flex; gap:4px;">' +
+            '<input id="node-search-input" type="text" placeholder="Search node..." ' +
+            'style="flex:1; padding:5px 8px; border:1px solid #cfd8dd; border-radius:5px; font-size:12px; outline:none;" />' +
+            '<button id="node-search-btn" class="w2ui-btn" style="padding:4px 10px; font-size:12px;">Go</button>' +
+            '</div>' +
             '<div id="node-info-panel" style="padding:12px; overflow:auto; flex:1; box-sizing:border-box;">' +
             '<div style="color:#aaa; text-align:center; margin-top:60px; font-size:12px; line-height:1.6;">' +
             'Click a node or edge to<br>view its information' +
@@ -3059,31 +3932,42 @@ $(function () {
          * Advanced Settings overlay popup
          */
         $('body').append(
-            '<div id="advanced-settings-overlay" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);' +
-            'background:#fff; border:1px solid #ccc; border-radius:4px; box-shadow:0 4px 20px rgba(0,0,0,0.35); z-index:9999; width:340px;">' +
-            '<div style="background:#2d4a6a; color:#fff; padding:8px 14px; border-radius:4px 4px 0 0; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span style="font-weight:bold; font-size:13px;">Advanced Layout Setting</span>' +
-            '<button id="close-advanced-settings" style="background:none; border:none; color:#fff; cursor:pointer; font-size:18px; line-height:1; padding:0;">&#x00D7;</button>' +
+            '<div id="advanced-settings-overlay" class="adv-overlay" style="display:none;">' +
+            '<div class="adv-header" id="adv-header">' +
+            '<span class="adv-title">Advanced Layout Setting</span>' +
+            '<button id="close-advanced-settings" class="adv-close" title="Close">&#x00D7;</button>' +
             '</div>' +
-            '<div style="padding:15px 18px;">' +
-            '<div style="font-weight:bold; font-size:12px; color:#2d4a6a; border-bottom:1px solid #ccc; padding-bottom:4px; margin-bottom:10px;">Force-Directed Layout Settings</div>' +
+            '<div class="adv-body">' +
+            '<div class="adv-section">Force-Directed Layout Settings</div>' +
             '<div class="w2ui-field"><label>Link Distance:</label><div><input type="text" id="linkDistance" /></div></div>' +
             '<div class="w2ui-field"><label>Link Strength:</label><div><input type="text" id="linkStrength" /></div></div>' +
             '<div class="w2ui-field"><label>Friction:</label><div><input type="text" id="friction" /></div></div>' +
             '<div class="w2ui-field"><label>Charge:</label><div><input type="text" id="charge" /></div></div>' +
             '<div class="w2ui-field"><label>Gravity:</label><div><input type="text" id="gravity" /></div></div>' +
-            '<p><div style="text-align:center;"><button class="w2ui-btn" id="start" name="start" disabled>Start</button></div></p>' +
-            '<div style="text-align:center;"><button class="w2ui-btn" id="stop" name="stop" disabled>Stop</button></div>' +
-            '<div style="font-weight:bold; font-size:12px; color:#2d4a6a; border-bottom:1px solid #ccc; padding-bottom:4px; margin-top:14px; margin-bottom:10px;">Layout Settings</div>' +
-            '<div class="w2ui-field"><label>Std. Radius:</label><div><input type="text" id="advStandRadius" /></div></div>' +
-            '<div class="w2ui-field"><label>Line Width:</label><div><input type="text" id="advLineWidth" /></div></div>' +
-            '<div class="w2ui-field"><label>Outer Radius Coeff:</label><div><input type="text" id="advOuterRadiusCoeff" /></div></div>' +
-            '<div class="w2ui-field"><label>Inner Radius Coeff:</label><div><input type="text" id="advInnerRadiusCoeff" /></div></div>' +
+            '<div class="adv-btn-row">' +
+            '<button class="w2ui-btn" id="start" name="start" disabled>Start</button>' +
+            '<button class="w2ui-btn" id="stop" name="stop" disabled>Stop</button>' +
+            '</div>' +
+            '<div class="adv-section">Node and Edge Settings</div>' +
+            '<div class="w2ui-field"><label>Node Radius:</label><div><input type="text" id="advNodeRadius" /></div></div>' +
+            '<div class="adv-hint">Radius in pixels for a frequency-1 node. Relative node sizes are preserved.</div>' +
+            '<div class="w2ui-field"><label>Node Line Width:</label><div><input type="text" id="advNodeLineWidth" /></div></div>' +
+            '<div class="w2ui-field"><label>Edge Line Width:</label><div><input type="text" id="advEdgeLineWidth" /></div></div>' +
+            '<div class="adv-hint">Base stroke width in pixels for edges between nodes.</div>' +
+            '<div class="w2ui-field"><label>Edge Weight Scale:</label><div><input type="text" id="advEdgeWeightScale" /></div></div>' +
+            '<div class="adv-hint">Maximum multiplier of Edge Line Width when Edge Weight is on. Edges thin toward the base width as Changes increases.</div>' +
             '<div class="w2ui-field"><label>Text Offset:</label><div><input type="text" id="advTextOffset" /></div></div>' +
-            '<div id="adv-layout-error" style="color:#c0392b; font-size:11px; margin-top:6px; display:none;"></div>' +
-            '<div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">' +
+            '<div class="adv-section">Metadata Ring Settings</div>' +
+            '<div class="w2ui-field"><label>Ring Line Width:</label><div><input type="text" id="advMetaRingLineWidth" /></div></div>' +
+            '<div class="w2ui-field"><label>Ring Width Ratio:</label><div><input type="text" id="advMetaRingRatio" /></div></div>' +
+            '<div class="adv-hint">Ring width as a fraction of node radius. Each ring width = node radius \u00D7 ratio \u00D7 scale.</div>' +
+            '<div class="w2ui-field"><label>Outer Ring Ratios:</label><div><input type="text" id="advMetaRingScales" placeholder="1, 1, 1" /></div></div>' +
+            '<div class="adv-hint">Comma-separated ratios from inner to outer. Missing values use 1.</div>' +
+            '<div id="advMetaRingOrder" class="adv-order"></div>' +
+            '<div id="adv-layout-error" class="adv-error"></div>' +
+            '<div class="adv-footer">' +
             '<button class="w2ui-btn" id="adv-cancel">Cancel</button>' +
-            '<button class="w2ui-btn" id="adv-apply">Apply</button>' +
+            '<button class="w2ui-btn adv-primary" id="adv-apply">Apply</button>' +
             '</div>' +
             '</div>' +
             '</div>'
@@ -3091,6 +3975,41 @@ $(function () {
         $('#close-advanced-settings').click(function () {
             $('#advanced-settings-overlay').hide();
         });
+        // Make the dialog draggable by its header. On the first drag we switch
+        // from the centering transform to explicit pixel coordinates so the
+        // pointer stays locked to the grab point.
+        (function () {
+            var overlay = document.getElementById('advanced-settings-overlay');
+            var header = document.getElementById('adv-header');
+            if (!overlay || !header) return;
+            var dragging = false, startX = 0, startY = 0, baseLeft = 0, baseTop = 0;
+            header.addEventListener('mousedown', function (event) {
+                if (event.target.id === 'close-advanced-settings') return;
+                var rect = overlay.getBoundingClientRect();
+                overlay.style.transform = 'none';
+                overlay.style.left = rect.left + 'px';
+                overlay.style.top = rect.top + 'px';
+                baseLeft = rect.left;
+                baseTop = rect.top;
+                startX = event.clientX;
+                startY = event.clientY;
+                dragging = true;
+                event.preventDefault();
+            });
+            document.addEventListener('mousemove', function (event) {
+                if (!dragging) return;
+                var left = baseLeft + (event.clientX - startX);
+                var top = baseTop + (event.clientY - startY);
+                // Keep the header on screen so the dialog can always be grabbed.
+                var maxLeft = window.innerWidth - 60;
+                var maxTop = window.innerHeight - 30;
+                overlay.style.left = Math.min(maxLeft, Math.max(60 - overlay.offsetWidth, left)) + 'px';
+                overlay.style.top = Math.min(maxTop, Math.max(0, top)) + 'px';
+            });
+            document.addEventListener('mouseup', function () {
+                dragging = false;
+            });
+        })();
 
 
         $('#loadGraph').on('change', function (event) {
@@ -3099,6 +4018,78 @@ $(function () {
         $('#loadData').click(function () {
             $('#loadGraph').click();
         });
+        $('#node-search-btn').click(function () {
+            searchNode($('#node-search-input').val());
+        });
+        $('#node-search-input').on('keydown', function (e) {
+            if (e.which === 13) searchNode($(this).val());
+        });
+        $(document).on('keydown', function (e) {
+            if ((e.ctrlKey || e.metaKey) && e.which === 90) {
+                e.preventDefault();
+                undoDelete();
+            }
+        });
+
+        /*
+         * Collapsible side panels. The Data (left) and Haplotype Network Info
+         * (right) panels can be hidden to give the network more room; the top
+         * bar buttons stay visible so a collapsed panel can always be reopened.
+         * The chevron points outward when the panel is open (click to collapse)
+         * and inward when it is hidden (click to reveal).
+         */
+        function netstUpdatePanelToggles() {
+            if (!w2ui.Layout) return;
+            var leftPanel = w2ui.Layout.get('left');
+            var rightPanel = w2ui.Layout.get('right');
+            if (leftPanel) {
+                $('#toggleLeft .netst-toggle-icon').html(leftPanel.hidden ? '&#187;' : '&#171;');
+            }
+            if (rightPanel) {
+                $('#toggleRight .netst-toggle-icon').html(rightPanel.hidden ? '&#171;' : '&#187;');
+            }
+        }
+
+        $('#toggleLeft').click(function () {
+            w2ui.Layout.toggle('left');
+            netstUpdatePanelToggles();
+        });
+        $('#toggleRight').click(function () {
+            w2ui.Layout.toggle('right');
+            netstUpdatePanelToggles();
+        });
+        // Constrain both side-panel dividers to between 1/8 and 1/3 of the page
+        // width. w2ui reads panel.minSize/maxSize live while dragging, so the
+        // bounds are recomputed on window resize to stay proportional, and any
+        // panel a shrinking window pushed past the new maximum is clamped back.
+        function netstApplyPanelSizeBounds() {
+            if (!w2ui.Layout) return;
+            var pageWidth = window.innerWidth || document.documentElement.clientWidth || 1280;
+            var minSize = Math.round(pageWidth / 8);
+            var maxSize = Math.round(pageWidth / 3);
+            var needResize = false;
+            ['left', 'right'].forEach(function (type) {
+                var panel = w2ui.Layout.get(type);
+                if (!panel) return;
+                panel.minSize = minSize;
+                panel.maxSize = maxSize;
+                var size = parseInt(panel.size, 10);
+                if (!isNaN(size)) {
+                    var clamped = Math.min(maxSize, Math.max(minSize, size));
+                    if (clamped !== size) {
+                        panel.size = clamped;
+                        needResize = true;
+                    }
+                }
+            });
+            if (needResize && typeof w2ui.Layout.resize === 'function') {
+                w2ui.Layout.resize();
+            }
+        }
+
+        $(window).on('resize', netstApplyPanelSizeBounds);
+        netstApplyPanelSizeBounds();
+        netstUpdatePanelToggles();
 
         //$('#massFactor').w2field('float', { min: 1, max: 10, step: 0.5, arrows: true });
         $('#linkDistance').w2field('float', {min: 0.1, max: 10, step: 0.1, arrows: false});
@@ -3108,25 +4099,55 @@ $(function () {
         // Do not mess with this!
         // $('#chargeDistance').w2field('int', { min: 0, step: 10, arrows: false });
         $('#gravity').w2field('float', {min: 0, max: 1, step: 0.001, arrows: false});
-        $('#advStandRadius').w2field('float', {min: 0.1, max: 100, step: 0.5, arrows: false});
-        $('#advLineWidth').w2field('float', {min: 0.1, max: 10, step: 0.1, arrows: false});
-        $('#advOuterRadiusCoeff').w2field('float', {min: 0.1, max: 5, step: 0.05, arrows: false});
-        $('#advInnerRadiusCoeff').w2field('float', {min: 0, max: 5, step: 0.05, arrows: false});
+        $('#advNodeRadius').w2field('float', {min: 0.1, max: 100, step: 0.5, arrows: false});
+        $('#advNodeLineWidth').w2field('float', {min: 0, max: 10, step: 0.1, arrows: false});
+        $('#advEdgeLineWidth').w2field('float', {min: 0, max: 10, step: 0.1, arrows: false});
+        $('#advEdgeWeightScale').w2field('float', {min: 1, max: 30, step: 0.5, arrows: false});
+        $('#advMetaRingLineWidth').w2field('float', {min: 0, max: 10, step: 0.1, arrows: false});
         $('#advTextOffset').w2field('float', {min: 0, max: 50, step: 0.5, arrows: false});
+        $('#advMetaRingRatio').w2field('float', {min: 0.05, max: 5, step: 0.05, arrows: false});
 
         $('#adv-apply').on('click', function () {
-            var newRadius = parseFloat($('#advStandRadius').val());
-            var newLineWidth = parseFloat($('#advLineWidth').val());
-            var newOuter = parseFloat($('#advOuterRadiusCoeff').val());
-            var newInner = parseFloat($('#advInnerRadiusCoeff').val());
+            var newNodeRadius = parseFloat($('#advNodeRadius').val());
+            var newNodeLineWidth = parseFloat($('#advNodeLineWidth').val());
+            var newEdgeLineWidth = parseFloat($('#advEdgeLineWidth').val());
+            var newEdgeWeightScale = parseFloat($('#advEdgeWeightScale').val());
+            var newMetaRingLineWidth = parseFloat($('#advMetaRingLineWidth').val());
             var newTextOffset = parseFloat($('#advTextOffset').val());
+            var newMetaRingRatio = parseFloat($('#advMetaRingRatio').val());
+            var ringScaleText = $.trim($('#advMetaRingScales').val());
+            var newMetaRingScales = [];
+            if (ringScaleText !== '') {
+                newMetaRingScales = ringScaleText.split(',').map(function (value) {
+                    return Number($.trim(value));
+                });
+            }
 
             var errors = [];
-            if (isNaN(newRadius) || newRadius <= 0) errors.push('Std. Radius must be > 0.');
-            if (isNaN(newLineWidth) || newLineWidth <= 0) errors.push('Line Width must be > 0.');
-            if (isNaN(newOuter) || newOuter < 1) errors.push('Outer Radius Coeff must be \u2265 1.');
-            if (isNaN(newInner) || newInner > 1) errors.push('Inner Radius Coeff must be \u2264 1.');
+            if (isNaN(newNodeRadius) || newNodeRadius <= 0) {
+                errors.push('Node Radius must be > 0.');
+            }
+            if (isNaN(newNodeLineWidth) || newNodeLineWidth < 0) {
+                errors.push('Node Line Width must be \u2265 0.');
+            }
+            if (isNaN(newEdgeLineWidth) || newEdgeLineWidth < 0) {
+                errors.push('Edge Line Width must be \u2265 0.');
+            }
+            if (isNaN(newEdgeWeightScale) || newEdgeWeightScale < 1) {
+                errors.push('Edge Weight Scale must be \u2265 1.');
+            }
+            if (isNaN(newMetaRingLineWidth) || newMetaRingLineWidth < 0) {
+                errors.push('Ring Line Width must be \u2265 0.');
+            }
             if (isNaN(newTextOffset) || newTextOffset < 0) errors.push('Text Offset must be \u2265 0.');
+            if (isNaN(newMetaRingRatio) || newMetaRingRatio <= 0) {
+                errors.push('Ring Width Ratio must be > 0.');
+            }
+            if (newMetaRingScales.some(function (value) {
+                return !isFinite(value) || value <= 0 || value > 20;
+            })) {
+                errors.push('Outer Ring Ratios must be comma-separated numbers > 0 and \u2264 20.');
+            }
 
             var $err = $('#adv-layout-error');
             if (errors.length > 0) {
@@ -3137,25 +4158,34 @@ $(function () {
 
             if (!svg) return;
 
-            // Apply Std. Radius (scale all existing node radii proportionally)
-            if (newRadius !== standardRadius) {
-                var scale = newRadius / standardRadius;
-                standardRadius = newRadius;
+            // Preserve frequency-derived relative sizes while changing the
+            // radius of a frequency-1 haplotype node. Transition nodes keep
+            // their small ancestor radius.
+            if (newNodeRadius !== standardRadius) {
+                var nodeScale = newNodeRadius / standardRadius;
+                standardRadius = newNodeRadius;
                 nodeList.forEach(function (node) {
-                    node.radius = node.radius * scale;
-                    node.proportions.forEach(function (p) {
-                        p.radius = p.radius * scale;
+                    if (node.nodestyle !== 1) return;
+                    node.radius *= nodeScale;
+                    node.proportions.forEach(function (proportion) {
+                        proportion.radius *= nodeScale;
                     });
-                    node.timeProportions.forEach(function (p) {
-                        if (p.radius) p.radius = p.radius * scale;
+                    node.timeProportions.forEach(function (proportion) {
+                        if (proportion.radius) proportion.radius *= nodeScale;
                     });
                 });
+                linkList.forEach(function (item) {
+                    item.ldist = item.source.radius + item.target.radius +
+                        defaultLinkDistance + defaultDistance;
+                });
             }
-
-            linewidth = newLineWidth;
-            outerRadiusCoeff = newOuter;
-            innerRadiusCoeff = newInner;
+            nodeLineWidth = newNodeLineWidth;
+            edgeLineWidth = newEdgeLineWidth;
+            edgeWeightScale = newEdgeWeightScale;
+            metaRingLineWidth = newMetaRingLineWidth;
             textOffset = newTextOffset;
+            metaRingRatio = newMetaRingRatio;
+            metaRingScales = newMetaRingScales;
 
             updateSVG();
             $('#advanced-settings-overlay').hide();
@@ -3163,11 +4193,14 @@ $(function () {
 
         $('#adv-cancel').on('click', function () {
             // Restore inputs to current in-effect values and close
-            $('#advStandRadius').val(standardRadius);
-            $('#advLineWidth').val(linewidth);
-            $('#advOuterRadiusCoeff').val(outerRadiusCoeff);
-            $('#advInnerRadiusCoeff').val(innerRadiusCoeff);
+            $('#advNodeRadius').val(standardRadius);
+            $('#advNodeLineWidth').val(nodeLineWidth);
+            $('#advEdgeLineWidth').val(edgeLineWidth);
+            $('#advEdgeWeightScale').val(edgeWeightScale);
+            $('#advMetaRingLineWidth').val(metaRingLineWidth);
             $('#advTextOffset').val(textOffset);
+            $('#advMetaRingRatio').val(metaRingRatio);
+            $('#advMetaRingScales').val(metaRingScales.join(', '));
             $('#adv-layout-error').hide();
             $('#advanced-settings-overlay').hide();
         });
@@ -3187,6 +4220,13 @@ $(function () {
     window.loadGroups = loadGroups;
     window.loadHaplotypes = loadHaplotypes;
     window.loadTraits = loadTraits;
+    window.loadMetaConfig = loadMetaConfig;
+    window.exportMetaConfig = function () {
+        if (!metaConfig) return null;
+        // Return a detached JSON value so QWebEngine can safely serialize it
+        // back to NetST's Metadata/Data tabs.
+        return JSON.parse(JSON.stringify(metaConfig));
+    };
 
     // Auto-load pre-embedded data files (set by generated {prefix}.js).
     // These globals are defined when the HTML was opened with a data script.

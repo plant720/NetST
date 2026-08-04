@@ -128,10 +128,11 @@
                 <li><a href="#labels">Haplotype labels in TCS files</a></li>
                 <li><a href="#groups">Step 2: Defining classification groups</a></li>
                 <li><a href="#haplotypes">Step 3: Classifying haplotypes</a></li>
-                <li><a href="#traits">Step 4: Loading continuous trait data</a></li>
-                <li><a href="#display-style">Display styles</a></li>
+                <li><a href="#traits">Step 4: Trait data and concentric rings</a></li>
+                <li><a href="#display-style">Node rendering: the concentric-ring model</a></li>
                 <li><a href="#force-directed">Force-directed layout algorithm</a></li>
-                <li><a href="#editing">Editing the network</a></li>
+                <li><a href="#advanced">Advanced settings dialog</a></li>
+                <li><a href="#editing">Editing the network (toolbar reference)</a></li>
                 <li><a href="#saving">Saving the network</a></li>
             </ul>
         </li>
@@ -162,14 +163,21 @@
         <li>Classify haplotypes (for example, according to sampling locations or dates) and display this information as
             pie-chart-like haplogroups within the network.
         </li>
-        <li>Load continuous trait data (such as collection time or any numeric variable) and visualize it as an inner
-            ring within each node, using a color gradient.
+        <li>Visualize <b>several categorical and continuous traits at once</b> as <b>concentric rings</b> around each
+            node — the group innermost, then each additional trait outward — with a matching multi-ring legend.
         </li>
         <li>Display haplotype names (e.g., H1, H2) on nodes when a three-column haplotype configuration file is
-            provided.
+            provided, and toggle per-edge mutation-distance labels.
         </li>
-        <li>Save the final network as a Scalable Vector Graphics (SVG) file for publication or further editing.</li>
+        <li>Save the final network as <b>SVG (vector), PNG, or JPG</b> for publication or further editing.</li>
     </ul>
+
+    <div class="note"><b>This build.</b> tcsBU here is the enhanced version embedded in <b>NetST</b>. When NetST drives
+        it, the concentric multi-trait rings are configured on NetST's <i>Metadata</i> page and the configuration files
+        below are generated automatically — you normally do not edit them by hand. The toolbar and dialogs described in
+        this document match the current build (for example, trait rings replace the old single "Style"/"Color" toggles,
+        and image export offers SVG/PNG/JPG).
+    </div>
 
     <h2><a id="software">The software</a></h2>
 
@@ -226,9 +234,10 @@
     <div class="workflow-step"><b>Step 3:</b> Load a haplotype configuration file from the <i>Haplotypes</i> tab &rarr;
         each sequence is assigned to a group; optionally, haplotype names (H1, H2, …) are assigned to nodes.
     </div>
-    <div class="workflow-step"><b>Step 4 (optional):</b> Load a trait configuration file from the <i>Traits</i> tab
-        &rarr; a continuous variable (e.g., collection time or body size) is associated with each sequence and
-        visualized as an inner ring gradient.
+    <div class="workflow-step"><b>Step 4 (optional):</b> Add one or more traits &rarr; each haplotype node gains
+        <i>concentric rings</i> (categorical rings segmented by class proportions, continuous rings coloured by a
+        gradient). In <b>NetST</b> these rings are configured on the <i>Metadata</i> page and pushed to tcsBU
+        automatically; a standalone trait configuration file can also be provided for a single continuous trait.
     </div>
 
     <div class="note"><b>Important:</b> Always load or define groups (Step 2) <i>before</i> loading haplotype
@@ -335,8 +344,9 @@ cross-1, cross-2
             <td>Sequence name</td>
             <td>Group name</td>
             <td>Haplotype name (e.g., H1, H2)</td>
-            <td>Assigns sequences to groups <i>and</i> sets a custom haplotype label (e.g., H1) for each node. The <b>Show
-                Hap Labels</b> toolbar button is enabled only when a 3-column file is loaded.
+            <td>Assigns sequences to groups <i>and</i> sets a custom haplotype label (e.g., H1) for each node. The
+                <b>Haplotype</b> toolbar button (which toggles the labels) is enabled only when a 3-column file is
+                loaded.
             </td>
         </tr>
     </table>
@@ -345,75 +355,61 @@ cross-1, cross-2
         with a digit). Group names must match those defined in the Groups tab. See <a href="#fmt-hapconf">Haplotype
             configuration file format</a> for examples.</p>
 
-    <h3><a id="traits">Step 4: Loading continuous trait data</a></h3>
+    <h3><a id="traits">Step 4: Trait data and concentric rings</a></h3>
 
-    <p>A continuous trait (such as collection year, body size, or any other numeric variable) can be associated with
-        sequences by clicking the <b>Load</b> button in the <b>Traits</b> tab. This calls the internal
-        <code>loadTraits</code> function and reads a semicolon-delimited file with two columns: sequence name and
-        numeric value. No header row is expected.</p>
+    <p>Beyond the primary group, additional traits can be layered onto each node as <b>concentric rings</b>. There are
+        two paths, depending on how tcsBU is used:</p>
 
-    <p>After loading, <b>tcsBU</b>:</p>
     <ul>
-        <li>Determines the minimum and maximum trait values across all matched sequences.</li>
-        <li>Maps each value to a color position in the selected gradient palette (Gray, Red, Green, or Blue) using a
-            linear scale.
+        <li><b>In NetST (recommended):</b> configure any number of categorical and continuous traits on NetST's
+            <i>Metadata</i> page — set each trait's type, whether it is visualized, and its colours — then click
+            <b>Apply Visualization Config</b>. NetST rebuilds the ring configuration and refreshes tcsBU without
+            reconstructing the network. This uses tcsBU's internal <code>loadMetaConfig</code> path.
         </li>
-        <li>Updates the <code>timeProportions</code> field of each node in the internal node list.</li>
-        <li>Draws an <b>inner ring</b> inside each haplotype node. Each sector of the inner ring corresponds to one or
-            more sequences sharing the same trait value, colored according to the gradient. The outer ring retains the
-            group color/pattern information.
+        <li><b>Standalone single trait:</b> a single continuous trait can be supplied as a two-column,
+            semicolon-delimited file (sequence name; numeric value, no header) via the internal <code>loadTraits</code>
+            path. See <a href="#fmt-traitconf">Trait configuration file format</a>.
         </li>
     </ul>
 
-    <p>The gradient color palette can be changed at any time using the <b>Color</b> drop-down in the toolbar (options:
-        Gray, Red, Green, Blue). A gradient legend bar showing the minimum and maximum trait values is displayed when
-        the Legend is toggled on.</p>
+    <p>For a continuous trait, tcsBU determines the minimum and maximum values across matched sequences and maps each
+        value to a position on that trait's colour gradient with a linear scale. For a categorical trait, each ring is
+        segmented by the class proportions of the node's members. A legend showing every class swatch and each
+        continuous gradient's range is displayed when the <b>Legend</b> is toggled on.</p>
 
-    <p>See <a href="#fmt-traitconf">Trait configuration file format</a> for the expected file structure.</p>
+    <h3><a id="display-style">Node rendering: the concentric-ring model</a></h3>
 
-    <h3><a id="display-style">Display styles</a></h3>
+    <p>Each haplotype is drawn as a circle whose radius scales with its frequency (the number of sequences it
+        represents). Trait information is layered as concentric rings, ordered from the centre outward:</p>
 
-    <p>The <b>Style</b> drop-down button in the toolbar controls how group and trait information are rendered on nodes.
-        Three modes are available:</p>
+    <ul>
+        <li>The <b>group</b> (primary categorical trait) occupies the <b>innermost</b> ring, drawn as a pie chart
+            coloured by group.
+        </li>
+        <li>Each additional enabled trait is drawn as a further ring moving <b>outward</b>, in the order defined on
+            NetST's Metadata page. A <b>categorical</b> ring is segmented by the class proportions of the node's members;
+            a <b>continuous</b> ring is segmented by member value and coloured by that trait's own range and gradient.
+        </li>
+    </ul>
 
-    <table>
-        <tr>
-            <th>Style</th>
-            <th>Description</th>
-        </tr>
-        <tr>
-            <td><b>Dual-Trait</b></td>
-            <td>Default mode. If trait data has been loaded, the outer ring of each node shows group colors/patterns and
-                the inner ring shows the continuous trait gradient. Both legends (group legend and gradient bar) are
-                shown when the Legend is toggled on.
-            </td>
-        </tr>
-        <tr>
-            <td><b>Category</b></td>
-            <td>Only group colors/patterns are shown; the inner trait ring is hidden even if trait data is loaded. Only
-                the group legend is shown.
-            </td>
-        </tr>
-        <tr>
-            <td><b>Continuous</b></td>
-            <td>Only the continuous trait gradient is shown; the group colors/patterns are hidden. Only the gradient
-                legend bar is shown. Requires trait data to be loaded first.
-            </td>
-        </tr>
-    </table>
+    <p>Ring thickness and the node/edge/ring line widths are adjustable in the <a href="#advanced">Advanced settings
+        dialog</a>. The tcsBU <b>Legend</b> lists all rings in the same inner-to-outer order.</p>
 
-    <div class="note"><b>Note:</b> Selecting <i>Dual-Trait</i> or <i>Continuous</i> style without first loading a trait
-        file will produce a warning. Load the traitconf file before switching to these styles.
+    <div class="note"><b>Note:</b> This build uses a single default categorical palette and a single default numeric
+        gradient; the older per-node "Style" and gradient "Color" toolbar toggles have been removed. Colours are set per
+        trait (in NetST, on the Metadata page).
     </div>
 
     <h3><a id="force-directed">Force-directed layout algorithm</a></h3>
 
     <p>Once a GML file is loaded, the force-directed layout algorithm automatically starts and positions the nodes. The
         algorithm models haplogroups as electrically charged particles that repel each other, while edges act as springs
-        that hold connected nodes together. Layout parameters can be adjusted in the <b>Advanced</b> panel (toolbar
-        button):</p>
+        that hold connected nodes together. All layout parameters live in the <b>Force-Directed Layout Settings</b>
+        section of the <a href="#advanced">Advanced settings dialog</a> (toolbar <b>Advanced</b> button):</p>
 
     <ul>
+        <li><b>Link Distance:</b> the target spring length of edges, stretching or compressing the whole network.</li>
+        <li><b>Link Strength [0–1]:</b> how rigidly edges hold their target distance.</li>
         <li><b>Friction [0–1]:</b> velocity decay per iteration. A value of 1 is frictionless; 0 freezes all nodes.</li>
         <li><b>Charge:</b> electrostatic charge of each node (scales with node size). Negative values cause repulsion
             (recommended). The more negative, the stronger the repulsion.
@@ -423,17 +419,80 @@ cross-1, cross-2
         </li>
     </ul>
 
-    <p>Link distance is controlled separately via the <b>Distance</b> toolbar button. Default values work well for most
-        data sets; avoid adjusting them unless necessary.</p>
+    <p>Use the <b>Start</b> / <b>Stop</b> buttons in the same section to re-run or freeze the simulation after changing
+        parameters. Default values work well for most data sets; avoid adjusting them unless necessary.</p>
+
+    <h3><a id="advanced">Advanced settings dialog</a></h3>
+
+    <p>The toolbar <b>Advanced</b> button opens a settings dialog that can be <b>moved by dragging its title bar</b>. It
+        is organized into three sections:</p>
+
+    <table>
+        <tr>
+            <th>Section</th>
+            <th>Settings</th>
+        </tr>
+        <tr>
+            <td><b>Force-Directed Layout Settings</b></td>
+            <td>Link Distance, Link Strength, Friction, Charge, Gravity, plus <b>Start</b> / <b>Stop</b> to re-run or
+                freeze the layout (see above).
+            </td>
+        </tr>
+        <tr>
+            <td><b>Node and Edge Settings</b></td>
+            <td>
+                <ul>
+                    <li><b>Node Radius</b> — radius (px) of a frequency-1 node; relative sizes of higher-frequency nodes
+                        are preserved when this changes.
+                    </li>
+                    <li><b>Node Line Width</b> — stroke width of the node outline.</li>
+                    <li><b>Edge Line Width</b> — base stroke width of the edges (links) between nodes.</li>
+                    <li><b>Edge Weight Scale</b> — maximum multiplier applied to Edge Line Width when the toolbar's
+                        Edge Weight toggle is on. Edges approach the base width as their Changes value increases.
+                    </li>
+                    <li><b>Text Offset</b> — gap between a node and its label text.</li>
+                </ul>
+            </td>
+        </tr>
+        <tr>
+            <td><b>Metadata Ring Settings</b></td>
+            <td>
+                <ul>
+                    <li><b>Ring Line Width</b> — stroke width drawn between the segments of each trait ring.</li>
+                    <li><b>Base Ring Width</b> — base thickness (px) of each outer (non-group) ring at ratio 1; the
+                        actual thickness is <i>base width × the ring's ratio</i>.
+                    </li>
+                    <li><b>Outer Ring Ratios</b> — comma-separated thickness ratios, from the innermost outer ring to the
+                        outermost (missing values default to 1).
+                    </li>
+                </ul>
+            </td>
+        </tr>
+    </table>
+
+    <p>Enter values and click <b>Apply</b> to redraw the network, or <b>Cancel</b> to close without changes. Inputs are
+        validated (for example, widths must be zero or positive); invalid entries show an inline message.</p>
 
     <h3><a id="editing">Editing the network</a></h3>
 
-    <p>Once a network is displayed, it can be edited interactively using the toolbar buttons:</p>
+    <p>Once a network is displayed, it can be explored and edited interactively using the toolbar buttons:</p>
 
     <table>
         <tr>
             <th>Button</th>
             <th>Function</th>
+        </tr>
+        <tr>
+            <td><b>Load Data</b></td>
+            <td>Opens a file browser to load a GML network file (see <a href="#tcsfiles">Step 1</a>). In NetST the
+                network is loaded automatically, so this is mainly for standalone use.
+            </td>
+        </tr>
+        <tr>
+            <td><b>Save Image</b> (menu)</td>
+            <td>Exports the whole network as <b>SVG (vector)</b>, <b>PNG</b>, or <b>JPG</b>; a system save dialog then
+                chooses the location. See <a href="#saving">Saving the network</a>.
+            </td>
         </tr>
         <tr>
             <td><b>Zoom In / Zoom Out</b></td>
@@ -453,56 +512,54 @@ cross-1, cross-2
             </td>
         </tr>
         <tr>
-            <td><b>Outline</b> (toggle)</td>
-            <td>Draws a thin black border between sectors of each pie-chart node, improving readability when many groups
-                are displayed.
-            </td>
-        </tr>
-        <tr>
-            <td><b>Show Hap Labels</b> (toggle)</td>
-            <td>Displays the haplotype name (e.g., H1, H2) next to each haplotype node. Only available after a 3-column
-                hapconf file has been loaded.
-            </td>
-        </tr>
-        <tr>
             <td><b>Legend</b> (toggle)</td>
-            <td>Shows or hides the legend. The legend is draggable and can be repositioned anywhere on the canvas.
-                Depending on the current display style, the legend shows a group color/pattern key and/or a gradient bar
-                for the continuous trait.
+            <td>Shows or hides the legend. The legend is draggable and can be repositioned anywhere on the canvas. It
+                lists every trait ring — categorical class swatches and continuous-gradient ranges — in inner-to-outer
+                order.
             </td>
         </tr>
         <tr>
-            <td><b>Distance</b></td>
-            <td>Opens a panel to adjust the link distance parameter of the force-directed layout, stretching or
-                compressing the network.
+            <td><b>Haplotype</b> (toggle)</td>
+            <td>Displays the haplotype name (e.g., H1, H2) next to each node. Enabled only after a 3-column hapconf file
+                has been loaded.
+            </td>
+        </tr>
+        <tr>
+            <td><b>Distance</b> (toggle)</td>
+            <td>Shows or hides the mutation-distance (number of changes) label on each edge.</td>
+        </tr>
+        <tr>
+            <td><b>Edge Weight</b> (toggle)</td>
+            <td>Weights edge thickness by mutation distance: fewer changes produce thicker edges. The base width and
+                maximum multiplier are controlled by Edge Line Width and Edge Weight Scale in Advanced settings.
             </td>
         </tr>
         <tr>
             <td><b>Advanced</b></td>
-            <td>Opens the advanced force-layout parameter panel (Friction, Charge, Gravity, line width).</td>
-        </tr>
-        <tr>
-            <td><b>Style</b></td>
-            <td>Selects the display style (Dual-Trait, Category, or Continuous). See <a href="#display-style">Display
-                styles</a>.
+            <td>Opens the draggable <a href="#advanced">Advanced settings dialog</a> (force-directed layout; node and
+                edge settings; metadata ring settings).
             </td>
-        </tr>
-        <tr>
-            <td><b>Color</b></td>
-            <td>Selects the gradient color palette for the continuous trait: Gray, Red, Green, or Blue.</td>
         </tr>
     </table>
 
     <p>Individual nodes can also be dragged to any position by clicking and holding. Releasing a node will re-engage the
-        force-directed simulation from that position.</p>
+        force-directed simulation from that position. The left <b>Data</b> panel (Groups / Haplotypes) and the right
+        <b>Info</b> panel can each be collapsed with the chevron buttons to give the network more room.</p>
 
     <h3><a id="saving">Saving the network</a></h3>
 
-    <p>Click the <b>Save SVG</b> button to export the entire network as a Scalable Vector Graphics (SVG) text file. All
-        parts of the network — including any nodes currently outside the visible area — are included in the output. The
-        legend is not scalable in SVG, so it is advisable to scale the network appropriately before saving. The
-        resulting SVG file can be embedded directly in a modern word processor or further edited and exported using
-        vector graphics software such as Inkscape or Adobe Illustrator&reg;.</p>
+    <p>Use the <b>Save Image</b> toolbar menu to export the entire network. Three formats are offered:</p>
+
+    <ul>
+        <li><b>SVG (vector)</b> — a standard <code>image/svg+xml</code> file. All parts of the network, including any
+            nodes currently outside the visible area, are included. It can be embedded directly in a modern word
+            processor or edited in vector software such as Inkscape or Adobe Illustrator&reg;.
+        </li>
+        <li><b>PNG</b> and <b>JPG</b> — raster images, exported at 2&times; resolution by default for sharper output.</li>
+    </ul>
+
+    <p>After choosing a format, a system save dialog lets you pick the location. The legend is not scalable, so it is
+        advisable to scale the network appropriately before saving.</p>
 
     <h2><a id="fileformats">File formats</a></h2>
 
@@ -563,8 +620,8 @@ L1879_MA-RAS;Morocco;H2
 </pre>
 
     <p>When a three-column file is loaded, sequences sharing the same haplotype label (column 3) are grouped into the
-        same network node and that label is used as the node's display name. The <b>Show Hap Labels</b> toolbar button
-        becomes enabled.</p>
+        same network node and that label is used as the node's display name. The <b>Haplotype</b> toolbar button
+        (which toggles the labels) becomes enabled.</p>
 
     <div class="note"><b>Reminder:</b> Sequence names must exactly match those in the GML file. If any name originally
         started with a digit, it will have been automatically prepended with 'L' by <b>tcsBU</b> — the same 'L' prefix

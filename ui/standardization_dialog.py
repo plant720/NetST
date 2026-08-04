@@ -188,17 +188,20 @@ class StandardizationDialog(QDialog):
 
         # Split options
         self.split_name = SplitOptionWidget(
-            lang_manager.get('dlg_std_use_as_name', 'Use as the new name'), 0)
+            lang_manager.get('dlg_std_use_as_name', 'Use as the new name'), 0,
+            group)
         self.split_name.set_preview_callback(self._update_preview)
         layout.addWidget(self.split_name)
 
         self.split_discrete = SplitOptionWidget(
-            lang_manager.get('dlg_std_use_as_discrete', 'Use as discrete trait'), 1)
+            lang_manager.get('dlg_std_use_as_discrete', 'Use as discrete trait'), 1,
+            group)
         self.split_discrete.set_preview_callback(self._update_preview)
         layout.addWidget(self.split_discrete)
 
         self.split_continuous = SplitOptionWidget(
-            lang_manager.get('dlg_std_use_as_continuous', 'Use as continuous trait'), 2)
+            lang_manager.get('dlg_std_use_as_continuous', 'Use as continuous trait'), 2,
+            group)
         self.split_continuous.set_preview_callback(self._update_preview)
         layout.addWidget(self.split_continuous)
 
@@ -314,7 +317,9 @@ class StandardizationDialog(QDialog):
         return None
 
     @staticmethod
-    def get_standardization_config(sequence_names: List[str], parent=None) -> Optional[StandardizationConfig]:
+    def get_standardization_config(
+        sequence_names: List[str], parent=None,
+    ) -> Optional[StandardizationConfig]:
         """
         Static method to show dialog and get configuration.
         

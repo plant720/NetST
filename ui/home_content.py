@@ -15,14 +15,14 @@ CONTENT = {
         "summary": "从 DNA/RNA 序列出发，在一个桌面工作流中完成比对、单倍型识别、网络构建和性状可视化。",
         "capabilities_title": "主要功能",
         "capabilities": [
-            ("数据与性状", "导入 FASTA、NEXUS、PHYLIP 或 VCF+metadata，并匹配性状。"),
+            ("数据与 metadata", "导入 FASTA、NEXUS、PHYLIP 或 VCF，并从样本 ID 或 CSV/TSV 解析 metadata。"),
             ("比对与单倍型", "使用 MAFFT 或 MUSCLE 进行比对，识别唯一单倍型及样本归属。"),
             ("网络构建", "支持 TCS、MSN、MJN、RMST 与 McAN Minimum-cost Arborescence Network。"),
             ("查看与辅助解读", "查看交互网络、多样性、距离/PCoA 与拓扑指标。"),
         ],
         "workflow_title": "快速开始",
         "workflow": [
-            ("1", "导入数据", "载入 FASTA、NEXUS、PHYLIP，或 VCF 与 metadata。"),
+            ("1", "导入数据", "载入 FASTA、NEXUS、PHYLIP 或 VCF；metadata 从样本 ID 解析。"),
             ("2", "检查样本", "在“数据”页确认名称、序列、性状和选择状态。"),
             ("3", "运行分析", "设置项目名称与输出目录，然后选择比对、单倍型或网络分析。"),
             ("4", "查看结果", "检查网络、比对和单倍型，或在“辅助解读”中查看统计结果。"),
@@ -47,14 +47,14 @@ CONTENT = {
         "summary": "Align DNA/RNA sequences, identify haplotypes, reconstruct networks, and visualize traits in one desktop workflow.",
         "capabilities_title": "Main capabilities",
         "capabilities": [
-            ("Data and traits", "Import FASTA, NEXUS, PHYLIP, or VCF with metadata and map traits."),
+            ("Data and metadata", "Import FASTA, NEXUS, PHYLIP, or VCF and parse metadata from sample IDs or CSV/TSV."),
             ("Alignment and haplotypes", "Run MAFFT or MUSCLE and identify unique haplotypes with sample assignments."),
             ("Network construction", "Build networks with TCS, MSN, MJN, RMST, or McAN Minimum-cost Arborescence Network."),
             ("Review and interpret", "Explore networks, diversity, distance/PCoA, and topology metrics."),
         ],
         "workflow_title": "Quick start",
         "workflow": [
-            ("1", "Import data", "Load FASTA, NEXUS, PHYLIP, or VCF with metadata."),
+            ("1", "Import data", "Load FASTA, NEXUS, PHYLIP, or VCF; metadata is parsed from sample IDs."),
             ("2", "Review samples", "Check names, sequences, traits, and selection in Data."),
             ("3", "Run analysis", "Set the project and output folder, then choose alignment, haplotype, or network analysis."),
             ("4", "Inspect results", "Review network, alignment, and haplotypes, or open Interpretation statistics."),

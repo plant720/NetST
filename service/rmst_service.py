@@ -1,14 +1,13 @@
-"""Internal RMST haplotype-network engine for NetST.
+"""Internal, NumPy-accelerated RMST haplotype-network engine for NetST.
 
 RMST (randomized minimum spanning tree) reconstructs the union of links that
 can occur in a minimum spanning tree.  NetST provides a deterministic exact
 mode and the repeated, seeded randomized mode described by Paradis (2018).
 
-The implementation is intentionally independent of the supplied pegas port.
-It consumes NetST's non-redundant haplotype FASTA and sample-to-haplotype CSV,
-then writes a tcsBU-compatible GML plus machine-readable JSON and TSV audit
-files.  Edge distances are uncorrected mutation counts over retained aligned
-sites.
+The performance-sensitive distance and graph operations use dense NumPy arrays,
+while this module preserves NetST's FASTA/metadata adapter, public result types,
+cancellation support, and tcsBU/JSON/TSV outputs.  Edge distances are
+uncorrected mutation counts over retained aligned sites.
 """
 
 from __future__ import annotations
@@ -16,8 +15,9 @@ from __future__ import annotations
 import csv
 from dataclasses import asdict, dataclass
 import json
-import random
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
+
+import numpy as np
 
 from service.format_conversion_service import FormatConversionError, read_fasta
 
@@ -83,31 +83,32 @@ class _WeightedEdge:
     distance: int
 
 
-class _DisjointSet:
-    def __init__(self, size: int) -> None:
-        self._parents = list(range(size))
-        self._ranks = [0] * size
+class _NumpyDisjointSet:
+    """Disjoint-set forest sharing its parent array with vectorized lookups."""
+
+    __slots__ = ("parents", "ranks")
+
+    def __init__(self, parents: np.ndarray) -> None:
+        self.parents = parents
+        self.ranks = np.zeros(len(parents), dtype=np.int64)
 
     def find(self, item: int) -> int:
-        root = item
-        while self._parents[root] != root:
-            root = self._parents[root]
-        while self._parents[item] != item:
-            parent = self._parents[item]
-            self._parents[item] = root
-            item = parent
-        return root
+        parents = self.parents
+        while parents[item] != item:
+            parents[item] = parents[parents[item]]
+            item = int(parents[item])
+        return item
 
     def union(self, left: int, right: int) -> bool:
         left_root = self.find(left)
         right_root = self.find(right)
         if left_root == right_root:
             return False
-        if self._ranks[left_root] < self._ranks[right_root]:
+        if self.ranks[left_root] < self.ranks[right_root]:
             left_root, right_root = right_root, left_root
-        self._parents[right_root] = left_root
-        if self._ranks[left_root] == self._ranks[right_root]:
-            self._ranks[left_root] += 1
+        self.parents[right_root] = left_root
+        if self.ranks[left_root] == self.ranks[right_root]:
+            self.ranks[left_root] += 1
         return True
 
 
@@ -149,37 +150,54 @@ def exact_rmst_edges(
     distances: Sequence[Sequence[int]],
     cancel_requested: CancelCallback = None,
 ) -> Tuple[Tuple[_WeightedEdge, ...], Tuple[_WeightedEdge, ...]]:
-    """Return a stable MST backbone and all other MST-compatible links."""
+    """Return a stable MST backbone and all other MST-compatible links.
+
+    The complete graph remains in compact NumPy arrays.  Component membership
+    for an equal-distance level is evaluated in one vectorized snapshot before
+    scalar union operations select the stable plotting backbone.
+    """
     matrix = _validated_distance_matrix(distances)
-    node_count = len(matrix)
+    node_count = matrix.shape[0]
     if node_count < 2:
         return (), ()
-    all_edges = sorted(_all_edges(matrix), key=lambda edge: (
-        edge.distance, edge.source, edge.target
-    ))
-    components = _DisjointSet(node_count)
+
+    rows, columns = np.triu_indices(node_count, 1)
+    weights = matrix[rows, columns]
+    order = np.argsort(weights, kind="stable")
+    rows = rows[order]
+    columns = columns[order]
+    weights = weights[order]
+
+    boundaries = np.flatnonzero(np.diff(weights)) + 1
+    starts = np.concatenate(([0], boundaries))
+    stops = np.concatenate((boundaries, [len(weights)]))
+
+    parents = np.arange(node_count, dtype=np.int64)
+    components = _NumpyDisjointSet(parents)
     backbone: List[_WeightedEdge] = []
     alternatives: List[_WeightedEdge] = []
-    start = 0
-    while start < len(all_edges):
+
+    for start, stop in zip(starts, stops):
         _check_cancelled(cancel_requested)
-        stop = start + 1
-        weight = all_edges[start].distance
-        while stop < len(all_edges) and all_edges[stop].distance == weight:
-            stop += 1
-        # Membership is evaluated before any edge at this weight is merged.
-        compatible = [
-            edge for edge in all_edges[start:stop]
-            if components.find(edge.source) != components.find(edge.target)
-        ]
-        for edge in compatible:
-            if components.union(edge.source, edge.target):
+        level_rows = rows[start:stop]
+        level_columns = columns[start:stop]
+        compatible = (
+            _find_roots(parents, level_rows)
+            != _find_roots(parents, level_columns)
+        )
+        distance = int(weights[start])
+        for source, target in zip(
+            level_rows[compatible].tolist(),
+            level_columns[compatible].tolist(),
+        ):
+            edge = _WeightedEdge(source, target, distance)
+            if components.union(source, target):
                 backbone.append(edge)
             else:
                 alternatives.append(edge)
         if len(backbone) == node_count - 1:
             break
-        start = stop
+
     if len(backbone) != node_count - 1:
         raise RMSTError("RMST distance graph is disconnected")
     return tuple(backbone), tuple(alternatives)
@@ -193,7 +211,7 @@ def randomized_rmst_edges(
 ) -> Tuple[Tuple[_WeightedEdge, ...], Tuple[_WeightedEdge, ...], Dict[Tuple[int, int], int]]:
     """Sample stable Kruskal trees after seeded permutations of node order."""
     matrix = _validated_distance_matrix(distances)
-    node_count = len(matrix)
+    node_count = matrix.shape[0]
     if node_count < 2:
         return (), (), {}
     if iterations < 1 or iterations > 1_000:
@@ -205,22 +223,23 @@ def randomized_rmst_edges(
             "or iteration count"
         )
 
-    generator = random.Random(seed)
+    rows, columns = np.triu_indices(node_count, 1)
+    weights = matrix[rows, columns]
+    # NetST historically accepts signed 32-bit seeds, while NumPy rejects
+    # negative integers.  Preserve the public range with a stable uint32 map.
+    generator = np.random.default_rng(seed & 0xFFFFFFFF)
     counts: Dict[Tuple[int, int], int] = {}
     distances_by_pair: Dict[Tuple[int, int], int] = {}
     last_tree: Tuple[_WeightedEdge, ...] = ()
+
     for _ in range(iterations):
         _check_cancelled(cancel_requested)
-        order = list(range(node_count))
-        generator.shuffle(order)
-        tied_edges: List[_WeightedEdge] = []
-        for column in range(node_count - 1):
-            for row in range(column + 1, node_count):
-                source, target = sorted((order[row], order[column]))
-                tied_edges.append(_WeightedEdge(
-                    source, target, matrix[source][target]
-                ))
-        last_tree = _stable_kruskal(node_count, tied_edges)
+        permutation = generator.permutation(node_count)
+        position = np.empty(node_count, dtype=np.int64)
+        position[permutation] = np.arange(node_count, dtype=np.int64)
+        last_tree = _kruskal_permuted(
+            node_count, rows, columns, weights, position
+        )
         for edge in last_tree:
             pair = (edge.source, edge.target)
             counts[pair] = counts.get(pair, 0) + 1
@@ -407,56 +426,127 @@ def _collapse_haplotypes(
 
 def _mutation_distance_matrix(
     nodes: Sequence[RMSTNode], cancel_requested: CancelCallback
-) -> Tuple[Tuple[int, ...], ...]:
+) -> np.ndarray:
+    """Compute all Hamming distances with bounded-memory matrix products."""
     size = len(nodes)
-    matrix = [[0] * size for _ in range(size)]
-    for left in range(size):
+    if size == 0:
+        return np.zeros((0, 0), dtype=np.int64)
+
+    sequence_length = len(nodes[0].sequence)
+    if sequence_length == 0:
+        return np.zeros((size, size), dtype=np.int64)
+    joined = "".join(node.sequence for node in nodes)
+    try:
+        raw = np.frombuffer(
+            joined.encode("ascii"),
+            dtype=np.uint8,
+        ).reshape(size, sequence_length)
+        symbols = np.flatnonzero(np.bincount(raw.ravel(), minlength=256))
+    except UnicodeEncodeError:
+        raw = np.frombuffer(
+            joined.encode("utf-32le"),
+            dtype="<u4",
+        ).reshape(size, sequence_length)
+        symbols = np.unique(raw)
+    agreements = np.zeros((size, size), dtype=np.float64)
+
+    # Keep temporary one-hot arrays bounded even for long alignments.
+    for start in range(0, sequence_length, 8192):
         _check_cancelled(cancel_requested)
-        for right in range(left + 1, size):
-            distance = sum(
-                a != b for a, b in zip(nodes[left].sequence, nodes[right].sequence)
-            )
-            matrix[left][right] = matrix[right][left] = distance
-    return tuple(tuple(row) for row in matrix)
+        block = raw[:, start:start + 8192]
+        for symbol in symbols:
+            _check_cancelled(cancel_requested)
+            one_hot = (block == symbol).astype(np.float64)
+            agreements += one_hot @ one_hot.T
+
+    distances = sequence_length - agreements
+    distances = np.rint((distances + distances.T) / 2.0).astype(np.int64)
+    np.fill_diagonal(distances, 0)
+    return distances
 
 
 def _validated_distance_matrix(
     distances: Sequence[Sequence[int]],
-) -> Tuple[Tuple[int, ...], ...]:
-    matrix = tuple(tuple(row) for row in distances)
-    size = len(matrix)
-    if any(len(row) != size for row in matrix):
+) -> np.ndarray:
+    if len(distances) == 0:
+        return np.zeros((0, 0), dtype=np.int64)
+    try:
+        raw = np.asarray(distances)
+        matrix = np.asarray(distances, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise RMSTError(
+            "RMST distances must be non-negative integers"
+        ) from exc
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
         raise RMSTError("RMST distance matrix must be square")
-    for left in range(size):
-        if matrix[left][left] != 0:
-            raise RMSTError("RMST distance matrix diagonal must be zero")
-        for right in range(left):
-            value = matrix[left][right]
-            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                raise RMSTError("RMST distances must be non-negative integers")
-            if value != matrix[right][left]:
-                raise RMSTError("RMST distance matrix must be symmetric")
-    return matrix
+    if raw.dtype == np.bool_ or (
+        raw.dtype == object
+        and any(isinstance(value, (bool, np.bool_)) for value in raw.flat)
+    ):
+        raise RMSTError("RMST distances must be non-negative integers")
+    if not np.all(np.isfinite(matrix)):
+        raise RMSTError("RMST distances must be finite")
+    if np.any(np.diag(matrix) != 0.0):
+        raise RMSTError("RMST distance matrix diagonal must be zero")
+    if not np.array_equal(matrix, matrix.T):
+        raise RMSTError("RMST distance matrix must be symmetric")
+    if np.any(matrix < 0.0) or np.any(matrix != np.floor(matrix)):
+        raise RMSTError("RMST distances must be non-negative integers")
+    if np.any(matrix > np.iinfo(np.int64).max):
+        raise RMSTError("RMST distances are too large")
+    return matrix.astype(np.int64, copy=False)
 
 
-def _all_edges(matrix: Sequence[Sequence[int]]) -> List[_WeightedEdge]:
-    return [
-        _WeightedEdge(source, target, matrix[source][target])
-        for source in range(len(matrix))
-        for target in range(source + 1, len(matrix))
-    ]
+def _find_roots(parents: np.ndarray, nodes: np.ndarray) -> np.ndarray:
+    """Return union-find roots for many nodes without mutating the snapshot."""
+    roots = nodes
+    ancestors = parents[roots]
+    while np.any(ancestors != roots):
+        roots = ancestors
+        ancestors = parents[roots]
+    return roots
 
 
-def _stable_kruskal(
-    node_count: int, edges: Iterable[_WeightedEdge]
+def _kruskal_permuted(
+    node_count: int,
+    rows: np.ndarray,
+    columns: np.ndarray,
+    weights: np.ndarray,
+    position: np.ndarray,
 ) -> Tuple[_WeightedEdge, ...]:
-    components = _DisjointSet(node_count)
+    """Build one MST with equal weights ordered by a node permutation."""
+    row_positions = position[rows]
+    column_positions = position[columns]
+    low = np.minimum(row_positions, column_positions)
+    high = np.maximum(row_positions, column_positions)
+    tie_order = (
+        low * (2 * node_count - low - 1) // 2
+        + (high - low - 1)
+    )
+    order = np.lexsort((tie_order, weights))
+
+    parents = list(range(node_count))
+
+    def find(item: int) -> int:
+        while parents[item] != item:
+            parents[item] = parents[parents[item]]
+            item = parents[item]
+        return item
+
     tree: List[_WeightedEdge] = []
-    for edge in sorted(edges, key=lambda item: item.distance):
-        if components.union(edge.source, edge.target):
-            tree.append(edge)
-            if len(tree) == node_count - 1:
-                return tuple(tree)
+    for source, target, distance in zip(
+        rows[order].tolist(),
+        columns[order].tolist(),
+        weights[order].tolist(),
+    ):
+        source_root = find(source)
+        target_root = find(target)
+        if source_root == target_root:
+            continue
+        parents[target_root] = source_root
+        tree.append(_WeightedEdge(source, target, int(distance)))
+        if len(tree) == node_count - 1:
+            return tuple(tree)
     raise RMSTError("RMST distance graph is disconnected")
 
 

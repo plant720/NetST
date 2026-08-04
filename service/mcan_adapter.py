@@ -1,4 +1,4 @@
-"""Adapter between NetST's aligned-FASTA workflow and McAN 1.2.
+"""Adapter between NetST's aligned-FASTA workflow and supported McAN releases.
 
 McAN consumes a mutation table, metadata and a site-mask file and writes a
 GraphML network.  NetST consumes aligned FASTA and its bundled tcsBU viewer
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -126,7 +127,7 @@ def read_aligned_fasta(path: str) -> List[Tuple[str, str]]:
         raise McanAdapterError("McAN requires non-empty, equal-length aligned sequences")
     if sequence_length > MAX_MCAN_SEQUENCE_LENGTH:
         raise McanAdapterError(
-            f"McAN 1.2 supports at most {MAX_MCAN_SEQUENCE_LENGTH} aligned sites; "
+            f"NetST's McAN adapter supports at most {MAX_MCAN_SEQUENCE_LENGTH} aligned sites; "
             f"the current alignment has {sequence_length}"
         )
     return records
@@ -245,7 +246,7 @@ def prepare_mcan_vcf_input(
     positions = sorted({record.position for record in vcf.records})
     if positions[-1] > MAX_MCAN_SEQUENCE_LENGTH:
         raise McanAdapterError(
-            f"McAN 1.2 supports VCF positions up to {MAX_MCAN_SEQUENCE_LENGTH}; "
+            f"NetST's McAN adapter supports VCF positions up to {MAX_MCAN_SEQUENCE_LENGTH}; "
             f"the input contains position {positions[-1]}"
         )
 
@@ -328,7 +329,7 @@ def convert_graphml_to_tcsbu_gml(
             raise McanAdapterError("McAN GraphML contains a missing or duplicate node ID")
         node_ids[node_id] = index
         data = _graphml_data(node, key_names, namespace)
-        aliases = [value for value in data.get("virus_name", "").split(";") if value]
+        aliases = _graphml_sample_aliases(data)
         unknown_aliases = [alias for alias in aliases if alias not in alias_to_name]
         if unknown_aliases:
             raise McanAdapterError(
@@ -384,6 +385,37 @@ def _graphml_data(element, key_names, namespace) -> Dict[str, str]:
         name = key_names.get(data.attrib.get("key", ""), data.attrib.get("key", ""))
         values[name] = data.text or ""
     return values
+
+
+def _graphml_sample_aliases(data: Dict[str, str]) -> List[str]:
+    """Read sample aliases emitted by supported McAN GraphML versions.
+
+    McAN 1.2 used ``virus_name`` while 1.4.x uses
+    ``virus$name@string``.  Accessions are an equivalent fallback because
+    NetST deliberately writes the same private alias into both metadata
+    columns before invoking McAN.
+    """
+    preferred_keys = (
+        "virus_name",
+        "virus$name@string",
+        "virus_name@string",
+        "virus$name",
+        "virus$accession@string",
+        "virus_accession",
+    )
+    raw_value = next((data[key] for key in preferred_keys if data.get(key)), "")
+    if not raw_value:
+        normalized = {
+            re.sub(r"[^a-z0-9]", "", key.lower()): value
+            for key, value in data.items()
+            if value
+        }
+        for key in ("virusnamestring", "virusname", "virusaccessionstring",
+                    "virusaccession"):
+            if normalized.get(key):
+                raw_value = normalized[key]
+                break
+    return [value.strip() for value in raw_value.split(";") if value.strip()]
 
 
 def _positive_int(value: str, fallback: int) -> int:

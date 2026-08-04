@@ -1,68 +1,101 @@
 # NetST
 
+> 🌐 **English** | [中文](README.zh-CN.md)
+
 **Haplotype Network Analysis Tool / 单倍型网络分析工具**
 
-NetST 是一个基于 PyQt6 的桌面科研软件，用于从 DNA/RNA 序列完成多序列比对、单倍型识别、单倍型网络构建与交互式可视化。本项目由旧版 VB.NET 程序重构而来。
+NetST is a PyQt6 desktop application for multiple-sequence alignment, haplotype identification, haplotype-network construction, and interactive visualization, rebuilt from a legacy VB.NET program. It targets population genetics, phylogeography, and molecular epidemiology, and unifies established engines (MAFFT, MUSCLE, fastHaN, McAN) with built-in algorithms (RMST, interpretation analytics) behind one bilingual interface.
 
-NetST is a PyQt6 desktop application for multiple-sequence alignment, haplotype identification, haplotype-network construction, and interactive visualization.
+**Interface version: 2.0.0**
 
-当前界面版本：**2.0.0**
+---
 
-## 功能概览
+## Table of Contents
 
-- 从 File 菜单导入 FASTA、NEXUS、PHYLIP 或 VCF 序列数据。
-- 将当前数据导出为 FASTA、NEXUS、PHYLIP、VCF+metadata，或独立导出性状表。
-- 导入多样本 VCF 与 McAN metadata，可选参考 FASTA 重建全长序列。
-- 在 **Tools** 中运行多序列比对、单倍型计算以及 FASTA、NEXUS、PHYLIP 与 VCF 的格式转换。
-- 在导入时清理、替换或拆分 FASTA 标题，并提取样本名和性状。
-- 从 CSV 文件导入离散性状与连续性状，支持可视化列映射。
-- 在表格中检查、编辑、选择或取消选择参与分析的序列。
-- 使用 MAFFT 或 MUSCLE 进行多序列比对。
-- 将完全相同的比对序列归并为唯一单倍型。
-- 使用 fastHaN 构建 Original TCS、Modified TCS、MSN 或 MJN 网络，使用内置 RMST，或使用 McAN Minimum-cost Arborescence Network。
-- 使用内嵌 tcsBU/D3.js 页面交互展示 GML 网络、分组和连续性状。
-- 展示比对矩阵、单倍型汇总和样本—单倍型映射。
-- 在 **Analysis → 辅助解读** 中报告序列缺失率、变异位点、Hd、π、θW 及分组私有单倍型。
-- 使用缺失感知的成对 p-distance 和经典 PCoA 探索序列间结构。
-- 从 NetST GML 计算组件、环秩、中心性、割点和桥边，并明确区分拓扑描述与祖先/传播推断。
-- 支持中文和英文界面。
-- 耗时分析在后台线程运行，可从状态栏取消；超时或取消时会清理外部进程及其子进程。
-- 中文/英文切换会同步刷新首页、菜单、页签、数据表头、状态栏、日志提示和结果摘要。
-- 精简的学术化 Home 集中展示软件定位、四项核心能力、快速流程、支持算法、输入和输出。
-- 分析前检查空名称、空序列、非有限连续性状、重复样本名和不安全的项目名称。
+- [Features](#features)
+- [Documentation](#documentation)
+- [Workflow](#workflow)
+- [Supported Platforms](#supported-platforms)
+- [Installation & Running](#installation--running)
+- [Quick Start](#quick-start)
+- [Input Data](#input-data)
+- [Metadata & Visualization Refresh](#metadata--visualization-refresh)
+- [Network Algorithms & Parameters](#network-algorithms--parameters)
+- [Visualization (tcsBU)](#visualization-tcsbu)
+- [Interpretation Analysis](#interpretation-analysis)
+- [Data Export & Format Conversion](#data-export--format-conversion)
+- [Output Files](#output-files)
+- [Project Structure](#project-structure)
+- [Subprocess Control](#subprocess-control)
+- [Testing](#testing)
+- [Packaging](#packaging)
+- [Development Notes](#development-notes)
+- [Known Limitations](#known-limitations)
+- [Citation](#citation)
+- [License](#license)
 
-## 分析流程
+---
+
+## Features
+
+- Import **FASTA, NEXUS, PHYLIP, or VCF** sequence data; metadata can be parsed from legacy sample IDs or imported separately from CSV/TSV.
+- Export the current data as FASTA, NEXUS, PHYLIP, VCF + metadata, or a standalone metadata table (CSV/TSV).
+- Import multi-sample VCF (optionally reconstructing full-length sequences with a reference FASTA); parse metadata from sample IDs, or pass a metadata file to enable native McAN VCF mode.
+- Clean, replace, or split sample IDs at import, extracting sample name, categorical trait, and continuous trait.
+- Import multiple categorical/continuous traits at once from CSV/TSV, designate one categorical trait as the group, with a visual column mapping and delimiter auto-detection.
+- Inspect, edit, select, or deselect the sequences included in an analysis from the data table.
+- Align with **MAFFT** or **MUSCLE**; collapse identical aligned sequences into unique haplotypes.
+- Build **Original TCS, Modified TCS, MSN, or MJN** networks with fastHaN, a built-in **RMST**, or a **McAN** minimum-cost arborescence network.
+- Visualize multiple categorical/continuous traits as concentric rings using an embedded **tcsBU / D3.js** view, with a matching multi-ring legend; side panels collapse and drag-resize.
+- Re-map grouping and continuous traits onto an existing network without rebuilding it, when metadata is added or edited after construction.
+- Explore data and network in **Analysis → Interpretation Analysis** with visual quality/diversity, missing-aware pairwise **p-distance + PCoA**, and network **topology metrics**, keeping topological description distinct from ancestry/transmission inference.
+- Bilingual **Chinese / English** UI that refreshes together on a language switch.
+- Long-running analyses run on background threads and are cancellable from the status bar; timeouts and cancellation clean up external processes and their children.
+
+## Documentation
+
+A full step-by-step user manual is available in both languages:
+
+- 📘 **[NetST User Manual (English)](docs/NetST-User-Manual.md)**
+- 📗 **[NetST 使用手册（中文）](docs/NetST-使用手册.md)**
+
+Two SARS-CoV-2 example datasets are referenced throughout the manual:
+
+- **SL-SARS-CoV-2** — 130 representative haplotypes distinguishing the L / S lineages (categorical trait).
+- **DP-SARS-CoV-2** — 482 genome sequences with geographic location (categorical) and collection date (continuous).
+
+## Workflow
 
 ```text
-FASTA / NEXUS / PHYLIP 序列，或 VCF + metadata
+FASTA / NEXUS / PHYLIP / VCF sequences
   │
-  ├─ 标题标准化 / 模糊碱基过滤
-  ├─ 可选：导入 CSV 性状
+  ├─ Sample-ID standardization (optional legacy-metadata parsing) / ambiguous-base filtering
+  ├─ Optional: import metadata from CSV/TSV
   ▼
-MAFFT 或 MUSCLE 多序列比对
+MAFFT or MUSCLE multiple-sequence alignment
   ▼
-识别唯一单倍型并生成 PHYLIP/CSV/FASTA 文件
+Identify unique haplotypes → PHYLIP / CSV / FASTA files
   ▼
-fastHaN 构建 TCS / MSN / MJN，内置 RMST，或 McAN 构建有向网络
+fastHaN (TCS / MSN / MJN), built-in RMST, or McAN directed network
   ▼
-统一转换为 GML 并生成 tcsBU 配置
+Convert to a common GML and generate tcsBU config
   ▼
-在 Qt WebEngine 中交互可视化
+Interactive visualization in Qt WebEngine ── optional: Interpretation Analysis
 ```
 
-## 支持的平台
+## Supported Platforms
 
-| 平台 | 源码运行 | 仓库内置分析程序 | PyInstaller 配置 |
-|---|---:|---:|---:|
-| macOS Apple Silicon | 是 | MAFFT、MUSCLE 3、fastHaN、McAN 1.2 | `netst-mac-arm64.spec` |
-| Windows x86-64 | 是 | MAFFT、MUSCLE 3、fastHaN | `netst-win.spec` |
-| Linux | 有代码路径 | 未完整提供 | 未提供 |
+| Platform | Run from source | Bundled analysis programs | PyInstaller spec |
+|---|:---:|---|---|
+| macOS Apple Silicon | Yes | MAFFT, MUSCLE 3, fastHaN, McAN 1.4.3 arm64 | `netst-mac-arm64.spec` |
+| Windows x86-64 | Yes | MAFFT, MUSCLE 3, fastHaN, McAN 1.4.3 | `netst-win.spec` |
+| Linux | Code path exists | Not fully provided | Not provided |
 
-Linux 用户需要自行准备兼容的外部程序，并根据 `AnalysisService` 的平台路径约定放置二进制文件。当前正式打包目标是 macOS Apple Silicon 和 Windows x86-64。
+Linux users must supply compatible external programs and place the binaries per the platform conventions in `AnalysisService`. The current official packaging targets are macOS Apple Silicon and Windows x86-64.
 
-## 安装与运行
+## Installation & Running
 
-建议使用 Python 3.10 和独立虚拟环境。
+Use Python 3.10 and an isolated virtual environment.
 
 ### macOS / Linux
 
@@ -84,37 +117,33 @@ python -m pip install -r requirements.txt
 python main_form.py
 ```
 
-主要 Python 依赖：
+Main Python dependencies: `PyQt6`, `PyQt6-WebEngine`, `chardet`, `numpy` (`PyInstaller` only for building releases).
 
-- `PyQt6`
-- `PyQt6-WebEngine`
-- `chardet`
-- `PyInstaller`（仅构建发布包时需要）
+Target-platform binaries for MAFFT, MUSCLE, fastHaN, and McAN are already under `lib/` for macOS and Windows. Apple Silicon uses the native arm64 McAN 1.4.3 build. The bundled Windows McAN is a 32-bit executable linked to the Microsoft Visual C++ runtime; a clean Windows installation needs the x86 Visual C++ 2015–2022 Redistributable unless McAN is rebuilt with a static runtime. If the bundled MAFFT is unavailable, the program falls back to a system `mafft` on `PATH`.
 
-MAFFT、MUSCLE、fastHaN 以及 macOS Apple Silicon 版 McAN 的目标平台二进制已经放在 `lib/` 下。若内置 MAFFT 不可用，程序会尝试调用系统 `PATH` 中的 `mafft`。
+## Quick Start
 
-## 快速使用
+1. In the **File** menu, choose **Import FASTA / NEXUS / PHYLIP / VCF** to load sequences.
+2. In the standardization dialog, preview and configure sample-name cleaning, replacement, splitting, or numbering; legacy files can still extract categorical/continuous traits from sample IDs.
+3. For a standalone metadata table, choose **File → Load Metadata** to import CSV/TSV and map the sample-name, categorical, and continuous columns.
+4. On the **Data** tab, review the data and tick the samples to include.
+5. On the right, enter a project name and choose an output directory (default `~/HaplotypeOutput`).
+6. Pick what to run:
+   - **Tools → Multiple Sequence Alignment** — run MAFFT/MUSCLE only;
+   - **Tools → Calculate Haplotype** — align and compute haplotypes without a network;
+   - **Analysis → Build / Rebuild Haplotype Network** — the full network analysis;
+   - **Metadata → Apply Visualization Config** — re-skin an existing network without rebuilding (see below).
+7. View results on the **Network, Alignment, and Haplotype** tabs.
+8. Run quality/diversity, genetic distance/PCoA, or topology analysis from **Analysis → Interpretation Analysis**; results appear on the **Interpretation** tab.
+9. Use **File → Export Sequence Data** to pick a sequence format, or **Export Metadata** for a standalone metadata table.
 
-1. 在 **File** 菜单选择 **Import FASTA、Import NEXUS** 或 **Import PHYLIP** 导入原始序列文件。
-2. 在标准化窗口预览并配置样本名、离散性状和连续性状的提取规则。
-3. 如性状保存在单独表格中，选择 **File → Import Traits from CSV** 并完成列映射。
-4. 在 **Data** 页检查数据，勾选需要参与分析的样本。
-5. 在右侧填写项目名称并选择输出目录。默认目录是 `~/HaplotypeOutput`。
-6. 根据需要选择功能：
-   - **Tools → Multiple Sequence Alignment**：仅运行 MAFFT/MUSCLE；
-   - **Tools → Calculate Haplotype**：比对并计算单倍型，不构网；
-   - **Analysis → Build Haplotype Network**：执行完整网络分析；VCF 来源可由 McAN 原生读取。
-7. 在 **Network、Alignment、Haplotype** 页查看结果。
-8. 从 **Analysis → 辅助解读** 运行质量/多样性、遗传距离/PCoA 或网络拓扑分析，结果显示在 **辅助解读** 页。
-9. 使用 **File → Export Sequence Data** 选择序列格式，或使用 **Export Trait Data** 单独导出性状。
+While an analysis runs, the bottom of the window shows progress and a **Cancel** button. Cancelling requests the background task to stop and terminates the whole process group of the current external program. The same cleanup runs on close or when a new task replaces an old one.
 
-分析运行时，窗口底部会显示进度和 **取消** 按钮。取消会请求后台任务停止，并终止当前外部程序的整个进程组。程序关闭或新任务替换旧任务时也使用相同清理流程。
-
-## 输入数据
+## Input Data
 
 ### FASTA
 
-普通 FASTA 即可：
+Plain FASTA works:
 
 ```fasta
 >sample_01|population_A|12.5
@@ -123,24 +152,17 @@ ATGCTAGCTAGCTACG
 ATGCTAGCTAGTTACG
 ```
 
-导入对话框可以按分隔符和从 0 开始的字段索引提取：
+The import dialog can clean, replace, or extract the sample name, categorical trait, and continuous trait by delimiter and 0-based field index, compatible with legacy composite headers; or process only the sample name and import multiple traits via **File → Load Metadata**. Continuous traits must be valid numbers; sequences containing `RYSWKMBDHVN` ambiguity codes can be filtered at import. Whitespace in FASTA headers is normalized to underscores so PHYLIP and fastHaN do not split one name into several fields.
 
-- 样本名称；
-- 离散性状，例如种群、地区、宿主；
-- 连续性状，例如采样时间、海拔、温度。
+### NEXUS & PHYLIP
 
-连续性状必须是数值。空字符串或 `0` 被视为没有有效连续性状。包含 `RYSWKMBDHVN` 模糊碱基的序列可在导入时选择过滤。
-FASTA 标题中的空白会规范化为下划线，以避免 PHYLIP 和 fastHaN 将一个名称误拆成多个字段。
+- **Import NEXUS** supports DNA/RNA `MATRIX` in `DATA`/`CHARACTERS` blocks: sequential, named interleaved, unnamed interleaved continuation lines, quoted names, nested comments, and `MATCHCHAR`.
+- **Import PHYLIP** supports sequential and common interleaved PHYLIP; the declared count and alignment length in the first line must match the data.
+- Both enter the same name-standardization dialog as FASTA and load as the current raw data. A failed import does not overwrite existing table data.
 
-### NEXUS 与 PHYLIP
+### Metadata table (CSV / TSV)
 
-- **File → Import NEXUS** 支持 `DATA` 或 `CHARACTERS` 块中的 DNA/RNA `MATRIX`，可读取顺序矩阵、带名称的交错矩阵、无名称的交错续行、引号包裹的样本名、嵌套注释和 `MATCHCHAR`。
-- **File → Import PHYLIP** 支持顺序及常见交错 PHYLIP；文件首行声明的序列数和比对长度必须与实际数据一致。
-- 两种格式导入后均进入与 FASTA 相同的名称标准化窗口，并作为当前原始数据载入 Data 页。导入失败不会覆盖表格中已有的数据。
-
-### CSV 性状表
-
-CSV 第一行为表头，至少需要一列能与已导入的序列名称一一对应。例如：
+Besides parsing from sample IDs, metadata can be imported from a separate CSV/TSV (**File → Load Metadata**). The first line is a header, and at least one column must map 1-to-1 to imported sequence names:
 
 ```csv
 sample,population,value
@@ -148,276 +170,262 @@ sample_01,population_A,12.5
 sample_02,population_B,13.1
 ```
 
-导入时可以分别映射样本名、离散性状和连续性状列。软件会检查 FASTA 与 CSV 的样本名是否完整匹配，并拒绝 CSV 或数据表中的重复名称，避免性状被静默覆盖或错配。
+The delimiter is auto-detected (tab preferred). Each column can be Sample name, Ignore, Categorical, or Continuous; select any number of traits, but at least one categorical trait must be the Group. The program verifies that sample names match completely and rejects duplicates on either side.
 
-### VCF 与 metadata
+Each Continuous column has its own **Continuous conversion** button. The source
+text may be handled as:
 
-选择 **File → Import VCF and Metadata** 可导入含样本基因型列的 VCF 或 `VCF.GZ`。当前序列工作流面向单个序列区域，因此格式转换要求 VCF 仅包含一个 contig，并需要每条记录包含 `GT` 字段。
+- **Plain number** — strict numeric validation;
+- **Date / time** — accepts common forms such as `2022-10-1`, `2022/10/1`,
+  `2022-10`, and ISO date-times, then converts them to elapsed days, calendar
+  months, or calendar years from a user-supplied start date (or the earliest
+  valid date when left blank);
+- **Measurement with unit** — normalizes mixed length (`mm/cm/m/km/in/ft`),
+  mass (`mg/g/kg`), or temperature (`°C/°F/K`) values to one selected unit.
+  A separate source unit can be assigned to values without a suffix.
 
-metadata 推荐使用 McAN 六列、制表符分隔格式：
+The dialog previews source and converted values, validates the full column, and
+reports the original file row when a value cannot be converted. Blank cells stay
+blank and the source file is never modified; normalized numbers enter the Data
+table and therefore use the existing continuous gradient/ring visualization.
 
-```text
-SampleName  AccessionID  SamplingDate  Country  State  City
-strain_1    ACC001       2024-01-01    China    Yunnan *
-strain_2    ACC002       2024-02-03    China    Sichuan Chengdu
-```
+A **Metadata** tab then appears. Each row is a trait: switch categorical/continuous, choose the single Group, toggle visibility, and edit colours (categorical palette or continuous low/high endpoints, via a colour picker or hex value). Categorical traits with 2–10 classes use curated class-count-specific palettes; larger sets receive stable, non-repeating generated colours. The default continuous gradient runs from gray (`#BDBDBD`) to black (`#000000`); values within each node are sorted numerically from low to high before its ring sectors are drawn. The program prevents deleting the last categorical Group. Nodes draw concentric rings in Metadata-table order — Group innermost, others outward — and the tcsBU **Legend** lists them in the same order.
 
-表头可选；无表头时固定按上述六列读取，缺失值使用 `*`。VCF 样本名可与 SampleName 或 AccessionID 匹配。导入时 Country、State 和 City 会合并为离散性状。
+### VCF import
 
-- 未提供参考 FASTA：将每个 VCF 记录转换为等宽的变异位点块，生成“仅变异位点比对”。
-- 提供参考 FASTA：验证每条 VCF `REF` 与参考序列一致，补回不变区域并生成全长比对。
-- 多等位基因按 GT 等位基因编号解析；杂合单碱基位点使用 IUPAC 字符，杂合复杂 indel 使用 `N`。
-- 符号型 ALT、breakend、多 contig 和相互重叠的 VCF 记录会被明确拒绝，避免生成含义不确定的序列。
+**File → Import VCF** accepts VCF / VCF.GZ with per-sample genotype columns. The sequence workflow targets a single region, so the VCF must contain one contig and each record must carry `GT`. VCF sample names enter the standardization dialog like other formats.
 
-若 VCF 和六列 metadata 导入后样本名与序列没有被修改，选择 McAN 时会直接生成样本子集 VCF/metadata 并调用 `McAN --vcf`，从而保留真实采样日期用于网络定向。若数据表已修改，程序会自动退回 aligned-FASTA → mutation 适配流程。
+The metadata file is optional:
 
-### 数据导出
+- **None** — metadata parsed from sample IDs only.
+- **Plain CSV/TSV** — matched by sample name; fills categorical (group) and continuous traits.
+- **McAN six-column TSV** (`SampleName AccessionID SamplingDate Country State City`, `*` for missing, header optional) — fills a categorical trait merged from Country/State/City and, when sample names are unchanged, enables native McAN VCF analysis (`McAN --vcf`) that keeps real sampling dates for orientation. Renaming/removing samples or later editing the table falls back to the aligned-FASTA → mutation adapter.
 
-**File → Export Sequence Data** 导出 Data 页中的全部记录：
+Alignment reconstruction: without a reference FASTA, each record becomes an equal-width variant-site block; with a reference FASTA, each VCF `REF` is validated and invariant regions are filled back for a full-length alignment. Multi-allelic sites resolve by GT allele number; heterozygous single-base sites use IUPAC codes, heterozygous complex indels use `N`. Symbolic ALTs, breakends, multiple contigs, and overlapping records are rejected.
 
-- FASTA：标题使用 `样本名|离散性状|连续性状`，用于同时保留序列和性状；
-- NEXUS、PHYLIP：仅写出样本名和序列，不把性状混入序列标识；
-- VCF：写入序列变异和 `NetSTSampleMetadata` 头，同时生成同名的 `_metadata.csv`，保留离散性状、连续性状、数量和物种字段；
-- NEXUS、PHYLIP 和 VCF 要求序列已经等长；VCF 还要求至少存在一个变异位点。
+## Metadata & Visualization Refresh
 
-**File → Export Trait Data** 可独立生成 CSV 性状表，字段为 `sample`、`discrete_trait`、`continuous_trait`、`quantity` 和 `organism`。
+Network **topology** is determined by input samples and sequences; metadata types, grouping, rings, and colours only decide **how** existing topology is displayed.
 
-### 格式转换工具
-
-选择 **Tools → Sequence Format Conversion**，支持：
-
-| 输入 | 可转换输出 | 说明 |
-|---|---|---|
-| FASTA | NEXUS、PHYLIP、VCF | 输出 NEXUS/PHYLIP 要求序列等长；输出 VCF 可指定参考样本 |
-| NEXUS | FASTA、PHYLIP、VCF | 读取 DATA/CHARACTERS 矩阵；支持顺序、交错和 MATCHCHAR |
-| PHYLIP | FASTA、NEXUS、VCF | 读取顺序或常见交错 PHYLIP，要求声明数量和长度正确 |
-| VCF / VCF.GZ | FASTA、NEXUS、PHYLIP | 参考 FASTA 可选；未提供时输出变异位点比对 |
-
-FASTA/NEXUS/PHYLIP 转 VCF 要求序列已经等长比对，会将连续变异列合并为合法等位基因块，并为插入/删除增加参考锚点。NEXUS 输出会保留带空格或引号的样本名，并根据序列字符声明 DNA 或 RNA。完全无变异的比对无法生成只含变异记录的 VCF。输入与输出路径必须不同。
-
-## 辅助解读分析
-
-该功能根据旧版辅助脚本审阅结果重新实现，不直接包装旧脚本。计算层使用不可变的对齐序列快照，与 Qt 界面、文件输出分离，并在后台线程中运行。
-
-| 菜单功能 | 输入与计算 | 主要结果 |
-|---|---|---|
-| 序列质量与多样性 | 当前选中的等长对齐序列；可选完整删除或成对删除 | 样本/位点缺失率、有效位点、变异位点、简约信息位点、S、Hd、π、θW、分组丰富度与私有单倍型 |
-| 遗传距离与 PCoA | 仅 A/C/G/T 作为确定状态；gap、N、? 和 IUPAC 模糊状态成对删除 | p-distance 矩阵、每对有效比较位点、PCoA 坐标、正/负特征值诊断 |
-| 网络拓扑指标 | 当前项目 GML，或用户选择的 tcsBU 兼容 GML | 节点/边数、连通分量、密度、环秩、degree、closeness、betweenness、割点和桥 |
-
-关于缺失数据和解释的约定：
-
-- RNA `U` 在内部统一为 `T`；`-`/`N`/`?`/IUPAC 模糊状态不作为确定等位基因。
-- 低于最小有效位点或覆盖率的序列对距离记为缺失，不补成 0，也不使用人为饱和常数。
-- PCoA 使用经典多维尺度分析，不将距离矩阵直接作为普通特征运行 PCA。
-- McAN 有向 GML 的方向作为来源信息保留；当前中心性、割点和桥指标使用无向投影。
-- 拓扑中心、桥接节点和 PCoA 聚集都是探索性描述，不自动等同于祖先、起源地、传播源或真实群体。
-- 当前不自动计算 Tajima's D，因为其稳健解释需要人口史、重组、抽样和零模型假设。
-
-界面中的大表格会限制显示行/列数以保持响应速度；完整结果保存为输出目录中的 JSON。
-
-## 网络算法与参数
-
-| 算法 | 引擎标识 | 可配置参数 |
-|---|---|---|
-| Original TCS | `original_tcs` | 线程、模糊位点、合并中间节点 |
-| Modified TCS | `modified_tcs` | 线程 |
-| Minimum Spanning Network | `msn` | epsilon |
-| Median-Joining Network | `mjn` | 线程、epsilon |
-| Randomized Minimum Spanning Tree | `rmst` | 精确/随机模式、重复次数、随机种子、是否排除模糊位点 |
-| McAN Minimum-cost Arborescence Network | `mcan` | 线程、参考序列、是否排除模糊位点 |
-
-如果输入序列长度不同，完整网络分析会先运行 MAFFT，失败后尝试 MUSCLE。长度相同时视为已经比对并直接进入单倍型处理。
-
-### RMST 内置实现
-
-RMST 直接读取 NetST 生成的 `project_hap.fasta` 与 `project_seq.meta.csv`，对唯一单倍型计算未校正突变位点数（Hamming 距离），无需额外可执行程序。界面提供两种模式：
-
-- **精确模式（默认、推荐）**：按距离层确定所有至少能出现在一棵最小生成树中的边；结果确定且不受随机种子影响。
-- **随机模式**：多次随机化单倍型顺序并运行稳定 Kruskal；输出每条边出现的次数与频率。固定随机种子可复现结果，但有限重复次数不保证找到全部兼容边。
-
-默认排除任何含非 `A/C/G/T/U/-` 字符的比对列，RNA `U` 统一为 `T`，gap 作为一个可比较状态。若过滤后原本不同的单倍型变为相同序列，RMST 会将它们及其样本成员合并为一个网络节点，并在 JSON 的 `warnings` 和节点 `haplotypes` 字段中记录。若排除后没有可用位点，分析会明确失败，不把缺失距离补为零。
-
-RMST 输出的 `project.gml` 与 fastHaN/McAN 使用相同的 tcsBU 方言，可直接进入现有分组、连续性状和交互网络展示；主干边和替代边在 GML 中共同显示，类型及随机抽样统计保存在 `project_rmst.json` 与 `project_rmst.tsv`。为避免纯 Python 完全图造成界面长期占用，精确模式最多接受 1000 个过滤后节点，随机模式最多 500 个节点、1000 次重复，并限制总边评估规模；计算期间支持状态栏取消。
-
-本模块依据公开算法描述独立实现，提供的 `rsmt_port` 仅作为行为规范与 golden tests 使用，没有逐行复制 pegas/R/C 或该端口实现。算法参考：Paradis, E. “Analysis of haplotype networks: The randomized minimum spanning tree method.” *Methods in Ecology and Evolution* (2018): 1308–1317。
-
-### McAN Minimum-cost Arborescence Network 适配方式
-
-McAN 1.2 原生接收 VCF 或 mutation、metadata 和 site mask，并输出 GraphML/JSON。`service/mcan_adapter.py` 支持两条路径：原始 VCF 数据保持不变时直接调用 `--vcf`；FASTA/PHYLIP 来源或数据被编辑时完成以下适配：
-
-1. 读取已比对 FASTA，并以用户选择的参考序列计算逐位点差异；
-2. 使用 `S0000001` 形式的内部别名生成 mutation/metadata，避免 McAN 未转义样本名导致 GraphML 损坏；
-3. 生成显式 site mask；可选排除包含非 A/C/G/T/U/缺口字符的列；
-4. 在独立的 `project_mcan/` 目录调用 McAN，保留原始 GraphML 和 JSON；
-5. 将 GraphML 转换为 tcsBU 可读取的 GML，并恢复原始样本名和网络距离。
-
-McAN 1.2 源码内部固定最大序列坐标为 30000，因此 NetST 会在调用前拒绝更长的比对并给出明确错误。FASTA 不包含采样日期，适配器不会虚构时间顺序，而是为所有内部记录使用同一中性日期；由此得到的是以所选参考序列为根的突变包含关系网络。如研究需要时间定向，应扩展数据模型并提供真实采样日期。
-
-程序优先查找当前平台 `lib` 目录中的 `McAN`/`McAN.exe`。开发环境也可通过环境变量指定自编译程序：
-
-```bash
-export NETST_MCAN_EXECUTABLE=/absolute/path/to/McAN
-python main_form.py
-```
-
-Windows 发布包目前未附带 McAN；请在 Windows 上编译后放置为 `lib/win/McAN.exe`。McAN 及其 cJSON/hashmap 依赖的许可声明随目标平台二进制一并保留。
-
-算法引用：Li, L. et al. *McAN: an ultrafast haplotype network construction algorithm*. bioRxiv 2022.07.23.501111 (2022), doi:10.1101/2022.07.23.501111。
-
-## 输出文件
-
-假设项目名称为 `project`，主要输出包括：
-
-| 文件 | 内容 |
+| Change | Action |
 |---|---|
-| `project.fasta` | 本次分析的原始输入序列 |
-| `project_aln.fasta` | 比对后的序列 |
-| `project_seq.fasta` | 带原始样本名的分析序列 |
-| `project_seq.phy` | fastHaN 使用的 PHYLIP 输入 |
-| `project_hap.fasta` | 去冗余的 H1、H2…单倍型序列 |
-| `project_seq.meta.csv` | 样本、单倍型和性状映射 |
-| `project_hap_trait.csv` | 单倍型数量、成员及成员性状汇总；同一单倍型内不同的连续性状值以分号保留 |
-| `project_seq_trait.csv` | 逐样本性状表 |
-| `project_traitconf.csv` | 连续性状配置；仅有有效值时生成 |
-| `project.gml` | fastHaN、RMST，或由 McAN GraphML 转换后的 tcsBU 网络图 |
-| `project_rmst.json` | RMST 参数、保留/排除位点、节点合并、边类型和随机抽样统计；仅 RMST 生成 |
-| `project_rmst.tsv` | RMST 边表，含距离、主干/替代类型、计数与频率；仅 RMST 生成 |
-| `project_mcan/` | McAN 输入、样本别名映射及原始 GraphML/JSON；仅 McAN 分析生成 |
-| `project_hapconf.csv` | tcsBU 单倍型配置 |
-| `project_groupconf.csv` | tcsBU 分组及颜色配置 |
-| `project.js` / `project.html` | 本地交互可视化资源 |
-| `project_diversity_analysis.json` | 序列 QC、总体/分组多样性及计算警告 |
-| `project_distance_analysis.json` | p-distance、有效比较位点、PCoA 特征值与坐标 |
-| `project_topology_analysis.json` | 网络概况、节点/边拓扑指标及方向来源信息 |
+| Import a new FASTA/NEXUS/PHYLIP/VCF | Rebuild the haplotype network |
+| Change sample names, sequences, or the analysis selection | Rebuild the haplotype network |
+| Change the network algorithm/parameters | Rebuild the haplotype network |
+| Import or edit metadata values | Only click **Apply Visualization Config** |
+| Change trait type, Group, Visualize, or colour | Only click **Apply Visualization Config** |
+| Adjust group names, colours, or membership in tcsBU | Only update the current visualization config |
 
-Alignment 和 Haplotype 页为保持响应速度，只渲染前 500 个位点；输出文件始终保留完整序列。
+A lightweight refresh rewrites only tcsBU's `_hapconf.csv`, `_groupconf.csv`, `_traitconf.csv`, embedded `.js`, and `.html`; the existing `.gml`, alignment, and sample-to-haplotype mapping are unchanged. Identical sequences keep the same H1/H2… labels. Metadata is matched by sample name; samples renamed after construction fall back to empty metadata. When sequences/alignment actually change, use **Build / Rebuild Haplotype Network** instead.
 
-## 项目结构
+## Network Algorithms & Parameters
+
+| Algorithm | Engine ID | Parameters |
+|---|---|---|
+| Original TCS | `original_tcs` | threads, ambiguous sites, merge intermediate nodes |
+| Modified TCS | `modified_tcs` | threads |
+| Minimum Spanning Network | `msn` | epsilon |
+| Median-Joining Network | `mjn` | threads, epsilon |
+| Randomized Minimum Spanning Tree | `rmst` | exact/random mode, replicates, random seed, exclude ambiguous sites |
+| McAN Minimum-cost Arborescence Network | `mcan` | threads, reference sequence, exclude ambiguous sites |
+
+If input sequences differ in length, the full analysis runs MAFFT first, falling back to MUSCLE; equal lengths are treated as already aligned.
+
+### RMST built-in implementation
+
+RMST reads `project_hap.fasta` and `project_seq.meta.csv` directly and computes uncorrected mutation counts (Hamming distance) over unique haplotypes, with no external executable. **Exact mode** (default, recommended) determines all edges that can appear in at least one MST by distance layer — deterministic and seed-independent. **Random mode** repeatedly randomizes haplotype order and runs stable Kruskal, reporting each edge's occurrence count and frequency; a fixed seed reproduces results, but finite replicates do not guarantee finding every compatible edge.
+
+By default any column with a character outside `A/C/G/T/U/-` is excluded, RNA `U` becomes `T`, and gap is a comparable state. Haplotypes that become identical after filtering merge into one node (recorded in `warnings` and node `haplotypes`). NumPy-vectorized distances and complete-graph ordering avoid per-edge Python objects; exact mode accepts ≤ 1000 filtered nodes, random mode ≤ 500 nodes and ≤ 1000 replicates. The RMST `project.gml` uses the same tcsBU dialect as fastHaN/McAN. Reference: Paradis, E. (2018), *Methods Ecol Evol* 9:1308–1317.
+
+### McAN adapter
+
+`service/mcan_adapter.py` supports two paths. When importing a VCF with McAN six-column metadata and unchanged sample names, it calls `McAN --vcf` natively and keeps real sampling dates for orientation. For FASTA/PHYLIP sources, metadata-free VCFs, or renamed/edited samples, it builds mutations from the aligned sequences: compute per-site differences against the chosen reference, generate mutation/metadata with `S0000001`-style aliases to avoid GraphML corruption, produce an explicit site mask, run McAN in a dedicated `project_mcan/`, and convert the GraphML to a tcsBU-readable GML restoring original names and distances.
+
+The bundled McAN workflow limits the maximum sequence coordinate to 30000, so longer alignments are rejected up front. A FASTA has no sampling dates, so the adapter does not fabricate a time order — the result is a mutation-inclusion network rooted at the chosen reference. The adapter probes `--help` and selects McAN 1.2's `--outDir` or McAN 1.4.x's `--out` automatically; it accepts both legacy `haplotype_loci.graphml` output and `<prefix>.haplonet.graphml` output. The program prefers `McAN`/`McAN.exe` in the platform `lib` directory; a self-built executable can be set via `NETST_MCAN_EXECUTABLE`. Reference: Li, L. et al. (2022), bioRxiv 2022.07.23.501111.
+
+## Visualization (tcsBU)
+
+The network renders on the **Network** tab with an enhanced **tcsBU / D3.js** view embedded in Qt WebEngine. Each haplotype node draws concentric rings (Group innermost, other enabled traits outward), sized by frequency, with a **Legend** listing every class swatch and continuous gradient range in inner-to-outer order.
+
+The toolbar provides **Save Image** (SVG / PNG / JPG — SVG is standard `image/svg+xml`, PNG/JPG export at 2× by default), zoom, node/link editing, legend toggle, haplotype/distance labels, and **Edge Weight** (thicker edges for smaller mutation distances).
+
+The **Advanced** dialog is draggable by its title bar and grouped into three sections:
+
+- **Force-Directed Layout Settings** — Link Distance, Link Strength, Friction, Charge, Gravity, plus Start/Stop.
+- **Node and Edge Settings** — **Node Radius** (radius of a frequency-1 node, preserving relative sizes), **Node Line Width** (node outline), **Edge Line Width** (base edge/link stroke), **Edge Weight Scale** (maximum weighted-width multiplier), and Text Offset.
+- **Metadata Ring Settings** — **Ring Line Width** (ring-segment stroke), **Base Ring Width** (base thickness of a non-Group ring at ratio 1; actual = base × ring ratio), and Outer Ring Ratios (comma-separated, inner→outer).
+
+The Data tab's Sequence column is read-only so an accidental edit cannot invalidate an existing alignment, haplotypes, and network; names, selection, and metadata traits stay editable.
+
+## Interpretation Analysis
+
+Reimplemented from a review of the legacy auxiliary scripts (not a wrapper around them). The computation layer uses an immutable aligned-sequence snapshot, decoupled from the Qt UI and file output, and runs on a background thread.
+
+| Menu item | Input & computation | Main results |
+|---|---|---|
+| Sequence Quality and Diversity | current selected equal-length aligned sequences; complete or pairwise deletion | per-sample/per-site missing rates, effective sites, variable sites, parsimony-informative sites, S, Hd, π, θW, group richness, private haplotypes |
+| Genetic Distance and PCoA | only A/C/G/T as called; gap, N, ?, IUPAC pairwise-deleted | p-distance matrix, comparable sites per pair, PCoA coordinates, positive/negative eigenvalue diagnostics |
+| Network Topology Metrics | the current project GML, or a chosen tcsBU-compatible GML | node/edge counts, components, density, cycle rank, degree, closeness, betweenness, articulation points, bridges |
+
+**Result visualizations.** The Interpretation tab presents results as **Overview + Charts + tables**: colour-coded **KPI cards**; a **PCoA ordination scatter** (coloured by group) and **distance heatmap**; **group-diversity small multiples**, a **per-sample missing-rate** chart, and a **per-site variation/missing track** along the alignment; a **degree distribution** and **hub-node** ranking with articulation points highlighted. Charts render in a web view (hover tooltips) when `PyQt6-WebEngine` is present, or as static SVG otherwise. Detail tables keep all exact values.
+
+Conventions on missing data and interpretation:
+
+- RNA `U` is unified to `T`; `-`/`N`/`?`/IUPAC ambiguity are not called alleles.
+- Pairs below the minimum comparable sites/coverage record distance as missing — never 0 or an artificial saturation constant.
+- PCoA uses classical MDS, not PCA on the distance matrix.
+- A McAN directed GML keeps its direction as provenance; centrality/articulation/bridge metrics use an undirected projection.
+- Topological centrality, bridging nodes, and PCoA proximity are exploratory descriptors — never automatically ancestry, origin, transmission source, or true populations.
+- Tajima's D is not computed automatically, since defensible interpretation needs demographic, recombination, sampling, and null-model assumptions.
+
+Large tables limit displayed rows/columns for responsiveness; the complete result is saved as JSON in the output directory.
+
+## Data Export & Format Conversion
+
+**File → Export Sequence Data** exports every record on the Data tab:
+
+- **FASTA** — header `name|discrete|continuous`, keeping both sequence and metadata;
+- **NEXUS, PHYLIP** — name and sequence only (no metadata in the identifier);
+- **VCF** — sequence variants and a `NetSTSampleMetadata` header, plus a matching `_metadata.csv`;
+- NEXUS, PHYLIP, and VCF require equal-length sequences; VCF also requires at least one variant site.
+
+**File → Export Metadata** produces a standalone CSV/TSV with only `sample` and the current Metadata-tab traits.
+
+**Tools → Sequence Format Conversion** converts between FASTA, NEXUS, PHYLIP, and VCF/VCF.GZ. Converting to VCF requires equal-length alignment, merges consecutive variant columns into valid allele blocks, and adds reference anchors for indels; a fully invariant alignment cannot produce a variants-only VCF. Input and output paths must differ.
+
+## Output Files
+
+Assuming a project named `project`, the main outputs are:
+
+| File | Content |
+|---|---|
+| `project.fasta` | raw input sequences for this run |
+| `project_aln.fasta` | aligned sequences |
+| `project_seq.fasta` / `project_seq.phy` | analysis sequences with original names / PHYLIP input for fastHaN |
+| `project_hap.fasta` | de-duplicated H1, H2, … haplotype sequences |
+| `project_seq.meta.csv` | sample, haplotype, and trait mapping |
+| `project_hap_trait.csv` / `project_seq_trait.csv` | haplotype summary / per-sample trait table |
+| `project_traitconf.csv` | continuous-trait config (only when valid values exist) |
+| `project.gml` | tcsBU-dialect network graph (fastHaN / RMST / McAN converted) |
+| `project_rmst.json` / `project_rmst.tsv` | RMST parameters, sites, edge table, random-sampling stats (RMST only) |
+| `project_mcan/` | McAN input, sample-alias mapping, original GraphML/JSON (McAN only) |
+| `project_hapconf.csv` / `project_groupconf.csv` | tcsBU haplotype / group-and-colour config |
+| `project.js` / `project.html` | local interactive visualization assets |
+| `project_diversity_analysis.json` | sequence QC, overall/group diversity, warnings |
+| `project_distance_analysis.json` | p-distance, comparable sites, PCoA eigenvalues and coordinates |
+| `project_topology_analysis.json` | network overview, node/edge topology metrics, direction provenance |
+
+The Alignment and Haplotype tabs render the first 500 sites for responsiveness; output files always keep the complete sequences.
+
+## Project Structure
 
 ```text
 NetST-py/
-├── main_form.py                 # 应用入口、工作流协调、Qt 后台任务
-├── requirements.txt            # Python 依赖
-├── netst-mac-arm64.spec         # macOS PyInstaller 配置
-├── netst-win.spec               # Windows PyInstaller 配置
+├── main_form.py                    # App entry, workflow orchestration, Qt background tasks
+├── requirements.txt                # Python dependencies
+├── netst-mac-arm64.spec            # macOS PyInstaller spec
+├── netst-win.spec                  # Windows PyInstaller spec
+├── docs/                           # User manuals (EN / 中文)
 ├── model/
-│   ├── alignment_config.py      # MAFFT/MUSCLE 参数与命令行生成
-│   ├── taxon_data.py            # 单条序列/分类单元数据模型
-│   └── taxon_table_model.py     # Qt 数据表模型
+│   ├── alignment_config.py         # MAFFT/MUSCLE parameters and command generation
+│   ├── taxon_data.py               # Single-sequence / taxon data model
+│   └── taxon_table_model.py        # Qt table model
 ├── service/
-│   ├── file_service.py          # FASTA/CSV/编码与标准化
-│   ├── format_conversion_service.py # FASTA/PHYLIP/VCF/metadata 转换
-│   ├── analysis_service.py      # 比对、单倍型与网络分析流程
-│   ├── process_service.py       # 可取消、可超时的外部进程控制
-│   ├── validation_service.py    # 分析输入和安全文件名前缀校验
-│   ├── mcan_adapter.py          # aligned FASTA ↔ McAN ↔ tcsBU 格式适配
-│   ├── rmst_service.py          # 内置 RMST、距离计算与 GML/JSON/TSV 输出
-│   ├── interpretation_models.py # 不可变的对齐序列分析快照
-│   ├── diversity_analysis_service.py # QC 与总体/分组多样性
-│   ├── distance_analysis_service.py  # 缺失感知 p-distance 与 PCoA
-│   ├── topology_analysis_service.py  # GML 解析与拓扑指标
-│   └── gen_network_config.py    # tcsBU 配置与 JS 生成
+│   ├── file_service.py             # FASTA/CSV / encoding / standardization
+│   ├── format_conversion_service.py# FASTA/PHYLIP/VCF/metadata conversion
+│   ├── analysis_service.py         # Alignment, haplotype, and network pipeline
+│   ├── process_service.py          # Cancellable, timeout-aware external-process control
+│   ├── validation_service.py       # Analysis-input and safe filename-prefix checks
+│   ├── mcan_adapter.py             # aligned FASTA ↔ McAN ↔ tcsBU format adapter
+│   ├── rmst_service.py             # Built-in RMST, distances, GML/JSON/TSV output
+│   ├── interpretation_models.py    # Immutable aligned-sequence analysis snapshot
+│   ├── diversity_analysis_service.py   # QC and overall/group diversity
+│   ├── distance_analysis_service.py    # Missing-aware p-distance and PCoA
+│   ├── topology_analysis_service.py    # GML parsing and topology metrics
+│   ├── interpretation_charts.py    # SVG chart rendering for interpretation results
+│   └── gen_network_config.py       # tcsBU config and JS generation
 ├── ui/
-│   ├── main_window_ui.py        # 主窗口布局
-│   ├── data_tab_widget.py       # 数据表页
-│   ├── alignment_tab_widget.py  # 比对结果页
-│   ├── haplotype_tab_widget.py  # 单倍型结果页
-│   ├── vcf_import_dialog.py     # VCF + metadata 导入
-│   ├── format_conversion_dialog.py # 通用格式转换界面
-│   ├── interpretation_options_dialog.py # 缺失/覆盖率参数
-│   ├── interpretation_tab_widget.py # 结构化辅助分析结果页
-│   ├── *_dialog.py              # 标准化、性状导入和分析参数窗口
-│   ├── output_panel.py          # 输出目录和日志面板
-│   └── language_manager.py      # 中英文文本
+│   ├── main_window_ui.py           # Main window layout
+│   ├── data_tab_widget.py          # Data table tab
+│   ├── metadata_tab_widget.py      # Metadata configuration tab
+│   ├── alignment_tab_widget.py     # Alignment result tab
+│   ├── haplotype_tab_widget.py     # Haplotype result tab
+│   ├── interpretation_tab_widget.py# Structured interpretation result tab
+│   ├── *_dialog.py                 # Import, conversion, and analysis-parameter dialogs
+│   ├── output_panel.py             # Output directory and log panel
+│   └── language_manager.py         # Chinese / English text
 ├── static/
-│   ├── tcsbu/                   # tcsBU、D3.js、CSS 与 HTML
-│   ├── docs/                    # NetST 和 tcsBU 帮助文档
-│   └── icon/                    # 应用图标
-├── lib/                         # 平台相关 MAFFT/MUSCLE/fastHaN/McAN
-└── tests/                       # 标准库 unittest 测试
+│   ├── tcsbu/                      # tcsBU, D3.js, CSS, and HTML
+│   ├── docs/                       # NetST and tcsBU help documents
+│   └── icon/                       # Application icons
+├── lib/                            # Platform MAFFT/MUSCLE/fastHaN/McAN
+└── tests/                          # Standard-library unittest tests
 ```
 
-### 分层关系
+**Layering** — `MainForm` extends `MainWindowUI` and orchestrates UI events and the analysis pipeline; `model/` holds and presents sample data; `service/` handles file operations, computation, and external-program lifecycle; `ui/` builds windows, tabs, and parameter collection; tcsBU is embedded as a local web app in `QWebEngineView`.
 
-- `MainForm` 继承 `MainWindowUI`，负责界面事件与分析流程协调。
-- `model/` 保存与展示样本数据，不执行分析。
-- `service/` 负责文件操作、计算流程和外部程序生命周期。
-- `ui/` 负责窗口、页签和参数收集。
-- tcsBU 作为本地 Web 应用嵌入 `QWebEngineView`。
+## Subprocess Control
 
-## 子进程控制
+`service/process_service.py` provides a unified runner for MAFFT, MUSCLE, fastHaN, and McAN: it polls the Qt thread's interruption request via `Popen`, continuously drains stdout/stderr to avoid pipe deadlocks, gives each tool its own process group, sends `SIGTERM` (then `SIGKILL` after a grace period) to the whole group on POSIX and `taskkill /T /F` on Windows, distinguishes normal failure from a 600-second timeout and from user cancellation, and still loads partial alignment/haplotype files where applicable.
 
-`service/process_service.py` 为 MAFFT、MUSCLE、fastHaN 和 McAN 提供统一执行接口：
+## Testing
 
-- 使用 `Popen` 周期性检查 Qt 线程的中断请求；
-- 持续读取 stdout/stderr，避免大量输出造成管道死锁；
-- 对每个工具创建独立进程组；
-- POSIX 上向整个进程组发送 `SIGTERM`，宽限期后发送 `SIGKILL`；
-- Windows 上使用 `taskkill /T /F` 清理进程树；
-- 区分正常失败、600 秒超时和用户主动取消；
-- 取消后的部分比对或单倍型文件仍可在适用时加载。
-
-## 测试
-
-进程控制测试只依赖 Python 标准库：
+The process-control tests depend only on the Python standard library:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-在无显示器的 macOS/Linux 测试环境中，可在命令前设置 `QT_QPA_PLATFORM=offscreen`。
+On a headless macOS/Linux test host, prefix the command with `QT_QPA_PLATFORM=offscreen`.
 
-当前测试覆盖：FASTA/PHYLIP/VCF 双向转换、VCF indel 锚定、参考 REF 校验、metadata 映射、比对参数与 FASTA 强制输出、双语资源完整性、可视化 JavaScript 转义、tcsBU 配置规范化、RMST 精确/随机算法、论文最小示例、模糊位点合并、审计输出与 AnalysisService/tcsBU 兼容、McAN 原生 VCF 及 mutation 输入适配、GraphML 转换、长度边界、进程超时/取消/后代清理、样本与项目名称校验，以及多样性公式/缺失策略、p-distance/PCoA 不变量、GML 拓扑边界情况和辅助结果页。
+Current coverage includes: FASTA/PHYLIP/VCF round-trips, VCF indel anchoring, reference-REF validation, metadata mapping, alignment parameters and forced FASTA output, bilingual-resource integrity, visualization-JavaScript escaping, tcsBU config normalization, RMST exact/random algorithms, the minimal published example, ambiguous-site merging, audit output and AnalysisService/tcsBU compatibility, native-VCF and mutation-input McAN adapters, GraphML conversion, length bounds, process timeout/cancellation/descendant cleanup, sample and project-name validation, diversity formulas/missing policies, p-distance/PCoA invariants, GML topology edge cases, the interpretation result tab, and the interpretation SVG charts.
 
-完整模块语法检查：
+Full module syntax check:
 
 ```bash
 python -m compileall -q main_form.py model service ui tests
 ```
 
-运行 GUI 或涉及 `AnalysisService` 的测试前，需要先安装 `requirements.txt`。
+Install `requirements.txt` before running GUI tests or any test that touches `AnalysisService`.
 
-## 打包
-
-### macOS Apple Silicon
+## Packaging
 
 ```bash
+# macOS Apple Silicon → dist/NetST.app
 pyinstaller netst-mac-arm64.spec --noconfirm
-```
 
-输出位于 `dist/NetST.app`。
-
-### Windows
-
-```powershell
+# Windows → single-file dist/NetST.exe
 pyinstaller netst-win.spec --noconfirm
 ```
 
-输出为单文件 `dist/NetST.exe`。
+Before packaging, verify the architecture, executable permissions, and Qt WebEngine runtime resources of the bundled binaries on the target OS.
 
-打包前应在目标操作系统上验证内置二进制的架构、执行权限以及 Qt WebEngine 运行时资源。
+## Development Notes
 
-## 开发说明
+- Add a menu action in `ui/menu_bar.py` and register the callback in `MainForm._get_callbacks()`.
+- Add an analysis algorithm by extending the parameter dialog and implementing the service logic in `AnalysisService`; never run long tasks directly on the UI thread.
+- Add an external program through `ManagedProcessRunner` to preserve cancellation, timeout, and process-tree cleanup.
+- Update UI text by editing both the Chinese and English entries in `ui/language_manager.py`.
+- Prefix generated files with "output directory + project name" to avoid writing into the source tree.
 
-- 单倍型网络辅助分析的旧脚本审阅、方法学风险及分阶段开发建议见 [`docs/HAPLOTYPE_NETWORK_AUXILIARY_ANALYSIS_REVIEW.md`](docs/HAPLOTYPE_NETWORK_AUXILIARY_ANALYSIS_REVIEW.md)。
-- 新增菜单操作：在 `ui/menu_bar.py` 创建 action，在 `MainForm._get_callbacks()` 注册回调。
-- 新增分析算法：扩展参数对话框，并在 `AnalysisService` 中实现服务逻辑；不要在 UI 线程中直接执行耗时任务。
-- 新增外部程序：统一通过 `ManagedProcessRunner` 调用，以保留取消、超时和进程树清理能力。
-- 更新界面文本：同时修改 `ui/language_manager.py` 的中文和英文条目。
-- 生成文件统一使用“输出目录 + 项目名称”作为前缀，避免写入源码目录。
+## Known Limitations
 
-## 已知限制
+- No complete Linux release yet.
+- Bundled external binaries must be verified per platform. Apple Silicon uses the native arm64 McAN 1.4.3 build. The McAN adapter accepts at most 30000 alignment sites.
+- Built-in RMST uses NumPy-accelerated dense pairwise distances and a complete graph; exact mode caps at 1000 filtered nodes, random mode at 500 nodes and bounded scale. Larger datasets warrant a sparse or compiled backend later.
+- VCF sequence conversion is limited to single-contig, non-overlapping small variant records; no structural variants, breakends, or symbolic ALTs.
+- Automated tests cover the core pure logic, but full GUI interaction, platform packaging, and real-data end-to-end runs still need verification on target systems.
+- The dependency-free PCoA solver defaults to 200 sequences; larger sets still output the distance matrix but skip PCoA with a warning.
+- The current interpretation analytics are descriptive/exploratory; trait significance, FST/AMOVA, community stability, and demographic null models are out of scope for this stage.
+- tcsBU depends on Qt WebEngine; without `PyQt6-WebEngine` the network tab falls back to a degraded text widget.
 
-- 仓库尚未提供完整 Linux 发布包。
-- 内置外部二进制需要分别在目标平台构建和验证，不能跨架构使用。
-- McAN 1.2 最多处理 30000 个比对位点；Windows 与 Linux 版本需在对应平台单独编译和放置。
-- 内置 RMST 使用稠密两两距离和完整图；精确模式限制 1000 个过滤后节点，随机模式限制 500 个节点及计算规模。更大数据集建议后续接入 C++ 后端。
-- VCF 序列转换当前限定为单 contig、非重叠的小变异记录，不支持结构变异、breakend 或符号型 ALT。
-- 自动化测试已覆盖核心纯逻辑，但完整 GUI 交互、平台打包和真实数据端到端生物信息学流程仍需在目标系统继续验证。
-- PCoA 的无第三方依赖求解器默认限于 200 条序列；更大数据集仍输出距离矩阵，但跳过 PCoA 并给出警告。
-- 当前辅助分析属于描述性/探索性功能；性状显著性、FST/AMOVA、社区稳定性与人口历史零模型未在本阶段实现。
-- tcsBU 依赖 Qt WebEngine；缺少 `PyQt6-WebEngine` 时网络页只能使用降级文本组件。
+## Citation
+
+If you use NetST in your research, please cite:
+
+> Zhang Z, Yu Y. *NetST: An integrated software for large-scale haplotype network construction, visualization, and automated analytics.*
+
+Please also cite the dependencies you use: fastHaN (Chi et al. 2023), tcsBU (Múrias Dos Santos et al. 2016), MAFFT (Nakamura et al. 2018), RMST (Paradis 2018), and McAN (Li et al. 2022). See the [user manual](docs/NetST-User-Manual.md#16-citation--acknowledgements) for full references.
 
 ## License
 

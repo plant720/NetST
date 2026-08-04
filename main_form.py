@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import math
+import re
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 from typing import Optional, Dict, Callable
@@ -20,7 +21,15 @@ from PyQt6.QtWidgets import (
 
 from model.taxon_data import TaxonData
 from model.taxon_table_model import TaxonTableModel
+from model.trait_schema import (
+    CONTINUOUS, DISCRETE, TraitDefinition, TraitSchema, normalize_hex_color,
+)
 from service.analysis_service import AnalysisService, AnalysisResult, AlignmentResult
+from service.metadata_service import (
+    MetadataImportError,
+    build_metadata,
+)
+from service.meta_config_service import build_meta_config
 from service.file_service import FileService
 from service.format_conversion_service import (
     FormatConversionError,
@@ -29,6 +38,7 @@ from service.format_conversion_service import (
     read_fasta,
     read_metadata_rows,
 )
+from service import interpretation_charts
 from service.interpretation_models import AnalysisDataError, AnalysisDataset
 from service.diversity_analysis_service import (
     AnalysisCancelled as DiversityAnalysisCancelled,
@@ -54,6 +64,7 @@ from ui.haplotype_network_dialog import HaplotypeNetworkDialog
 from ui.haplotype_tab_widget import HaplotypeTabWidget
 from ui.language_manager import lang_manager
 from ui.interpretation_options_dialog import InterpretationOptionsDialog
+from ui.metadata_tab_widget import MetadataTabWidget
 from ui.sequence_alignment_dialog import SequenceAlignmentDialog, SequenceAlignmentConfig
 from ui.standardization_dialog import StandardizationDialog
 from ui.vcf_import_dialog import VcfImportDialog
@@ -80,7 +91,8 @@ class AnalysisWorker(QThread):
     def __init__(self, analysis_service: AnalysisService, network_type: str,
                  taxons: list, output_path: str, prefix: str,
                  extra_args: list = None,
-                 mcan_vcf_input: Optional[McanVcfInput] = None):
+                 mcan_vcf_input: Optional[McanVcfInput] = None,
+                 group_colors: Optional[dict] = None):
         super().__init__()
         self.analysis_service = analysis_service
         self.network_type = network_type
@@ -89,6 +101,7 @@ class AnalysisWorker(QThread):
         self.prefix = prefix
         self.extra_args = extra_args or []
         self.mcan_vcf_input = mcan_vcf_input
+        self.group_colors = group_colors
 
     def run(self):
         """Execute analysis task in child thread."""
@@ -100,6 +113,7 @@ class AnalysisWorker(QThread):
             self.network_type, self.taxons, self.output_path, self.prefix,
             extra_args=self.extra_args,
             mcan_vcf_input=self.mcan_vcf_input,
+            group_colors=self.group_colors,
         )
         self.finished.emit(result)
 
@@ -149,6 +163,33 @@ class HaplotypeWorker(QThread):
         self.analysis_service.set_cancel_callback(self.isInterruptionRequested)
         result = self.analysis_service.run_haplotype_calculation(
             self.taxons, self.output_path, self.prefix, self.config)
+        self.finished.emit(result)
+
+
+class NetworkMetadataWorker(QThread):
+    """Reapply metadata to an existing network without rerunning the engine."""
+
+    finished = pyqtSignal(object)  # AnalysisResult
+    progress = pyqtSignal(int)
+    log = pyqtSignal(str)
+
+    def __init__(self, analysis_service: AnalysisService, taxons: list,
+                 output_path: str, prefix: str,
+                 group_colors: Optional[dict] = None):
+        super().__init__()
+        self.analysis_service = analysis_service
+        self.taxons = taxons
+        self.output_path = output_path
+        self.prefix = prefix
+        self.group_colors = group_colors
+
+    def run(self):
+        self.analysis_service.set_progress_callback(lambda v: self.progress.emit(v))
+        self.analysis_service.set_log_callback(lambda m: self.log.emit(m))
+        self.analysis_service.set_cancel_callback(self.isInterruptionRequested)
+        result = self.analysis_service.refresh_network_metadata(
+            self.taxons, self.output_path, self.prefix,
+            group_colors=self.group_colors)
         self.finished.emit(result)
 
 
@@ -203,7 +244,7 @@ class InterpretationWorker(QThread):
             if self.kind == 'diversity':
                 result = analyze_diversity(
                     self.payload,
-                    group_trait='group',
+                    group_trait=self.options.get('group_trait') or 'group',
                     missing_policy=self.options.get(
                         'missing_policy', 'complete_deletion'),
                     cancel_check=self.isInterruptionRequested,
@@ -282,6 +323,9 @@ class MainForm(MainWindowUI):
         self.haplotype_tab_loader: Optional[HaplotypeTabLoadWorker] = None
         self._last_interpretation_kind: Optional[str] = None
         self._last_interpretation_result = None
+        # Sample -> primary group label, captured when an interpretation dataset
+        # is snapshotted, so the PCoA ordination can colour points by group.
+        self._interpretation_group_map: Dict[str, str] = {}
 
         # Result files remain on disk between projects. Track which editable
         # input revision produced them so interpretation never silently reuses
@@ -296,6 +340,8 @@ class MainForm(MainWindowUI):
         self._network_view_generation = 0
         self._pending_js: Optional[str] = None
         self._pending_js_generation: Optional[int] = None
+        self._syncing_metadata_from_network = False
+        self._last_main_tab_widget = self.tab_widget.currentWidget()
 
         # Initialization
         self._init_components()
@@ -354,7 +400,8 @@ class MainForm(MainWindowUI):
         for key in (
             'load_sequence', 'load_nexus', 'load_phylip', 'load_vcf',
             'load_csv_traits',
-            'build_haplotype_network', 'run_msa', 'calculate_haplotype',
+            'build_haplotype_network',
+            'run_msa', 'calculate_haplotype',
             'analyze_diversity_qc', 'analyze_distance_pcoa', 'analyze_topology',
         ):
             self.menu_builder.set_action_enabled(key, enabled)
@@ -421,6 +468,141 @@ class MainForm(MainWindowUI):
         # Connect WebEngine loadFinished so we can inject data JS after each analysis.
         if hasattr(self.web_view_main, 'loadFinished'):
             self.web_view_main.loadFinished.connect(self._on_web_view_load_finished)
+        # Blob downloads created by tcsBU/FileSaver are cancelled by default
+        # unless the embedding QWebEngine application explicitly accepts them.
+        if hasattr(self.web_view_main, 'page'):
+            page = self.web_view_main.page()
+            if page is not None and hasattr(page, 'profile'):
+                page.profile().downloadRequested.connect(
+                    self._on_web_download_requested)
+        self.tab_widget.currentChanged.connect(self._on_main_tab_changed)
+
+    def _on_web_download_requested(self, download) -> None:
+        """Choose a destination and accept a file download from tcsBU."""
+        suggested_name = os.path.basename(
+            download.downloadFileName() or "network.svg")
+        extension = os.path.splitext(suggested_name)[1].lower()
+
+        if extension == '.netst-pdf-trigger':
+            download.cancel()
+            self._handle_pdf_export()
+            return
+        output_dir = self.output_panel.get_output_path()
+        if not output_dir or not os.path.isdir(output_dir):
+            output_dir = os.path.expanduser("~")
+        default_path = os.path.join(output_dir, suggested_name)
+        filters = {
+            ".svg": "SVG Image (*.svg)",
+            ".png": "PNG Image (*.png)",
+            ".jpg": "JPEG Image (*.jpg *.jpeg)",
+            ".jpeg": "JPEG Image (*.jpg *.jpeg)",
+            ".csv": "CSV Files (*.csv)",
+            ".tsv": "TSV Files (*.tsv)",
+            ".txt": "Text Files (*.txt)",
+        }
+        file_filter = filters.get(extension, "All Files (*)")
+        is_image = extension in (".svg", ".png", ".jpg", ".jpeg")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            lang_manager.get(
+                'dlg_export_network_image' if is_image else 'dlg_save_web_export',
+                'Save Network Image' if is_image else 'Save Exported File'),
+            default_path,
+            file_filter,
+        )
+        if not file_path:
+            download.cancel()
+            return
+        valid_extensions = (
+            (".jpg", ".jpeg")
+            if extension in (".jpg", ".jpeg")
+            else (extension,)
+        )
+        if extension and not file_path.lower().endswith(valid_extensions):
+            file_path += extension
+        download.setDownloadDirectory(os.path.dirname(file_path))
+        download.setDownloadFileName(os.path.basename(file_path))
+        download.accept()
+
+    def _handle_pdf_export(self) -> None:
+        """Export the network as a PDF by retrieving the SVG from tcsBU."""
+        if not hasattr(self.web_view_main, 'page'):
+            return
+
+        def on_payload(result):
+            if not result or not isinstance(result, dict):
+                QMessageBox.warning(
+                    self,
+                    'PDF Export',
+                    'No SVG data available for PDF export.',
+                )
+                return
+            svg_markup = result.get('markup', '')
+            width = result.get('width', 800)
+            height = result.get('height', 600)
+            if not svg_markup:
+                return
+
+            output_dir = self.output_panel.get_output_path()
+            if not output_dir or not os.path.isdir(output_dir):
+                output_dir = os.path.expanduser("~")
+            default_path = os.path.join(output_dir, 'network.pdf')
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, 'Save Network as PDF', default_path,
+                'PDF Files (*.pdf)')
+            if not file_path:
+                return
+            if not file_path.lower().endswith('.pdf'):
+                file_path += '.pdf'
+            self._write_svg_to_pdf(svg_markup, width, height, file_path)
+
+        self.web_view_main.page().runJavaScript(
+            'window._pdfSvgPayload || null', on_payload)
+
+    def _write_svg_to_pdf(self, svg_markup: str, width: int, height: int,
+                          file_path: str) -> None:
+        """Render SVG markup into a PDF file using Qt's painting system."""
+        try:
+            from PyQt6.QtCore import QByteArray, QMarginsF
+            from PyQt6.QtGui import QPainter, QPageLayout, QPageSize
+            from PyQt6.QtSvg import QSvgRenderer
+            from PyQt6.QtCore import QSizeF
+
+            svg_bytes = QByteArray(svg_markup.encode('utf-8'))
+            renderer = QSvgRenderer(svg_bytes)
+            if not renderer.isValid():
+                QMessageBox.warning(self, 'PDF Export',
+                                    'Failed to parse the SVG for PDF rendering.')
+                return
+
+            try:
+                from PyQt6.QtGui import QPdfWriter
+                page_size = QPageSize(QSizeF(width, height), QPageSize.Unit.Point)
+                writer = QPdfWriter(file_path)
+                writer.setPageLayout(QPageLayout(
+                    page_size, QPageLayout.Orientation.Portrait,
+                    QMarginsF(0, 0, 0, 0)))
+                writer.setResolution(300)
+
+                painter = QPainter(writer)
+                renderer.render(painter)
+                painter.end()
+            except ImportError:
+                svg_path = file_path.replace('.pdf', '.svg')
+                with open(svg_path, 'w', encoding='utf-8') as f:
+                    f.write(svg_markup)
+                QMessageBox.information(
+                    self, 'PDF Export',
+                    f'QPdfWriter not available. SVG saved to:\n{svg_path}')
+                return
+
+            self._append_localized_log(
+                'info', 'log_pdf_exported',
+                'Network exported as PDF: {path}', path=file_path)
+        except Exception as exc:
+            QMessageBox.warning(
+                self, 'PDF Export',
+                f'Failed to export PDF:\n{exc}')
 
     def _load_initial_pages(self):
         """Load initial HTML pages."""
@@ -477,11 +659,21 @@ class MainForm(MainWindowUI):
 
     def _on_table_data_changed(self, top_left, bottom_right, _roles=None) -> None:
         """Invalidate derived output after selection or editable input changes."""
-        # Name, sequence, and trait edits invalidate the original native VCF
-        # provenance. Selection-only changes can still reuse the VCF subset.
-        if top_left.column() <= 5 and bottom_right.column() >= 2:
+        if self._syncing_metadata_from_network:
+            return
+        # Only a name or sequence edit invalidates the original VCF provenance;
+        # trait/metadata edits leave the samples (and the network topology)
+        # unchanged. Keep the existing alignment/GML and let the Metadata tab
+        # refresh only tcsBU's visualization configuration files.
+        name_col = TaxonTableModel.NAME_COLUMN
+        sequence_col = TaxonTableModel.SEQUENCE_COLUMN
+        if top_left.column() <= sequence_col and bottom_right.column() >= name_col:
             self._clear_vcf_source()
-        self._invalidate_derived_results()
+            self._invalidate_derived_results()
+            return
+        if bottom_right.column() < TaxonTableModel.FIRST_TRAIT_COLUMN:
+            # Selection changes alter the set used by a future analysis.
+            self._invalidate_derived_results()
 
     def _current_mcan_vcf_input(self) -> Optional[McanVcfInput]:
         """Return native VCF input only while imported names/sequences are unchanged."""
@@ -496,37 +688,82 @@ class MainForm(MainWindowUI):
         return self._mcan_vcf_input
 
     def _load_vcf(self):
-        """Import VCF samples and metadata as aligned sequence-table records."""
+        """Import VCF samples as aligned sequence-table records.
+
+        Metadata is parsed from the sample IDs through the shared
+        standardization dialog, exactly like the FASTA/NEXUS/PHYLIP importers.
+        An optional metadata file may still be supplied: it seeds the trait
+        columns and, when it is a McAN six-column TSV and the sample names are
+        left unchanged, enables native ``McAN --vcf`` analysis.
+        """
         config = VcfImportDialog.get_import_config(self)
         if config is None:
             return
         try:
+            metadata_path = config['metadata_path']
             result = import_vcf(
                 config['vcf_path'],
-                config['metadata_path'],
+                metadata_path,
                 config['reference_fasta'],
             )
-            taxons = list(result.taxons)
+            imported = list(result.taxons)
+            headers = [taxon.name for taxon in imported[:100]]
+            if not headers:
+                QMessageBox.warning(
+                    self, lang_manager.get('title_warning', 'Warning'),
+                    lang_manager.get('msg_no_sequences_in_file',
+                                     'No sequences found in file!'))
+                return
+
+            # Snapshot the original VCF sample names before standardization.
+            # Native McAN VCF mode subsets the original VCF/metadata by table
+            # name, so it is only valid while the table still matches these; the
+            # snapshot lets _current_mcan_vcf_input() drop native mode as soon as
+            # standardization (or a later edit) renames or removes a sample.
+            original_snapshot = {
+                taxon.name: taxon.sequence for taxon in imported
+            }
+
+            # Parse metadata from the sample IDs, consistent with the other
+            # sequence importers.
+            std_config = StandardizationDialog.get_standardization_config(
+                headers, self)
+            if std_config is None:
+                self._append_localized_log(
+                    'info', 'log_load_cancelled', 'Load cancelled by user')
+                return
+            taxons = self.file_service.apply_standardization(imported, std_config)
+            if not taxons:
+                QMessageBox.warning(
+                    self, lang_manager.get('title_warning', 'Warning'),
+                    lang_manager.get('msg_no_valid_sequences'))
+                return
+
             self.table_model.clear()
             self.table_model.add_taxons(taxons)
             self._invalidate_derived_results()
-            self._vcf_sequence_snapshot = {
-                taxon.name: taxon.sequence for taxon in taxons
-            }
+            self._seed_schema_from_taxons(taxons)
 
-            # Native McAN VCF mode requires its six-column tab-delimited
-            # metadata. Generic CSV metadata still imports traits, but McAN
-            # falls back to the aligned-FASTA adapter.
-            try:
-                read_metadata_rows(config['metadata_path'])
-                self._mcan_vcf_input = McanVcfInput(
-                    config['vcf_path'], config['metadata_path'])
-            except FormatConversionError:
-                self._mcan_vcf_input = None
-                self._append_localized_log(
-                    'warning', 'log_vcf_metadata_not_native',
-                    'Metadata was imported, but it is not McAN six-column TSV; '
-                    'McAN will use the converted alignment instead of native VCF mode.')
+            # Native McAN VCF mode requires the McAN six-column tab-delimited
+            # metadata. Set it last so table signals cannot clear it; the
+            # snapshot gate disables it automatically if names were changed.
+            self._mcan_vcf_input = None
+            self._vcf_sequence_snapshot = {}
+            if metadata_path:
+                try:
+                    read_metadata_rows(metadata_path)
+                    self._mcan_vcf_input = McanVcfInput(
+                        config['vcf_path'], metadata_path)
+                    self._vcf_sequence_snapshot = original_snapshot
+                    self._append_localized_log(
+                        'info', 'log_vcf_native_available',
+                        'McAN can read this VCF and metadata natively while the '
+                        'imported sample names are unchanged.')
+                except FormatConversionError:
+                    self._append_localized_log(
+                        'warning', 'log_vcf_metadata_not_native',
+                        'Metadata was imported, but it is not McAN six-column TSV; '
+                        'McAN will use the converted alignment instead of native VCF mode.')
 
             self._update_selected_count()
             self.data_tab.update_counts(total=len(taxons))
@@ -648,7 +885,8 @@ class MainForm(MainWindowUI):
                 return
 
             # Show standardization dialog
-            config = StandardizationDialog.get_standardization_config(headers, self)
+            config = StandardizationDialog.get_standardization_config(
+                headers, self)
 
             if config is None:
                 # User cancelled
@@ -670,6 +908,7 @@ class MainForm(MainWindowUI):
 
             self._clear_vcf_source()
             self._invalidate_derived_results()
+            self._seed_schema_from_taxons(taxons)
 
             self._update_selected_count()
             self.data_tab.update_counts(total=len(taxons))
@@ -736,25 +975,33 @@ class MainForm(MainWindowUI):
             self._show_export_error(e)
 
     def _export_traits(self):
-        """Export table traits independently as a CSV file."""
+        """Export sample metadata (traits) independently as a CSV or TSV file."""
         if self.table_model.rowCount() < 1:
             QMessageBox.warning(
                 self, lang_manager.get('title_warning', 'Warning'),
                 lang_manager.get('msg_no_export', 'No data to export!'))
             return
-        file_path, _ = QFileDialog.getSaveFileName(
+        filter_text = lang_manager.get(
+            'filter_export_traits', 'CSV Files (*.csv);;TSV Files (*.tsv)')
+        filters = filter_text.split(';;')
+        file_path, selected_filter = QFileDialog.getSaveFileName(
             self,
-            lang_manager.get('dlg_export_traits_title', 'Export Traits'),
+            lang_manager.get('dlg_export_traits_title', 'Export Metadata'),
             "",
-            lang_manager.get('filter_export_traits', 'CSV Files (*.csv)'),
+            filter_text,
         )
         if not file_path:
             return
-        if not file_path.lower().endswith('.csv'):
-            file_path += '.csv'
+        use_tsv = len(filters) > 1 and selected_filter == filters[1]
+        extension = '.tsv' if use_tsv else '.csv'
+        if not file_path.lower().endswith(('.csv', '.tsv')):
+            file_path += extension
+        delimiter = '\t' if file_path.lower().endswith('.tsv') else ','
+        trait_names = [d.name for d in self.table_model.schema().ordered()]
         try:
             self.file_service.export_traits(
-                file_path, self.table_model.get_all_taxons())
+                file_path, self.table_model.get_all_taxons(),
+                delimiter=delimiter, trait_names=trait_names or None)
             self._append_localized_log(
                 'success', 'log_exported_traits',
                 'Traits exported to: {path}', path=file_path)
@@ -777,114 +1024,71 @@ class MainForm(MainWindowUI):
                 'Failed to export: {err}').format(err=str(error)))
 
     def _load_csv_traits(self):
-        """Import discrete / continuous traits from a CSV file.
+        """Import multi-trait sample metadata from a CSV or TSV file.
 
-        Workflow:
-        1. Require that sequences have been loaded first.
-        2. Let the user pick a CSV file.
-        3. Read the CSV headers and first few rows; show a column-mapping dialog.
-        4. Read all data rows using the chosen column indices.
-        5. Validate that every sequence name in the loaded table appears in the
-           CSV (and vice-versa).  Report any mismatches as an error and abort.
-        6. If traits are already present, ask the user whether to overwrite them.
-        7. Apply the new trait values to the table model.
+        Each column is tagged as the sample name, a discrete trait, or a
+        continuous trait, with at least one discrete trait as the group. Traits
+        are matched to loaded samples by name and merged into the project's
+        metadata schema, then shown as columns in the Data table and rows in the
+        Metadata tab.
         """
         import csv
 
-        # Step 1 – Sequence must be loaded first
         if self.table_model.rowCount() < 1:
             QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
                                 lang_manager.get('msg_load_seq_first',
-                                                 'Please load a sequence file first before importing traits!'))
+                                                 'Please load a sequence file first before importing metadata!'))
             return
 
-        # Step 2 – Choose CSV file
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            lang_manager.get('dlg_load_csv_title', 'Load CSV Traits File'),
+            lang_manager.get('dlg_load_csv_title', 'Load Metadata File'),
             "",
-            lang_manager.get('filter_csv', 'CSV Files (*.csv);;All Files (*.*)')
+            lang_manager.get('filter_csv', 'Metadata Files (*.csv *.tsv *.txt);;All Files (*.*)')
         )
         if not file_path:
             return
 
         try:
-            # Step 3 – Read CSV and show column-mapping dialog
+            # CSV and TSV are both accepted; infer the delimiter from the first
+            # data-bearing line (tab wins ties, matching read_metadata).
             encoding = self.file_service.detect_encoding(file_path)
             with open(file_path, 'r', encoding=encoding, errors='replace', newline='') as fh:
-                reader = csv.reader(fh)
-                all_rows = [row for row in reader if any(cell.strip() for cell in row)]
+                raw_lines = fh.readlines()
+            sample_line = next((line for line in raw_lines if line.strip()), "")
+            delimiter = "\t" if sample_line.count("\t") >= sample_line.count(",") else ","
+            reader = csv.reader(raw_lines, delimiter=delimiter)
+            all_rows = [row for row in reader if any(cell.strip() for cell in row)]
 
             if not all_rows:
                 QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
-                                    lang_manager.get('msg_csv_empty', 'The CSV file is empty!'))
+                                    lang_manager.get('msg_csv_empty', 'The file is empty!'))
                 return
-
-            headers = all_rows[0]
-            data_rows = all_rows[1:]
-
+            headers, data_rows = all_rows[0], all_rows[1:]
             if not headers:
                 QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
-                                    lang_manager.get('msg_csv_no_header',
-                                                     'The CSV file has no header row!'))
+                                    lang_manager.get('msg_csv_no_header', 'The file has no header row!'))
                 return
-
             if not data_rows:
                 QMessageBox.warning(self, lang_manager.get('title_warning', 'Warning'),
-                                    lang_manager.get('msg_csv_no_data',
-                                                     'The CSV file contains no data rows!'))
+                                    lang_manager.get('msg_csv_no_data', 'The file contains no data rows!'))
                 return
 
-            # Show at most 5 rows in the preview
-            preview_rows = data_rows[:5]
-
-            mapping = CsvTraitsImportDialog.get_column_mapping(headers, preview_rows, self)
+            # Pass all rows so continuous conversion can validate the complete
+            # column; the dialog itself limits the visible preview to five rows.
+            mapping = CsvTraitsImportDialog.get_column_mapping(headers, data_rows, self)
             if mapping is None:
                 self._append_localized_log(
-                    'info', 'log_csv_cancelled', 'CSV trait import cancelled by user')
+                    'info', 'log_csv_cancelled', 'Metadata import cancelled by user')
                 return
 
-            name_col = mapping['name_col']
-            discrete_col = mapping['discrete_col']
-            continuous_col = mapping['continuous_col']
-
-            if name_col is None:
-                QMessageBox.critical(self, lang_manager.get('title_error', 'Error'),
-                                     lang_manager.get('msg_csv_need_name_col',
-                                                      'Sequence Name column must be selected!'))
+            try:
+                imported = build_metadata(data_rows, mapping)
+            except MetadataImportError as exc:
+                QMessageBox.critical(self, lang_manager.get('title_error', 'Error'), str(exc))
                 return
 
-            csv_sequence_names = [
-                row[name_col].strip()
-                for row in data_rows
-                if name_col < len(row) and row[name_col].strip()
-            ]
-            duplicate_csv_names = find_duplicates(csv_sequence_names)
-            if duplicate_csv_names:
-                QMessageBox.critical(
-                    self,
-                    lang_manager.get('title_duplicate_names', 'Duplicate Names'),
-                    lang_manager.get(
-                        'msg_csv_duplicate_names',
-                        'The CSV contains duplicate sequence names:\n{names}'
-                    ).format(names="\n".join(f"  • {n}" for n in duplicate_csv_names)),
-                )
-                return
-
-            # Step 4 – Build lookup: csv_name -> (discrete, continuous)
-            csv_trait_map: dict = {}
-            for row in data_rows:
-                if name_col >= len(row):
-                    continue
-                seq_name = row[name_col].strip()
-                if not seq_name:
-                    continue
-                discrete = row[discrete_col].strip() if discrete_col is not None and discrete_col < len(row) else ""
-                continuous = row[continuous_col].strip() if continuous_col is not None and continuous_col < len(
-                    row) else "0"
-                csv_trait_map[seq_name] = (discrete, continuous)
-
-            # Step 5 – Validate names
+            # Validate sample names against the loaded table.
             loaded_name_list = [
                 self.table_model.get_taxon(i).name
                 for i in range(self.table_model.rowCount())
@@ -892,103 +1096,85 @@ class MainForm(MainWindowUI):
             duplicate_loaded_names = find_duplicates(loaded_name_list)
             if duplicate_loaded_names:
                 QMessageBox.critical(
-                    self,
-                    lang_manager.get('title_duplicate_names', 'Duplicate Names'),
+                    self, lang_manager.get('title_duplicate_names', 'Duplicate Names'),
                     lang_manager.get('msg_data_duplicate_names').format(
-                        names="\n".join(f"  • {name}" for name in duplicate_loaded_names)
-                    ),
-                )
+                        names="\n".join(f"  • {name}" for name in duplicate_loaded_names)))
                 return
             loaded_names = set(loaded_name_list)
-            csv_names = set(csv_trait_map.keys())
-
-            missing_in_csv = loaded_names - csv_names  # loaded but not in CSV
-            extra_in_csv = csv_names - loaded_names  # in CSV but not loaded
-
-            if missing_in_csv or extra_in_csv:
+            meta_names = set(imported.values_by_sample)
+            missing_in_meta = loaded_names - meta_names
+            extra_in_meta = meta_names - loaded_names
+            if missing_in_meta or extra_in_meta:
                 msg_lines = [lang_manager.get('msg_name_mismatch_header',
                                               'Sequence name mismatch detected:\n')]
-                if missing_in_csv:
+                if missing_in_meta:
                     msg_lines.append(lang_manager.get('msg_name_mismatch_missing',
-                                                      'Sequences in data table NOT found in CSV:'))
-                    for n in sorted(missing_in_csv):
-                        msg_lines.append(f"  • {n}")
-                if extra_in_csv:
-                    if missing_in_csv:
+                                                      'Sequences in data table NOT found in metadata:'))
+                    msg_lines += [f"  • {n}" for n in sorted(missing_in_meta)]
+                if extra_in_meta:
+                    if missing_in_meta:
                         msg_lines.append("")
                     msg_lines.append(lang_manager.get('msg_name_mismatch_extra',
-                                                      'Names in CSV NOT found in data table:'))
-                    for n in sorted(extra_in_csv):
-                        msg_lines.append(f"  • {n}")
-                QMessageBox.critical(self, lang_manager.get('title_name_mismatch',
-                                                            'Name Mismatch Error'),
+                                                      'Names in metadata NOT found in data table:'))
+                    msg_lines += [f"  • {n}" for n in sorted(extra_in_meta)]
+                QMessageBox.critical(self, lang_manager.get('title_name_mismatch', 'Name Mismatch Error'),
                                      "\n".join(msg_lines))
                 return
 
-            # Step 6 – Ask whether to overwrite if traits already exist
-            has_existing_discrete = any(
-                self.table_model.get_taxon(i).discrete_traits.strip()
-                for i in range(self.table_model.rowCount())
-            )
-            has_existing_continuous = any(
-                has_meaningful_continuous_trait(
-                    self.table_model.get_taxon(i).continuous_traits)
-                for i in range(self.table_model.rowCount())
-            )
-            if has_existing_discrete or has_existing_continuous:
+            # Confirm before overwriting existing metadata values.
+            if any(self.table_model.get_taxon(i).traits
+                   for i in range(self.table_model.rowCount())):
                 reply = QMessageBox.question(
-                    self,
-                    lang_manager.get('title_update_traits', 'Update Traits'),
+                    self, lang_manager.get('title_update_traits', 'Update Metadata'),
                     lang_manager.get('msg_traits_overwrite',
-                                     'Trait data already exists for some sequences.\n'
-                                     'Do you want to overwrite the existing traits with the CSV data?'),
+                                     'Metadata already exists for some sequences.\n'
+                                     'Do you want to overwrite the existing metadata with the imported file?'),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No
-                )
+                    QMessageBox.StandardButton.No)
                 if reply != QMessageBox.StandardButton.Yes:
                     self._append_localized_log(
                         'info', 'log_csv_existing_kept',
-                        'CSV trait import cancelled; existing traits kept')
+                        'Metadata import cancelled; existing metadata kept')
                     return
 
-            # Step 7 – Apply traits to model
-            updated = 0
+            # Merge the imported traits into the project schema and apply values.
+            schema = self.table_model.schema()
+            schema.merge(imported.schema)
+            for imported_definition in imported.schema.ordered():
+                existing_definition = schema.get(imported_definition.name)
+                if existing_definition is not None:
+                    existing_definition.kind = imported_definition.kind
+                    if existing_definition.kind == CONTINUOUS:
+                        existing_definition.is_group = False
+            # The group chosen explicitly in this import dialog is
+            # authoritative, including when metadata is loaded in several
+            # batches and an earlier schema already had a group.
+            imported_group = imported.schema.group()
+            if imported_group is not None:
+                schema.set_group(imported_group.name)
             for i in range(self.table_model.rowCount()):
                 taxon = self.table_model.get_taxon(i)
-                if taxon is None:
-                    continue
-                traits = csv_trait_map.get(taxon.name)
-                if traits is None:
-                    continue
-                discrete, continuous = traits
-                if discrete_col is not None:
-                    taxon.discrete_traits = discrete
-                if continuous_col is not None:
-                    taxon.continuous_traits = continuous if continuous else "0"
-                updated += 1
-
-            # Notify the view that data changed
-            if self.table_model.rowCount() > 0:
-                top_left = self.table_model.index(0, 0)
-                bottom_right = self.table_model.index(
-                    self.table_model.rowCount() - 1,
-                    self.table_model.columnCount() - 1
-                )
-                self.table_model.dataChanged.emit(top_left, bottom_right)
+                values = imported.values_by_sample.get(taxon.name)
+                if values:
+                    taxon.traits.update(values)
+            self.table_model.set_schema(schema)
+            self.table_model.sync_all_primary_traits()
+            self._refresh_metadata_tab(focus=False)
 
             self._append_localized_log(
                 'success', 'log_csv_imported',
-                'Traits imported from CSV: {count} sequences updated', count=updated)
+                'Metadata imported: {count} sequences updated',
+                count=len(imported.values_by_sample))
             self._check_trait_completeness(self.table_model.get_all_taxons())
             self.switch_to_tab('data')
 
         except Exception as e:
             self._append_localized_log(
                 'error', 'msg_csv_import_failed',
-                'Failed to import CSV traits:\n{err}', err=str(e))
+                'Failed to import metadata:\n{err}', err=str(e))
             QMessageBox.critical(self, lang_manager.get('title_error', 'Error'),
                                  lang_manager.get('msg_csv_import_failed',
-                                                  'Failed to import CSV traits:\n{err}').format(err=str(e)))
+                                                  'Failed to import metadata:\n{err}').format(err=str(e)))
 
     # ==================== Data Selection ====================
 
@@ -1014,6 +1200,8 @@ class MainForm(MainWindowUI):
         if not selected:
             raise AnalysisDataError(lang_manager.get(
                 'msg_select_seq_first', 'Please select sequences first!'))
+        self._interpretation_group_map = {
+            taxon.name: (taxon.discrete_traits or '') for taxon in selected}
         try:
             return AnalysisDataset.from_taxons(
                 selected, trait_name='group', source_label='current data table')
@@ -1039,6 +1227,7 @@ class MainForm(MainWindowUI):
         records = [{
             'name': taxon.name,
             'sequence': aligned[taxon.name],
+            'traits': dict(taxon.traits),
             'discrete_traits': taxon.discrete_traits,
             'continuous_traits': taxon.continuous_traits,
         } for taxon in selected]
@@ -1052,8 +1241,12 @@ class MainForm(MainWindowUI):
             QMessageBox.warning(
                 self, lang_manager.get('title_warning', 'Warning'), str(exc))
             return
+        schema = self.table_model.schema()
+        discrete_names = [d.name for d in schema.discrete()]
+        default_group = schema.group().name if schema.group() is not None else None
         options = InterpretationOptionsDialog.get_config(
-            'diversity', dataset.alignment_length, self)
+            'diversity', dataset.alignment_length, self,
+            group_traits=discrete_names, default_group=default_group)
         if options is not None:
             self._start_interpretation('diversity', dataset, options)
 
@@ -1261,6 +1454,8 @@ class MainForm(MainWindowUI):
             tr('组间数值比较应同时考虑样本量与缺失率。',
                'Compare groups together with their sample sizes and missing-data rates.'),
         ]
+        report['cards'] = interpretation_charts.diversity_cards(result, tr)
+        report['figures'] = interpretation_charts.diversity_figures(result, tr)
         return report
 
     def _build_distance_report(self, result) -> dict:
@@ -1334,6 +1529,9 @@ class MainForm(MainWindowUI):
             tr('PCoA 聚类仅用于探索，不能单独证明群体、祖先或传播关系。',
                'PCoA proximity is exploratory and does not establish populations, ancestry, or transmission.'),
         ]
+        report['cards'] = interpretation_charts.distance_cards(result, tr)
+        report['figures'] = interpretation_charts.distance_figures(
+            result, tr, group_map=self._interpretation_group_map)
         return report
 
     def _build_topology_report(self, result) -> dict:
@@ -1393,6 +1591,8 @@ class MainForm(MainWindowUI):
             report['notes'].append(tr(
                 '源 GML 为有向网络；当前拓扑指标基于无向投影，方向信息仅作为来源记录保留。',
                 'The source GML is directed; these metrics use an undirected projection and retain direction only as provenance.'))
+        report['cards'] = interpretation_charts.topology_cards(result, tr)
+        report['figures'] = interpretation_charts.topology_figures(result, tr)
         return report
 
     @staticmethod
@@ -1466,7 +1666,7 @@ class MainForm(MainWindowUI):
         if message in exact:
             return exact[message]
         if message.startswith("Discrete trait '"):
-            return "离散性状可用分组少于两组。"
+            return "分类型性状可用分组少于两组。"
         if 'sequence pair(s) had fewer than' in message:
             details = message.split(': ', 1)
             count = message.split(' ', 1)[0]
@@ -1546,6 +1746,26 @@ class MainForm(MainWindowUI):
             return
         self._run_network_analysis(config.algorithm, extra_args=config.to_extra_args())
 
+    def _group_colors_for_taxons(self, taxons) -> dict:
+        """Resolve the group trait's category → colour map for the given samples.
+
+        Keys are the group values as written to ``_seq.meta.csv`` (the mirrored
+        ``discrete_traits``), so the colours line up with tcsBU's groupconf. An
+        empty result lets the config generator fall back to the palette.
+        """
+        schema = self.table_model.schema()
+        group = schema.group()
+        if group is None:
+            return {}
+        categories = []
+        seen = set()
+        for taxon in taxons:
+            value = (taxon.discrete_traits or "").strip()
+            if value and value not in seen:
+                seen.add(value)
+                categories.append(value)
+        return group.resolve_category_colors(categories)
+
     def _run_network_analysis(self, network_type: str, extra_args: list = None):
         """Run haplotype network analysis."""
         selected = self._selected_taxons_for_analysis()
@@ -1565,11 +1785,11 @@ class MainForm(MainWindowUI):
         if not has_discrete:
             self._append_localized_log(
                 'warning', 'log_no_discrete_selected',
-                'Selected data has no discrete traits; the network will use the Default group.')
+                'Selected data has no categorical traits; the network will use the Default group.')
         if not has_continuous:
             self._append_localized_log(
                 'info', 'log_no_continuous_selected',
-                'Selected data has no valid continuous traits; continuous-trait visualization is unavailable.')
+                'Selected data has no valid numeric traits; numeric-gradient visualization is unavailable.')
 
         # Clear any leftover pending JS before showing the waiting state. A
         # new page generation also invalidates delayed callbacks from a prior
@@ -1602,6 +1822,7 @@ class MainForm(MainWindowUI):
             self.analysis_service, network_type, selected, output_path, prefix,
             extra_args=extra_args or [],
             mcan_vcf_input=mcan_vcf_input,
+            group_colors=self._group_colors_for_taxons(selected),
         )
         worker.input_generation = self._input_generation
         worker.network_view_generation = self._network_view_generation
@@ -1611,6 +1832,211 @@ class MainForm(MainWindowUI):
         worker.finished.connect(
             lambda result, source=worker: self._on_analysis_finished(source, result))
         self._start_active_worker(worker)
+
+    def _apply_metadata_to_network(self):
+        """Remap the current metadata onto the already-built network.
+
+        Building a network without metadata yields nodes with no group or
+        continuous-trait colouring. Adding metadata afterwards does not require
+        rebuilding the network: the topology depends only on the sequences, so
+        this preserves the existing GML and sample-to-haplotype mapping,
+        regenerates only the tcsBU configuration, and reloads the visualization.
+        """
+        if self.table_model.rowCount() < 1:
+            QMessageBox.warning(
+                self, lang_manager.get('title_warning', 'Warning'),
+                lang_manager.get('msg_load_data_first', 'Please load data first!'))
+            return
+        # The Metadata tab edits the shared schema directly.  Mirror its
+        # current group and primary continuous trait onto the compatibility
+        # fields before the worker snapshots the table.
+        self.table_model.sync_all_primary_traits()
+        output_target = self._analysis_output_target()
+        if output_target is None:
+            return
+        output_path, prefix = output_target
+        gml_file = os.path.join(output_path, f"{prefix}.gml")
+        if not os.path.isfile(gml_file):
+            QMessageBox.warning(
+                self, lang_manager.get('title_warning', 'Warning'),
+                lang_manager.get(
+                    'msg_build_network_first',
+                    'Build a haplotype network first, then apply metadata to it.'))
+            return
+
+        # Metadata is matched to built samples by name, so snapshot the whole
+        # table rather than the current selection.
+        taxons = [
+            TaxonData.from_dict(taxon.to_dict())
+            for taxon in self.table_model.get_all_taxons()
+        ]
+
+        self._network_view_generation += 1
+        self._pending_js = None
+        self._pending_js_generation = None
+
+        self.switch_to_tab('network')
+        self.show_waiting_page()
+        self._append_localized_log(
+            'info', 'log_updating_network_metadata',
+            'Refreshing the existing network visualization configuration '
+            '(no realignment or topology rebuild)…')
+        self._append_localized_log('info', 'log_project', 'Project: {prefix}', prefix=prefix)
+        self.set_status_key('status_analyzing', 'Analyzing...')
+
+        self._stop_worker(self.analysis_worker)
+        worker = NetworkMetadataWorker(
+            self.analysis_service, taxons, output_path, prefix,
+            group_colors=self._group_colors_for_taxons(taxons))
+        worker.input_generation = self._input_generation
+        worker.network_view_generation = self._network_view_generation
+        self.analysis_worker = worker
+        worker.progress.connect(self.set_progress)
+        worker.log.connect(self.log_tab.append_info)
+        worker.finished.connect(
+            lambda result, source=worker: self._on_analysis_finished(source, result))
+        self._start_active_worker(worker)
+
+    # ==================== Metadata Tab ====================
+
+    @staticmethod
+    def _tcsbu_sample_id(value: str) -> str:
+        """Return the sample id used by tcsBU's browser-side grids."""
+        normalized = re.sub(r"[^A-Za-z0-9_]", "_", str(value or ""))
+        if normalized[:1].isdigit():
+            normalized = "L" + normalized
+        return normalized
+
+    def _on_main_tab_changed(self, index: int) -> None:
+        """Pull sidebar edits back when moving from Network to Metadata."""
+        current = self.tab_widget.widget(index) if index >= 0 else None
+        previous = self._last_main_tab_widget
+        self._last_main_tab_widget = current
+        if current is self.metadata_tab and previous is self.web_view_main:
+            self._pull_metadata_from_network_view()
+
+    def _pull_metadata_from_network_view(self) -> None:
+        """Synchronize tcsBU group/haplotype edits with NetST's shared model."""
+        if self.metadata_tab is None or not hasattr(self.web_view_main, 'page'):
+            return
+        generation = self._network_view_generation
+
+        def receive(config) -> None:
+            if generation != self._network_view_generation:
+                return
+            if not isinstance(config, dict):
+                return
+            self._merge_network_meta_config(config)
+
+        self.web_view_main.page().runJavaScript(
+            "typeof window.exportMetaConfig === 'function' "
+            "? window.exportMetaConfig() : null",
+            receive,
+        )
+
+    def _merge_network_meta_config(self, config: dict) -> None:
+        """Merge editable tcsBU metadata values/colours into Data + Metadata."""
+        schema = self.table_model.schema()
+        traits = config.get("traits")
+        values = config.get("sample_values")
+        if not isinstance(traits, list) or not isinstance(values, dict):
+            return
+
+        for trait in traits:
+            if not isinstance(trait, dict):
+                continue
+            definition = schema.get(str(trait.get("name", "")))
+            if definition is None or definition.kind != DISCRETE:
+                continue
+            colors = {}
+            for entry in trait.get("categories", ()):
+                if not isinstance(entry, dict):
+                    continue
+                label = str(entry.get("label", "")).strip()
+                color = normalize_hex_color(entry.get("color"))
+                if label and color:
+                    colors[label] = color
+            if colors:
+                definition.category_colors.update(colors)
+
+        self._syncing_metadata_from_network = True
+        try:
+            for taxon in self.table_model.get_all_taxons():
+                sample_values = values.get(self._tcsbu_sample_id(taxon.name))
+                if not isinstance(sample_values, dict):
+                    continue
+                for definition in schema.ordered():
+                    if definition.name in sample_values:
+                        taxon.traits[definition.name] = str(
+                            sample_values[definition.name])
+            # Update the classic compatibility mirrors and notify the Data tab.
+            self.table_model.sync_all_primary_traits()
+        finally:
+            self._syncing_metadata_from_network = False
+        self.metadata_tab.set_schema(schema)
+
+    def _ensure_metadata_tab(self):
+        """Create the Metadata tab on first use and wire its callbacks."""
+        if self.metadata_tab is None:
+            self.metadata_tab = MetadataTabWidget()
+            self.metadata_tab.set_apply_callback(self._apply_metadata_to_network)
+            self.metadata_tab.set_category_provider(self._trait_categories)
+            data_index = self.tab_widget.indexOf(self.data_tab)
+            insert_at = data_index + 1 if data_index >= 0 else self.tab_widget.count()
+            self.tab_widget.insertTab(
+                insert_at, self.metadata_tab, self.TAB_NAMES['metadata'])
+        return self.metadata_tab
+
+    def _refresh_metadata_tab(self, focus: bool = False):
+        """Sync the Metadata tab with the current schema; show it if traits exist."""
+        schema = self.table_model.schema()
+        if len(schema) == 0:
+            # No traits — remove any existing Metadata tab so the UI stays clean.
+            if self.metadata_tab is not None:
+                index = self.tab_widget.indexOf(self.metadata_tab)
+                if index >= 0:
+                    self.tab_widget.removeTab(index)
+                self.metadata_tab.deleteLater()
+                self.metadata_tab = None
+            return
+        tab = self._ensure_metadata_tab()
+        tab.set_schema(schema)
+        if focus:
+            self.switch_to_tab('metadata')
+
+    def _trait_categories(self, trait_name: str):
+        """Distinct values of a trait across all samples, in first-seen order."""
+        categories = []
+        seen = set()
+        for taxon in self.table_model.get_all_taxons():
+            value = taxon.trait_value(trait_name).strip()
+            if value and value not in seen:
+                seen.add(value)
+                categories.append(value)
+        return categories
+
+    def _seed_schema_from_taxons(self, taxons):
+        """Reset the schema after a sequence import.
+
+        Standardization may split the sample ID into a group and a continuous
+        value; register those as named traits so they appear as Data columns and
+        Metadata rows, keeping the network colouring and the tab consistent.
+        """
+        has_discrete = any((t.discrete_traits or "").strip() for t in taxons)
+        has_continuous = any(
+            has_meaningful_continuous_trait(t.continuous_traits) for t in taxons)
+        schema = TraitSchema()
+        if has_discrete:
+            schema.add(TraitDefinition(name="group", kind=DISCRETE, is_group=True, order=0))
+            for taxon in taxons:
+                taxon.traits["group"] = taxon.discrete_traits or ""
+        if has_continuous:
+            schema.add(TraitDefinition(name="value", kind=CONTINUOUS, order=1))
+            for taxon in taxons:
+                taxon.traits["value"] = taxon.continuous_traits or "0"
+        self.table_model.set_schema(schema)
+        self.table_model.sync_all_primary_traits()
+        self._refresh_metadata_tab(focus=False)
 
     def _on_analysis_finished(self, worker: AnalysisWorker, result: AnalysisResult):
         """Handle network-analysis completion.
@@ -1636,8 +2062,9 @@ class MainForm(MainWindowUI):
                 'success', 'log_analysis_completed', 'Analysis completed.')
             js_file = os.path.join(result.output_path, f"{result.prefix}.js")
             if os.path.isfile(js_file):
+                meta_config = self._meta_config_dict(result.output_path, result.prefix)
                 self._pending_js = self._build_network_js_injection(
-                    js_file, result.has_continuous_traits
+                    js_file, result.has_continuous_traits, meta_config=meta_config
                 )
                 self._pending_js_generation = worker.network_view_generation
                 self._append_localized_log(
@@ -1732,13 +2159,15 @@ class MainForm(MainWindowUI):
         self.web_view_main.page().runJavaScript(
             "typeof window.loadGraph === 'function'", on_probe)
 
-    def _build_network_js_injection(self, js_file: str, has_continuous_traits: bool) -> str:
+    def _build_network_js_injection(self, js_file: str, has_continuous_traits: bool,
+                                    meta_config: Optional[dict] = None) -> str:
         """Build the JavaScript string that loads analysis results into index.html.
 
         Reads the generated prefix.js (which embeds GML + CSV contents as JS
         File objects) and appends calls to the tcsBU window-level load functions.
         loadGroups is skipped when groupconf is empty (no discrete traits) to
-        avoid a spurious tcsBU warning popup.
+        avoid a spurious tcsBU warning popup. When a multi-trait metadata config
+        is available it is loaded last, driving the concentric-ring rendering.
         """
         with open(js_file, 'r', encoding='utf-8') as fh:
             prefix_js = fh.read()
@@ -1760,8 +2189,51 @@ class MainForm(MainWindowUI):
         lines.append("    if (typeof hapconffile !== 'undefined') window.loadHaplotypes(hapconffile);")
         if has_continuous_traits:
             lines.append("    if (typeof traitconffile !== 'undefined') window.loadTraits(traitconffile);")
+        if meta_config:
+            payload = json.dumps(meta_config, ensure_ascii=False)
+            lines.append(
+                "    if (typeof window.loadMetaConfig === 'function') "
+                f"window.loadMetaConfig({payload});")
         lines.append("})();")
         return "\n".join(lines)
+
+    def _meta_config_dict(self, output_path: str, prefix: str) -> Optional[dict]:
+        """Build tcsBU's multi-ring metadata config from the schema and GML.
+
+        Returns None when there is nothing to draw (no visualized traits or no
+        network yet), so the classic rendering is used instead.
+        """
+        schema = self.table_model.schema()
+        visualized = schema.visualized()
+        if len(schema) == 0:
+            return None
+        gml_file = os.path.join(output_path, f"{prefix}.gml")
+        if not os.path.isfile(gml_file):
+            return None
+        traits_spec = []
+        for definition in visualized:
+            if definition.kind == DISCRETE:
+                categories = self._trait_categories(definition.name)
+                traits_spec.append({
+                    "name": definition.name, "kind": DISCRETE,
+                    "group": definition.is_group,
+                    "colors": definition.resolve_category_colors(categories),
+                })
+            else:
+                low, high = definition.gradient_endpoints()
+                traits_spec.append({
+                    "name": definition.name, "kind": CONTINUOUS, "group": False,
+                    "gradient": [low, high],
+                })
+        sample_values = {
+            taxon.name: dict(taxon.traits)
+            for taxon in self.table_model.get_all_taxons()
+        }
+        try:
+            return build_meta_config(gml_file, traits_spec, sample_values)
+        except Exception as exc:  # never let ring config break the network view
+            self.log_tab.append_warning(f"Metadata ring config failed: {exc}")
+            return None
 
     # ==================== Alignment Functions ====================
 
@@ -2016,6 +2488,7 @@ class MainForm(MainWindowUI):
             (self.index_tab, 'tab_index'),
             (self.web_view_main, 'tab_network'),
             (self.data_tab, 'tab_data'),
+            (self.metadata_tab, 'tab_metadata'),
             (self.haplotype_tab, 'tab_haplotype'),
             (self.alignment_tab, 'tab_alignment'),
             (self.interpretation_tab, 'tab_interpretation'),
@@ -2035,13 +2508,13 @@ class MainForm(MainWindowUI):
                 lang_manager.get('column_id'),
                 lang_manager.get('column_name'),
                 lang_manager.get('column_sequence'),
-                lang_manager.get('column_discrete_traits'),
-                lang_manager.get('column_continuous_traits'),
             ],
             lang_manager.get('tooltip_sequence'),
         )
         if self.data_tab:
             self.data_tab.update_language()
+        if self.metadata_tab is not None:
+            self.metadata_tab.update_language()
         if self.output_panel:
             self.output_panel.update_language()
         if self.alignment_tab is not None:
@@ -2125,7 +2598,7 @@ class MainForm(MainWindowUI):
         if issue.code == 'invalid_continuous':
             return lang_manager.get(
                 'msg_validation_invalid_continuous',
-                "Continuous trait '{value}' is not numeric (ID: {id}, name: {name})."
+                "Numeric trait '{value}' is not numeric (ID: {id}, name: {name})."
             ).format(**details)
         if issue.code == 'duplicate_names':
             names = "\n".join(f"  • {name}" for name in details.get('names', []))
@@ -2152,11 +2625,11 @@ class MainForm(MainWindowUI):
         if not has_discrete:
             self._append_localized_log(
                 'warning', 'log_no_discrete_traits',
-                'Data has no discrete traits; group coloring is unavailable.')
+                'Data has no categorical traits; group coloring is unavailable.')
         if not has_continuous:
             self._append_localized_log(
                 'info', 'log_no_continuous_traits',
-                'Data has no valid continuous traits; continuous-trait visualization is unavailable.')
+                'Data has no valid numeric traits; numeric-gradient visualization is unavailable.')
 
     def closeEvent(self, event):
         """Ensure background workers are stopped before the window is destroyed."""

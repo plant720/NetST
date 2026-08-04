@@ -9,31 +9,8 @@ Integrated as Python module 2026
 import csv
 import json
 import os
-import random
 
-# Predefined color palettes for 3–10 groups
-_COLOR_PALETTES = {
-    3: ("#D85356", "#D7AA36", "#94BBAD"),
-    4: ("#F0776D", "#FBD2CB", "#29B4B6", "#C5E7E8"),
-    5: ("#8386A8", "#D15C6B", "#F5CF36", "#8FB943", "#78B9D2"),
-    6: ("#DA352A", "#FF8748", "#5BAA56", "#B8BB5B", "#4186B7", "#8679BE"),
-    7: ("#794292", "#44599B", "#2C8FA0", "#40A93B", "#EFE644", "#E97124", "#DF4442"),
-    8: ("#FF7F00", "#FDBF6F", "#E31A1C", "#FB9A99", "#33A02C", "#B2DF8A", "#1F78B4", "#A6CEE3"),
-    9: ("#E71F19", "#2CB8BB", "#55B333", "#6A1B86", "#E2C9E1", "#A4C5E8", "#EF7A1C", "#F9CA9C", "#F7C3C4"),
-    10: ("#009F72", "#D25F27", "#E49E21", "#EFE341", "#1F78B4", "#FB9A99", "#E21A1C", "#EAD59F", "#C9B1D4", "#52310F"),
-}
-
-
-def _text_to_integer(text: str) -> int:
-    if not text:
-        return 0
-    return int(''.join(str(ord(ch)) for ch in text))
-
-
-def _random_color(seed: int) -> str:
-    generator = random.Random(seed)
-    chars = '123456789ABCDEF'
-    return '#' + ''.join(chars[generator.randint(0, 14)] for _ in range(6))
+from model.trait_schema import default_category_colors, normalize_hex_color
 
 
 def _gen_hap_config(hap_file: str):
@@ -61,7 +38,7 @@ def _gen_hap_config(hap_file: str):
     return hap_conf_list
 
 
-def _color_group_config(hap_conf_list):
+def _color_group_config(hap_conf_list, group_colors=None):
     """Assign colors to each unique group.
 
     Groups are written to groupconf.csv exactly as-is; tcsBU's loadGroups
@@ -69,26 +46,33 @@ def _color_group_config(hap_conf_list):
     write non-Default groups.  When all samples fall into 'Default'
     (i.e. no discrete traits) we return an empty list — the groupconf
     file will be empty and tcsBU will keep its built-in Default group.
+
+    ``group_colors`` (group name → ``#RRGGBB``) lets the Metadata tab override
+    the automatic colours; groups it does not cover use the curated palette
+    for up to ten groups or stable, non-repeating random colours above ten.
     """
+    group_colors = group_colors or {}
     group_names = list(dict.fromkeys(group for _, group, _ in hap_conf_list))
     non_default = [g for g in group_names if g != "Default"]
 
-    n = len(non_default)
-    if n == 0:
+    if not non_default:
         # No named groups — all samples belong to Default; groupconf stays empty.
         return []
 
-    if n in _COLOR_PALETTES:
-        return [(name, _COLOR_PALETTES[n][i], 'none') for i, name in enumerate(non_default)]
-
-    # Fallback: random colors seeded by group name
+    valid_overrides = {
+        name: color
+        for name in non_default
+        if (color := normalize_hex_color(group_colors.get(name)))
+    }
+    automatic = default_category_colors(
+        non_default,
+        seed="primary-group",
+        excluded=tuple(valid_overrides.values()),
+    )
     result = []
-    seen = {}
-    for _, group, _ in hap_conf_list:
-        if group != 'Default' and group not in seen:
-            color = _random_color(_text_to_integer(group))
-            seen[group] = color
-            result.append((group, color, 'none'))
+    for name in non_default:
+        color = valid_overrides.get(name, automatic[name])
+        result.append((name, color, 'none'))
     return result
 
 
@@ -115,7 +99,8 @@ def _file_to_json_string(file_name: str) -> str:
 
 
 def generate_network_config(gml_file: str, hap_file: str, out_prefix: str,
-                            has_continuous_traits: bool = False) -> None:
+                            has_continuous_traits: bool = False,
+                            group_colors=None) -> None:
     """
     Main entry point replacing the GenNetworkConfig2 executable.
 
@@ -127,9 +112,32 @@ def generate_network_config(gml_file: str, hap_file: str, out_prefix: str,
                                 and <out_prefix>.js.
         has_continuous_traits:  When True, also embeds traitconffile in the .js so that
                                 tcsBU.js can auto-load continuous-trait coloring.
+        group_colors:           Optional {group name: '#RRGGBB'} overrides from the
+                                Metadata tab; unspecified groups fall back to palette.
     """
     hap_conf_list = _gen_hap_config(hap_file)
-    group_conf_list = _color_group_config(hap_conf_list)
+    generate_network_config_from_assignments(
+        gml_file, hap_conf_list, out_prefix,
+        has_continuous_traits=has_continuous_traits,
+        group_colors=group_colors,
+    )
+
+
+def generate_network_config_from_assignments(
+    gml_file: str,
+    hap_conf_list,
+    out_prefix: str,
+    has_continuous_traits: bool = False,
+    group_colors=None,
+) -> None:
+    """Write tcsBU config directly from ``(sample, group, haplotype)`` rows.
+
+    This is used when metadata changes after a network has already been built:
+    the existing sample-to-haplotype assignment is preserved and only tcsBU's
+    group/haplotype/trait configuration plus its embedding JavaScript changes.
+    """
+    hap_conf_list = list(hap_conf_list)
+    group_conf_list = _color_group_config(hap_conf_list, group_colors)
     _write_conf(hap_conf_list, group_conf_list, out_prefix)
 
     with open(out_prefix + '.js', 'w', encoding='utf-8') as fp:

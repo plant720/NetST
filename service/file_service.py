@@ -219,20 +219,40 @@ class FileService:
         self._write_trait_rows(metadata_path, trait_rows)
         return [file_path, metadata_path]
 
-    def export_traits(self, file_path: str, taxons: List[TaxonData]) -> None:
-        """Export all editable trait fields as a UTF-8 CSV table."""
+    def export_traits(self, file_path: str, taxons: List[TaxonData],
+                      delimiter: str = ",", trait_names=None) -> None:
+        """Export sample metadata as a UTF-8 CSV or TSV table.
+
+        With ``trait_names`` the table has one column per named trait
+        (``sample, <trait...>``); otherwise it falls back to the classic
+        ``sample, discrete_trait, continuous_trait`` layout.
+        """
         if not taxons:
-            raise ValueError("No trait data to export")
+            raise ValueError("No metadata to export")
+        if trait_names:
+            fieldnames = ["sample"] + list(trait_names)
+            rows = []
+            for taxon in taxons:
+                row = {"sample": taxon.name}
+                for name in trait_names:
+                    row[name] = taxon.trait_value(name)
+                rows.append(row)
+            with open(file_path, "w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter=delimiter)
+                writer.writeheader()
+                writer.writerows(rows)
+            return
         self._write_trait_rows(
-            file_path, [self._trait_row(taxon) for taxon in taxons])
+            file_path, [self._trait_row(taxon) for taxon in taxons],
+            delimiter=delimiter)
 
     @staticmethod
-    def _write_trait_rows(file_path: str, rows: List[dict]) -> None:
+    def _write_trait_rows(file_path: str, rows: List[dict],
+                          delimiter: str = ",") -> None:
         with open(file_path, "w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=[
                 "sample", "discrete_trait", "continuous_trait",
-                "quantity", "organism",
-            ])
+            ], delimiter=delimiter)
             writer.writeheader()
             writer.writerows(rows)
 
@@ -242,8 +262,6 @@ class FileService:
             "sample": taxon.name,
             "discrete_trait": taxon.discrete_traits,
             "continuous_trait": taxon.continuous_traits,
-            "quantity": taxon.quantity,
-            "organism": taxon.organism,
         }
 
     def write_analysis_fasta(self, file_path: str, taxons: List[TaxonData]) -> None:

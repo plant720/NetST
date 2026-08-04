@@ -17,7 +17,8 @@ from .language_manager import lang_manager
 
 
 class InterpretationOptionsDialog(QDialog):
-    def __init__(self, mode: str, alignment_length: int, parent=None):
+    def __init__(self, mode: str, alignment_length: int, parent=None,
+                 group_traits=None, default_group=None):
         super().__init__(parent)
         self.mode = mode
         self.setWindowTitle(lang_manager.get(
@@ -29,8 +30,20 @@ class InterpretationOptionsDialog(QDialog):
         self.missing_policy = None
         self.minimum_sites = None
         self.minimum_coverage = None
+        self.group_trait = None
 
         if mode == 'diversity':
+            # Choose which discrete trait groups samples (Hd, pi, private haplotypes).
+            group_traits = list(group_traits or [])
+            if group_traits:
+                self.group_trait = QComboBox()
+                for name in group_traits:
+                    self.group_trait.addItem(name, name)
+                if default_group and default_group in group_traits:
+                    self.group_trait.setCurrentText(default_group)
+                form.addRow(lang_manager.get(
+                    'label_group_trait', 'Group samples by:'), self.group_trait)
+
             self.missing_policy = QComboBox()
             self.missing_policy.addItem(
                 lang_manager.get('option_complete_deletion', 'Complete deletion'),
@@ -75,7 +88,10 @@ class InterpretationOptionsDialog(QDialog):
 
     def config(self) -> Dict[str, object]:
         if self.mode == 'diversity':
-            return {'missing_policy': self.missing_policy.currentData()}
+            result = {'missing_policy': self.missing_policy.currentData()}
+            if self.group_trait is not None:
+                result['group_trait'] = self.group_trait.currentData()
+            return result
         return {
             'minimum_comparable_sites': self.minimum_sites.value(),
             'minimum_coverage': self.minimum_coverage.value() / 100.0,
@@ -83,9 +99,11 @@ class InterpretationOptionsDialog(QDialog):
 
     @classmethod
     def get_config(
-        cls, mode: str, alignment_length: int, parent=None
+        cls, mode: str, alignment_length: int, parent=None,
+        group_traits=None, default_group=None,
     ) -> Optional[Dict[str, object]]:
-        dialog = cls(mode, alignment_length, parent)
+        dialog = cls(mode, alignment_length, parent,
+                     group_traits=group_traits, default_group=default_group)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             return dialog.config()
         return None

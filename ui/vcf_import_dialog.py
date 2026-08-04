@@ -1,4 +1,11 @@
-"""Dialog for importing a VCF together with McAN metadata."""
+"""Dialog for importing a VCF as an aligned sequence table.
+
+Sample metadata is parsed from the sample IDs after import (via the shared
+standardization dialog), consistent with the FASTA/NEXUS/PHYLIP importers.
+A metadata file is optional: when a McAN six-column TSV is supplied and the
+imported sample names are left unchanged, McAN can read the original VCF and
+metadata natively (preserving sampling dates for network orientation).
+"""
 
 import os
 from typing import Dict, Optional
@@ -14,7 +21,7 @@ from .language_manager import lang_manager
 class VcfImportDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(lang_manager.get('dlg_vcf_import_title', 'Import VCF and Metadata'))
+        self.setWindowTitle(lang_manager.get('dlg_vcf_import_title', 'Import VCF'))
         self.setMinimumWidth(640)
 
         root = QVBoxLayout(self)
@@ -24,7 +31,7 @@ class VcfImportDialog(QDialog):
         self.reference_edit = QLineEdit()
         form.addRow(lang_manager.get('dlg_vcf_file', 'VCF file:'),
                     self._path_row(self.vcf_edit, self._browse_vcf))
-        form.addRow(lang_manager.get('dlg_vcf_metadata', 'Metadata file:'),
+        form.addRow(lang_manager.get('dlg_vcf_metadata', 'Metadata file (optional):'),
                     self._path_row(self.metadata_edit, self._browse_metadata))
         form.addRow(lang_manager.get('dlg_vcf_reference', 'Reference FASTA (optional):'),
                     self._path_row(self.reference_edit, self._browse_reference))
@@ -63,7 +70,7 @@ class VcfImportDialog(QDialog):
 
     def _browse_metadata(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, lang_manager.get('dlg_vcf_metadata', 'Metadata file:'), '',
+            self, lang_manager.get('dlg_vcf_metadata', 'Metadata file (optional):'), '',
             lang_manager.get('filter_metadata',
                              'Metadata Files (*.tsv *.txt *.csv);;All Files (*.*)'))
         if path:
@@ -78,12 +85,19 @@ class VcfImportDialog(QDialog):
             self.reference_edit.setText(path)
 
     def _accept_if_valid(self):
-        required = (self.vcf_edit.text().strip(), self.metadata_edit.text().strip())
-        if any(not path or not os.path.isfile(path) for path in required):
+        vcf_path = self.vcf_edit.text().strip()
+        if not vcf_path or not os.path.isfile(vcf_path):
             QMessageBox.warning(
                 self, lang_manager.get('title_warning', 'Warning'),
-                lang_manager.get('msg_vcf_metadata_required',
-                                 'Select an existing VCF file and metadata file.'))
+                lang_manager.get('msg_vcf_required',
+                                 'Select an existing VCF file.'))
+            return
+        metadata = self.metadata_edit.text().strip()
+        if metadata and not os.path.isfile(metadata):
+            QMessageBox.warning(
+                self, lang_manager.get('title_warning', 'Warning'),
+                lang_manager.get('msg_metadata_not_found',
+                                 'The selected metadata file does not exist.'))
             return
         reference = self.reference_edit.text().strip()
         if reference and not os.path.isfile(reference):

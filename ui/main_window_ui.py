@@ -27,6 +27,7 @@ except ImportError:
 from .menu_bar import MenuBarBuilder
 from .status_bar import StatusBarWidget
 from .data_tab_widget import DataTabWidget
+from .metadata_tab_widget import MetadataTabWidget
 from .output_panel import OutputPanel
 from .index_tab_widget import IndexTabWidget
 from .haplotype_tab_widget import HaplotypeTabWidget
@@ -82,6 +83,7 @@ class MainWindowUI(QMainWindow):
             'index': lang_manager.get('tab_index', 'Home'),
             'network': lang_manager.get('tab_network', 'Network'),
             'data': lang_manager.get('tab_data', 'Data'),
+            'metadata': lang_manager.get('tab_metadata', 'Metadata'),
             'haplotype': lang_manager.get('tab_haplotype', 'Haplotype'),
             'alignment': lang_manager.get('tab_alignment', 'Alignment'),
             'interpretation': lang_manager.get('tab_interpretation', 'Interpretation'),
@@ -96,6 +98,7 @@ class MainWindowUI(QMainWindow):
         self.index_tab: Optional[IndexTabWidget] = None
         self.web_view_main: Optional[QWebEngineView] = None
         self.data_tab: Optional[DataTabWidget] = None
+        self.metadata_tab: Optional[MetadataTabWidget] = None  # hidden until metadata loaded
         self.haplotype_tab: Optional[HaplotypeTabWidget] = None  # hidden until first analysis
         self.alignment_tab: Optional[AlignmentTabWidget] = None  # hidden until first alignment
         self.interpretation_tab: Optional[InterpretationTabWidget] = None
@@ -247,6 +250,7 @@ class MainWindowUI(QMainWindow):
             'index': self.index_tab,
             'network': self.web_view_main,
             'data': self.data_tab,
+            'metadata': self.metadata_tab,
             'haplotype': self.haplotype_tab,
             'alignment': self.alignment_tab,
             'interpretation': self.interpretation_tab,
