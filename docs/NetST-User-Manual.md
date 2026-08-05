@@ -117,19 +117,19 @@ python -m pip install -r requirements.txt
 python main_form.py
 ```
 
-Main dependencies: `PyQt6`, `PyQt6-WebEngine`, `chardet`, `numpy` (`PyInstaller` is only needed to build releases). If the bundled MAFFT is unavailable, the program falls back to a system `mafft` on `PATH`.
+Main Python dependencies: `PyQt6`, `PyQt6-WebEngine`, and `chardet` (`PyInstaller` is only needed to build releases). RMST does not require NumPy. If the bundled MAFFT is unavailable, the program falls back to a system `mafft` on `PATH`.
 
 ### 3.3 Packaging
 
 ```bash
-# macOS Apple Silicon → dist/NetST.app
-pyinstaller netst-mac-arm64.spec --noconfirm
+python -m pip install -r requirements-build.txt
+python scripts/build.py
 
-# Windows → single-file dist/NetST.exe
-pyinstaller netst-win.spec --noconfirm
+# Optional Windows one-file mode
+python scripts/build.py --onefile
 ```
 
-Before packaging, verify the architecture, executable permissions, and Qt WebEngine runtime resources of the bundled binaries on the target OS.
+macOS produces `dist/NetST.app`; Windows produces the complete `dist/NetST/` directory by default. The build driver checks dependencies, architecture, bundled tools, the packaged structure, and Qt WebEngine resources. Build natively on each target OS. See `docs/PACKAGING.zh-CN.md` for signing, notarization, and release packaging.
 
 ---
 
@@ -325,7 +325,7 @@ NetST aligns with **MAFFT** (several modes) or **MUSCLE**:
 | **Modified TCS** | `modified_tcs` | threads | improved TCS variant |
 | **MSN** (minimum spanning) | `msn` | epsilon | closely related, low-divergence populations |
 | **MJN** (median-joining) | `mjn` | threads, epsilon | recombination/missing data, ancestral inference |
-| **RMST** (randomized minimum spanning tree) | `rmst` | exact/random mode, replicates, random seed, exclude ambiguous sites | built-in, see [§14.1](#141-rmst-built-in-implementation) |
+| **RMST** (randomized minimum spanning tree) | `rmst` | exact/random mode, replicates, random seed, exclude ambiguous sites | bundled native engine, see [§14.1](#141-rmst-built-in-implementation) |
 | **McAN** (minimum-cost arborescence) | `mcan` | threads, reference sequence, exclude ambiguous sites | directed inclusion network, see [§14.2](#142-mcan-adapter) |
 
 ### 9.2 Choosing an algorithm
@@ -333,7 +333,7 @@ NetST aligns with **MAFFT** (several modes) or **MUSCLE**:
 - **MSN**: simplest connectivity — intraspecific / population-level, low-divergence data.
 - **MJN**: accommodates reticulate evolution and infers ancestral haplotypes — complex reconstructions, ancient DNA, viral dynamics.
 - **TCS**: 95% connection threshold for statistically reliable links — intraspecific phylogeography.
-- **RMST**: no external program; exact mode is deterministic and reproducible — a fast, robust default.
+- **RMST**: bundled native C++ engine; exact mode is deterministic and reproducible — a fast, robust default.
 - **McAN**: a mutation-inclusion network rooted at the reference; time-orientable when real sampling dates are provided.
 
 ---
@@ -481,10 +481,12 @@ All generated files share the "output directory + project name" prefix (examples
 
 ### 14.1 RMST built-in implementation
 
-RMST (Randomized Minimum Spanning Tree) reads `project_hap.fasta` and `project_seq.meta.csv` directly and computes uncorrected mutation counts (Hamming distance) over unique haplotypes, **with no external executable**. Two modes:
+RMST (Randomized Minimum Spanning Tree) is implemented by the bundled dependency-free C++17 `netst-rmst` executable. It reads `project_hap.fasta` and `project_seq.meta.csv` and computes uncorrected mutation counts (Hamming distance) over unique haplotypes. Two modes:
 
 - **Exact mode (default, recommended)**: by distance layer, determines all edges that can appear in at least one minimum spanning tree; deterministic and seed-independent.
 - **Random mode**: repeatedly randomizes haplotype order and runs stable Kruskal, reporting each edge's occurrence count and frequency; a fixed seed is reproducible, but finite replicates do not guarantee finding every compatible edge.
+
+The native random mode uses a platform-independent SplitMix64 permutation stream. A seed is stable between the new macOS and Windows binaries, but it does not reproduce the historical NumPy RNG stream byte-for-byte.
 
 By default any alignment column containing a character outside `A/C/G/T/U/-` is excluded, RNA `U` is unified to `T`, and gap is a comparable state. Haplotypes that become identical after filtering are merged with their sample members into one node, recorded in the JSON `warnings` and node `haplotypes` fields. Scale limits: exact mode ≤ 1000 filtered nodes; random mode ≤ 500 nodes and ≤ 1000 replicates.
 
@@ -529,12 +531,12 @@ A: tcsBU depends on Qt WebEngine. Without `PyQt6-WebEngine`, the network tab fal
 **Known limitations**
 
 - No complete Linux release yet; Linux needs compatible external programs supplied by the user.
-- Bundled external binaries must be built/verified per platform and cannot be used across architectures; McAN for Windows/Linux must be compiled and placed manually.
+- Bundled external binaries are platform-specific and cannot be used across architectures. Windows ships static-runtime x86-64 McAN and RMST executables; Linux engines must still be supplied separately.
 - The McAN adapter accepts at most 30000 alignment sites.
-- Built-in RMST: exact mode ≤ 1000 nodes, random mode ≤ 500 nodes; larger datasets warrant a sparse/compiled backend later.
+- Native RMST: exact mode ≤ 1000 nodes and random mode ≤ 500 nodes; randomized work is additionally bounded at 50 million edge evaluations.
 - VCF sequence conversion is limited to single-contig, non-overlapping small variant records; no structural variants, breakends, or symbolic ALTs.
 - The dependency-free PCoA solver defaults to ≤ 200 sequences.
-- Automated tests cover the core pure logic; full GUI interaction, platform packaging, and real-data end-to-end runs still need verification on target systems.
+- Full GUI interaction, platform packaging, and real-data end-to-end workflows need manual verification on target systems.
 
 ---
 

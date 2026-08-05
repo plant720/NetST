@@ -1,41 +1,104 @@
 # -*- mode: python ; coding: utf-8 -*-
-# NetST.spec - PyInstaller 打包配置文件
-# 用法: pyinstaller NetST.spec --noconfirm
-# 输出: dist/NetST.app (macOS 应用程序包)
+"""PyInstaller build for the native Apple Silicon NetST application."""
 
-from PyInstaller.utils.hooks import collect_all
+import os
+import platform
+import sys
 
-# ======================== 资源与依赖配置 ========================
-# 非代码资源：static(图标/样式等), lib(外部库)
-datas = [('static', 'static'), ('lib/mac_arm64', 'lib/mac_arm64')]
-binaries = []
-hiddenimports = []
 
-# 收集 PyQt6 全部资源（含 QtWebEngine 的 framework 和 resources）
-tmp_ret = collect_all('PyQt6')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+if sys.platform != "darwin" or platform.machine().lower() not in {"arm64", "aarch64"}:
+    raise SystemExit("netst-mac-arm64.spec must be built on Apple Silicon macOS")
 
-# ======================== 分析阶段 ========================
+version = os.environ.get("NETST_VERSION", "2.0.0")
+codesign_identity = os.environ.get("NETST_CODESIGN_IDENTITY") or None
+entitlements_file = os.environ.get("NETST_ENTITLEMENTS_FILE") or None
+
+# PyInstaller's official PyQt6 WebEngine hook collects the helper application,
+# frameworks, resources and locales. Do not collect all of PyQt6: doing so adds
+# unused QML/modules and can more than double the application size.
+datas = [
+    ("static/docs", "static/docs"),
+    ("static/tcsbu", "static/tcsbu"),
+    ("lib/mac_arm64", "lib/mac_arm64"),
+]
+
+# Bindings that NetST never imports. The QtWebEngine native libraries still
+# retain their linked Qt frameworks (Qml, Quick, OpenGL, Positioning, DBus), but
+# their unused Python wrappers and hooks do not need to be packaged.
+unused_modules = [
+    "PyQt6.Qt3DCore", "PyQt6.Qt3DRender", "PyQt6.QtBluetooth",
+    "PyQt6.QtDBus", "PyQt6.QtDesigner", "PyQt6.QtHelp",
+    "PyQt6.QtMultimedia", "PyQt6.QtMultimediaWidgets",
+    "PyQt6.QtNfc", "PyQt6.QtOpenGL",
+    "PyQt6.QtPositioning", "PyQt6.QtQml", "PyQt6.QtQuick",
+    "PyQt6.QtQuick3D", "PyQt6.QtQuickWidgets", "PyQt6.QtRemoteObjects",
+    "PyQt6.QtSensors", "PyQt6.QtSerialPort", "PyQt6.QtSql",
+    "PyQt6.QtSvgWidgets", "PyQt6.QtTest", "PyQt6.QtTextToSpeech",
+    "PyQt6.QtXml",
+    # Pulled in indirectly by the stdlib XML hook. NetST has no Python network
+    # client and hashlib falls back to Python's built-in SHA implementations.
+    "_hashlib", "_ssl", "ssl", "ftplib", "http.client",
+    "http.cookiejar", "urllib.request", "xml.sax",
+    # Stdlib modules that PyInstaller's dependency walker pulls in but the
+    # application never imports at runtime.
+    "asyncio", "concurrent", "email", "http.server",
+    "imaplib", "lzma", "multiprocessing", "nntplib", "pdb",
+    "poplib", "pydoc", "smtplib", "socketserver",
+    "sqlite3", "unittest", "webbrowser", "xmlrpc",
+]
+
 a = Analysis(
-    ['main_form.py'],                       # 主程序入口
-    pathex=[],
-    binaries=binaries,
+    ["main_form.py"],
+    pathex=[SPECPATH],
+    binaries=[],
     datas=datas,
-    hiddenimports=hiddenimports,
-    hookspath=[],
+    hiddenimports=["PyQt6.QtWebEngineWidgets"],
+    hookspath=["scripts/pyinstaller-hooks"],
     hooksconfig={},
-    runtime_hooks=['rthook_qtwebengine-mac.py'], # 运行时钩子：修正 QtWebEngine 路径
-    excludes=[                               # 排除不需要的 PyQt6 子模块（减小体积）
-        'PyQt6.Qt3DCore', 'PyQt6.Qt3DRender', 'PyQt6.QtBluetooth',
-        'PyQt6.QtNfc', 'PyQt6.QtSensors', 'PyQt6.QtSerialPort',
-        'PyQt6.QtSql', 'PyQt6.QtTest', 'PyQt6.QtRemoteObjects',
-        'PyQt6.QtQuick3D', 'PyQt6.QtTextToSpeech',
+    runtime_hooks=[],
+    excludes=[
+        "PyQt5", "PySide2", "PySide6", "tkinter", "numpy",
+        *unused_modules,
     ],
     noarchive=False,
     optimize=0,
 )
 
-# ======================== 打包阶段 ========================
+# NetST uses WebEngine only for a bundled local JavaScript page. Remove browser
+# locales and optional Qt payloads after dependency analysis; the linked
+# WebEngine libraries, helper process, ICU data, and core resource pack remain.
+def keep_release_entry(entry):
+    fields = "/".join(str(value) for value in entry[:2]).replace("\\", "/")
+    lowered = fields.lower()
+    if "/qtwebengine_locales/" in lowered:
+        return False
+    if "/pyqt6/qt6/translations/" in lowered:
+        return False
+    if "qtwebengine_devtools_resources.pak" in lowered:
+        return False
+    if "/plugins/imageformats/libqpdf.dylib" in lowered:
+        return False
+    if "/plugins/position/libqtposition_nmea.dylib" in lowered:
+        return False
+    if "qtpdf.framework" in lowered or "qtserialport.framework" in lowered:
+        return False
+    if os.path.basename(entry[0]).lower() in {"libcrypto.3.dylib", "libssl.3.dylib"}:
+        return False
+    unused_plugin_dirs = (
+        "/plugins/generic/", "/plugins/iconengines/", "/plugins/imageformats/",
+        "/plugins/multimedia/", "/plugins/networkinformation/",
+        "/plugins/position/", "/plugins/styles/", "/plugins/tls/",
+    )
+    if any(directory in lowered for directory in unused_plugin_dirs):
+        return False
+    if "/plugins/platforms/libqminimal.dylib" in lowered:
+        return False
+    return True
+
+
+a.binaries = [entry for entry in a.binaries if keep_release_entry(entry)]
+a.datas = [entry for entry in a.datas if keep_release_entry(entry)]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -43,38 +106,39 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='NetST',                           # 可执行文件名
+    name="NetST",
     debug=False,
+    bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    console=False,                          # GUI 应用，不显示终端窗口
+    upx=False,
+    console=False,
     argv_emulation=False,
-    target_arch=None,                       # None = 自动检测 (arm64)
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=['static/icon/netst.icns'],        # 应用图标
+    target_arch="arm64",
+    codesign_identity=codesign_identity,
+    entitlements_file=entitlements_file,
+    icon="static/icon/netst.icns",
 )
 
-# 将可执行文件与资源收集到 dist/NetST/ 目录
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='NetST',
+    upx=False,
+    name="NetST",
 )
 
-# ======================== macOS .app 应用程序包 ========================
 app = BUNDLE(
     coll,
-    name='NetST.app',
-    icon='static/icon/netst.icns',
-    bundle_identifier='com.netst.app',
+    name="NetST.app",
+    icon="static/icon/netst.icns",
+    bundle_identifier="com.netst.app",
+    version=version,
     info_plist={
-        'CFBundleDisplayName': 'NetST',
-        'CFBundleShortVersionString': '1.0.0',
-        'NSHighResolutionCapable': True,    # 支持 Retina 高分屏
+        "CFBundleDisplayName": "NetST",
+        "CFBundleShortVersionString": version,
+        "CFBundleVersion": version,
+        "LSMinimumSystemVersion": "11.0",
+        "NSHighResolutionCapable": True,
     },
 )

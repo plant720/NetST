@@ -119,19 +119,19 @@ python -m pip install -r requirements.txt
 python main_form.py
 ```
 
-主要依赖：`PyQt6`、`PyQt6-WebEngine`、`chardet`、`numpy`（`PyInstaller` 仅在构建发布包时需要）。若内置 MAFFT 不可用，程序会尝试调用系统 `PATH` 中的 `mafft`。
+主要 Python 依赖：`PyQt6`、`PyQt6-WebEngine` 与 `chardet`（`PyInstaller` 仅在构建发布包时需要）。RMST 不依赖 NumPy。若内置 MAFFT 不可用，程序会尝试调用系统 `PATH` 中的 `mafft`。
 
 ### 3.3 打包发布
 
 ```bash
-# macOS Apple Silicon → dist/NetST.app
-pyinstaller netst-mac-arm64.spec --noconfirm
+python -m pip install -r requirements-build.txt
+python scripts/build.py
 
-# Windows → 单文件 dist/NetST.exe
-pyinstaller netst-win.spec --noconfirm
+# Windows 可选单文件模式
+python scripts/build.py --onefile
 ```
 
-打包前应在目标系统上验证内置二进制的架构、执行权限与 Qt WebEngine 运行时资源。
+macOS 输出 `dist/NetST.app`，Windows 默认输出完整的 `dist/NetST/` 目录。构建脚本会自动检查依赖、架构和内置程序，并验证打包结构及 Qt WebEngine 资源。两个平台必须分别在目标系统本机构建；详细签名、公证和发布流程见 `docs/PACKAGING.zh-CN.md`。
 
 ---
 
@@ -322,7 +322,7 @@ NetST 使用 **MAFFT**（含多种模式）或 **MUSCLE** 进行比对：
 | **Modified TCS** | `modified_tcs` | 线程 | TCS 的改进变体 |
 | **MSN**（最小生成网络） | `msn` | epsilon | 近缘、低分化群体 |
 | **MJN**（中位连接网络） | `mjn` | 线程、epsilon | 含重组/缺失、需推断祖先单倍型 |
-| **RMST**（随机最小生成树） | `rmst` | 精确/随机模式、重复次数、随机种子、是否排除模糊位点 | 内置实现，见 [§14.1](#141-rmst-内置实现) |
+| **RMST**（随机最小生成树） | `rmst` | 精确/随机模式、重复次数、随机种子、是否排除模糊位点 | 随包原生引擎，见 [§14.1](#141-rmst-内置实现) |
 | **McAN**（最小代价树形网络） | `mcan` | 线程、参考序列、是否排除模糊位点 | 有向包含关系网络，见 [§14.2](#142-mcan-适配方式) |
 
 ### 9.2 算法选择建议
@@ -330,7 +330,7 @@ NetST 使用 **MAFFT**（含多种模式）或 **MUSCLE** 进行比对：
 - **MSN**：结构最简，适合种内/群体级、遗传分化低的数据。
 - **MJN**：可容纳网状进化并推断祖先单倍型，适合复杂进化重建、古 DNA、病毒动态。
 - **TCS**：使用 95% 连接阈值保证统计可靠的连边，适合种内系统地理学。
-- **RMST**：无需外部程序，精确模式结果确定且可复现，推荐作为快速稳健的默认之一。
+- **RMST**：调用随包提供的原生 C++ 引擎，精确模式结果确定且可复现，推荐作为快速稳健的默认之一。
 - **McAN**：给出以参考序列为根的突变包含关系网络；提供真实采样日期时可做时间定向。
 
 ---
@@ -481,10 +481,12 @@ Data 页的 **Sequence 列为只读**，避免误编辑序列导致已有比对�
 
 ### 14.1 RMST 内置实现
 
-RMST（Randomized Minimum Spanning Tree）直接读取 `project_hap.fasta` 与 `project_seq.meta.csv`，对唯一单倍型计算未校正突变位点数（Hamming 距离），**无需外部可执行程序**。两种模式：
+RMST（Randomized Minimum Spanning Tree）由随包提供、无第三方运行依赖的 C++17 `netst-rmst` 可执行文件实现。它读取 `project_hap.fasta` 与 `project_seq.meta.csv`，对唯一单倍型计算未校正突变位点数（Hamming 距离）。两种模式：
 
 - **精确模式（默认、推荐）**：按距离层确定所有至少能出现在一棵最小生成树中的边；结果确定，不受随机种子影响。
 - **随机模式**：多次随机化单倍型顺序并运行稳定 Kruskal，输出每条边的出现次数与频率；固定随机种子可复现，但有限重复不保证找到全部兼容边。
+
+原生随机模式采用跨平台固定的 SplitMix64 排列流；同一 seed 在新的 macOS 与 Windows 二进制间一致，但不会逐边复现旧 NumPy 随机数流。
 
 默认排除任何含非 `A/C/G/T/U/-` 字符的比对列，RNA `U` 统一为 `T`，gap 作为一个可比较状态。过滤后变为相同序列的单倍型会与其样本成员合并为一个网络节点，并记录在 JSON 的 `warnings` 与节点 `haplotypes` 字段。规模限制：精确模式 ≤ 1000 个过滤后节点，随机模式 ≤ 500 个节点、≤ 1000 次重复。
 
@@ -529,12 +531,12 @@ A：tcsBU 依赖 Qt WebEngine。缺少 `PyQt6-WebEngine` 时网络页会退回�
 **已知限制**
 
 - 仓库尚未提供完整 Linux 发布包；Linux 需自备兼容的外部程序。
-- 内置外部二进制需分平台构建验证，不能跨架构使用；Windows/Linux 的 McAN 需自行编译放置。
+- 内置外部二进制不能跨平台或跨架构使用；Windows 随包提供静态运行库的 x86-64 McAN 与 RMST，Linux 引擎仍需单独提供。
 - McAN 适配器最多接受 30000 个比对位点。
-- 内置 RMST 精确模式 ≤ 1000 节点、随机模式 ≤ 500 节点；更大数据集建议后续接入稀疏/编译型后端。
+- 原生 RMST 精确模式 ≤ 1000 节点、随机模式 ≤ 500 节点；随机计算另限制为最多 5000 万次边评估。
 - VCF 序列转换限定单 contig、非重叠的小变异记录，不支持结构变异、breakend 或符号型 ALT。
 - PCoA 无第三方依赖求解器默认限 200 条序列。
-- 自动化测试覆盖核心纯逻辑；完整 GUI 交互、平台打包与真实数据端到端流程仍需在目标系统验证。
+- 完整 GUI 交互、平台打包与真实数据端到端流程需在目标系统手动验证。
 
 ---
 

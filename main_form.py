@@ -2649,8 +2649,8 @@ def main():
     window = MainForm()
     window.show()
 
-    sys.exit(app.exec())
+    return app.exec()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

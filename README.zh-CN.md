@@ -27,7 +27,6 @@ NetST 是一个基于 PyQt6 的桌面科研软件，用于从 DNA/RNA 序列完�
 - [输出文件](#输出文件)
 - [项目结构](#项目结构)
 - [子进程控制](#子进程控制)
-- [测试](#测试)
 - [打包](#打包)
 - [开发说明](#开发说明)
 - [已知限制](#已知限制)
@@ -117,9 +116,9 @@ python -m pip install -r requirements.txt
 python main_form.py
 ```
 
-主要 Python 依赖：`PyQt6`、`PyQt6-WebEngine`、`chardet`、`numpy`（`PyInstaller` 仅构建发布包时需要）。
+主要 Python 依赖：`PyQt6`、`PyQt6-WebEngine` 与 `chardet`（`PyInstaller` 仅构建发布包时需要）。RMST 不依赖 NumPy。
 
-macOS 与 Windows 所需的 MAFFT、MUSCLE、fastHaN 和 McAN 二进制已放在 `lib/` 下。Apple Silicon 使用原生 arm64 McAN 1.4.3。当前 Windows McAN 为依赖 Microsoft Visual C++ 运行库的 32 位程序；全新 Windows 环境需安装 x86 Visual C++ 2015–2022 Redistributable，或将 McAN 重新静态链接运行库。若内置 MAFFT 不可用，程序会尝试调用系统 `PATH` 中的 `mafft`。
+macOS 与 Windows 所需的 MAFFT、MUSCLE、fastHaN、McAN 和 RMST 二进制已放在 `lib/` 下。Apple Silicon 使用原生 arm64 引擎；Windows McAN 与 RMST 是静态运行库的 x86-64 构建。若内置 MAFFT 不可用，程序会尝试调用系统 `PATH` 中的 `mafft`。
 
 ## 快速使用
 
@@ -226,9 +225,11 @@ metadata 文件可选：
 
 ### RMST 内置实现
 
-RMST 直接读取 `project_hap.fasta` 与 `project_seq.meta.csv`，对唯一单倍型计算未校正突变位点数（Hamming 距离），无需外部可执行程序。**精确模式**（默认、推荐）按距离层确定所有至少能出现在一棵最小生成树中的边，结果确定且不受随机种子影响；**随机模式**多次随机化单倍型顺序并运行稳定 Kruskal，输出每条边的出现次数与频率，固定种子可复现但有限重复不保证找到全部兼容边。
+随包提供的 C++17 `netst-rmst` 可执行文件读取 `project_hap.fasta` 与 `project_seq.meta.csv`，对唯一单倍型计算未校正突变位点数（Hamming 距离）。**精确模式**（默认、推荐）按距离层确定所有至少能出现在一棵最小生成树中的边，结果确定且不受随机种子影响；**随机模式**多次随机化单倍型顺序并运行稳定 Kruskal，输出每条边的出现次数与频率，固定种子在 macOS 与 Windows 上可复现，但有限重复不保证找到全部兼容边。
 
-默认排除任何含非 `A/C/G/T/U/-` 字符的比对列，RNA `U` 统一为 `T`，gap 作为可比较状态。过滤后变为相同序列的单倍型会合并为一个节点（记录在 `warnings` 与节点 `haplotypes`）。距离矩阵与完整图排序使用 NumPy 数组化实现；精确模式 ≤ 1000 个过滤后节点，随机模式 ≤ 500 个节点、≤ 1000 次重复。RMST 的 `project.gml` 与 fastHaN/McAN 使用相同的 tcsBU 方言。参考：Paradis, E. (2018), *Methods Ecol Evol* 9:1308–1317。
+原生随机模式采用跨平台固定的 SplitMix64 排列流。因此同一 seed 在新的 macOS 与 Windows 二进制间一致，但不承诺与旧 NumPy 随机数流逐边完全相同。
+
+默认排除任何含非 `A/C/G/T/U/-` 字符的比对列，RNA `U` 统一为 `T`，gap 作为可比较状态。过滤后变为相同序列的单倍型会合并为一个节点（记录在 `warnings` 与节点 `haplotypes`）。仅使用 C++ 标准库的原生引擎不会把 NumPy 带入 Python 打包依赖；精确模式 ≤ 1000 个过滤后节点，随机模式 ≤ 500 个节点、≤ 1000 次重复。RMST 的 `project.gml` 与 fastHaN/McAN 使用相同的 tcsBU 方言。参考：Paradis, E. (2018), *Methods Ecol Evol* 9:1308–1317。
 
 ### McAN 适配方式
 
@@ -330,7 +331,7 @@ NetST-py/
 │   ├── process_service.py          # 可取消、可超时的外部进程控制
 │   ├── validation_service.py       # 分析输入与安全文件名前缀校验
 │   ├── mcan_adapter.py             # aligned FASTA ↔ McAN ↔ tcsBU 格式适配
-│   ├── rmst_service.py             # 内置 RMST、距离计算与 GML/JSON/TSV 输出
+│   ├── rmst_service.py             # 原生 RMST 进程适配与结果模型
 │   ├── interpretation_models.py    # 不可变的对齐序列分析快照
 │   ├── diversity_analysis_service.py   # QC 与总体/分组多样性
 │   ├── distance_analysis_service.py    # 缺失感知 p-distance 与 PCoA
@@ -351,47 +352,30 @@ NetST-py/
 │   ├── tcsbu/                      # tcsBU、D3.js、CSS 与 HTML
 │   ├── docs/                       # NetST 和 tcsBU 帮助文档
 │   └── icon/                       # 应用图标
-├── lib/                            # 平台相关 MAFFT/MUSCLE/fastHaN/McAN
-└── tests/                          # 标准库 unittest 测试
+└── lib/                            # 平台相关 MAFFT/MUSCLE/fastHaN/McAN/RMST
 ```
 
 **分层关系** —— `MainForm` 继承 `MainWindowUI`，负责界面事件与分析流程协调；`model/` 保存与展示样本数据；`service/` 负责文件操作、计算流程与外部程序生命周期；`ui/` 负责窗口、页签与参数收集；tcsBU 作为本地 Web 应用嵌入 `QWebEngineView`。
 
 ## 子进程控制
 
-`service/process_service.py` 为 MAFFT、MUSCLE、fastHaN 和 McAN 提供统一执行接口：用 `Popen` 周期性检查 Qt 线程的中断请求，持续读取 stdout/stderr 避免管道死锁，为每个工具创建独立进程组，POSIX 上向整个进程组发送 `SIGTERM`（宽限期后 `SIGKILL`）、Windows 上用 `taskkill /T /F` 清理进程树，区分正常失败、600 秒超时和用户取消，并在适用时仍可加载取消后的部分比对/单倍型文件。
-
-## 测试
-
-进程控制测试只依赖 Python 标准库：
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-在无显示器的 macOS/Linux 测试环境中，可在命令前设置 `QT_QPA_PLATFORM=offscreen`。
-
-当前测试覆盖：FASTA/PHYLIP/VCF 双向转换、VCF indel 锚定、参考 REF 校验、metadata 映射、比对参数与 FASTA 强制输出、双语资源完整性、可视化 JavaScript 转义、tcsBU 配置规范化、RMST 精确/随机算法、论文最小示例、模糊位点合并、审计输出与 AnalysisService/tcsBU 兼容、McAN 原生 VCF 及 mutation 输入适配、GraphML 转换、长度边界、进程超时/取消/后代清理、样本与项目名称校验、多样性公式/缺失策略、p-distance/PCoA 不变量、GML 拓扑边界情况、辅助结果页，以及辅助解读 SVG 图表。
-
-完整模块语法检查：
-
-```bash
-python -m compileall -q main_form.py model service ui tests
-```
-
-运行 GUI 或涉及 `AnalysisService` 的测试前，需要先安装 `requirements.txt`。
+`service/process_service.py` 为 MAFFT、MUSCLE、fastHaN 和 McAN 提供统一执行接口；RMST 适配器也用相同的轮询方式管理原生子进程。两条路径都响应 Qt 线程取消请求；共享执行器还负责持续读取输出、进程组清理和超时控制。
 
 ## 打包
 
 ```bash
-# macOS Apple Silicon → dist/NetST.app
-pyinstaller netst-mac-arm64.spec --noconfirm
+# 先在独立虚拟环境中安装完整构建依赖
+python -m pip install -r requirements-build.txt
 
-# Windows → 单文件 dist/NetST.exe
-pyinstaller netst-win.spec --noconfirm
+# macOS Apple Silicon → dist/NetST.app
+# Windows x86-64 → dist/NetST/（推荐目录包）
+python scripts/build.py
+
+# Windows 可选单文件 → dist/NetST.exe
+python scripts/build.py --onefile
 ```
 
-打包前应在目标操作系统上验证内置二进制的架构、执行权限以及 Qt WebEngine 运行时资源。
+构建脚本会检查依赖、目标架构、内置二进制和执行权限，并验证打包结构及 QtWebEngine 运行时资源。PyInstaller 必须在目标系统本机构建，不能在 macOS 上生成 Windows 包或反向操作。签名、公证、压缩发布和常见故障见 [跨平台打包指南](docs/PACKAGING.zh-CN.md)。
 
 ## 开发说明
 
@@ -405,9 +389,9 @@ pyinstaller netst-win.spec --noconfirm
 
 - 仓库尚未提供完整 Linux 发布包。
 - 内置外部二进制需分平台验证。Apple Silicon 使用原生 arm64 McAN 1.4.3。McAN 适配器最多接受 30000 个比对位点。
-- 内置 RMST 使用 NumPy 加速的稠密两两距离与完整图；精确模式限制 1000 个过滤后节点，随机模式限制 500 个节点及计算规模。更大数据集建议后续接入稀疏或编译型后端。
+- 原生 RMST 使用稠密两两距离矩阵与完整图；精确模式限制 1000 个过滤后节点，随机模式限制 500 个节点及计算规模。
 - VCF 序列转换限定为单 contig、非重叠的小变异记录，不支持结构变异、breakend 或符号型 ALT。
-- 自动化测试已覆盖核心纯逻辑，但完整 GUI 交互、平台打包和真实数据端到端流程仍需在目标系统继续验证。
+- 完整 GUI 交互、平台打包和真实数据端到端流程需要在目标系统手动验证。
 - PCoA 的无第三方依赖求解器默认限于 200 条序列；更大数据集仍输出距离矩阵但跳过 PCoA 并给出警告。
 - 当前辅助分析属于描述性/探索性功能；性状显著性、FST/AMOVA、社区稳定性与人口历史零模型未在本阶段实现。
 - tcsBU 依赖 Qt WebEngine；缺少 `PyQt6-WebEngine` 时网络页只能使用降级文本组件。

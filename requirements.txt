@@ -1,26 +1,14 @@
 # 单倍型网络分析工具 - Python依赖
 # Haplotype Network Analysis Tool - Python Dependencies
 
-# PyQt6 GUI框架
-# PyQt6 GUI Framework
-PyQt6
-PyQt6-WebEngine
+# Runtime dependencies. Versions are pinned so local and release builds use the
+# same Qt/Python ABI combination on macOS and Windows.
+PyQt6==6.11.0
+PyQt6-Qt6==6.11.1
+PyQt6-sip==13.12.0
+PyQt6-WebEngine==6.11.0
+PyQt6-WebEngine-Qt6==6.11.1
 
-# 数据处理
+
 # Data Processing
-chardet
-numpy
-
-# 打包
-pyinstaller
-
-# macOS conda环境设置
-#CONDA_SUBDIR=osx-arm64 conda create -n NetST-arm64 python=3.10
-#conda activate NetST-arm64
-#pip install PyQt6 PyQt6-WebEngine pyinstaller chardet numpy
-
-
-# windows conda环境设置
-#conda create -n NetST-win python=3.10
-#conda activate NetST-win
-#pip install PyQt6 PyQt6-WebEngine pyinstaller chardet numpy
+chardet==5.2.0

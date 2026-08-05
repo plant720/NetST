@@ -1,6 +1,6 @@
 """Pure-Python topology analysis for NetST haplotype-network GML files.
 
-The fastHaN output, McAN adapter, and internal RMST engine use the tcsBU dialect of GML:
+The fastHaN output, McAN adapter, and native RMST engine use the tcsBU dialect of GML:
 sample names and frequency are embedded in ``data/Frequency`` and mutation
 distance is stored in ``data/Changes``.  This module deliberately analyses the
 undirected topology of those networks, while retaining the source GML's

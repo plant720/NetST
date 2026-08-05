@@ -7,14 +7,14 @@ display, and the same SVG is reused by both rendering paths in
 ``InterpretationTabWidget`` (an embedded ``QWebEngineView`` when available, a
 stack of ``QSvgWidget`` otherwise).
 
-The desktop app ships only PyQt6, QtSvg and numpy, so charts are drawn as hand
-written SVG rather than pulling in matplotlib or QtCharts.
+The desktop app deliberately avoids a separate plotting stack, so charts are
+drawn as hand-written SVG rather than pulling in matplotlib or QtCharts.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Any, Callable, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
 
 Tr = Callable[[str, str], str]
 

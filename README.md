@@ -117,9 +117,9 @@ python -m pip install -r requirements.txt
 python main_form.py
 ```
 
-Main Python dependencies: `PyQt6`, `PyQt6-WebEngine`, `chardet`, `numpy` (`PyInstaller` only for building releases).
+Main Python dependencies: `PyQt6`, `PyQt6-WebEngine`, and `chardet` (`PyInstaller` is only needed to build releases). RMST does not require NumPy.
 
-Target-platform binaries for MAFFT, MUSCLE, fastHaN, and McAN are already under `lib/` for macOS and Windows. Apple Silicon uses the native arm64 McAN 1.4.3 build. The bundled Windows McAN is a 32-bit executable linked to the Microsoft Visual C++ runtime; a clean Windows installation needs the x86 Visual C++ 2015–2022 Redistributable unless McAN is rebuilt with a static runtime. If the bundled MAFFT is unavailable, the program falls back to a system `mafft` on `PATH`.
+Target-platform binaries for MAFFT, MUSCLE, fastHaN, McAN, and RMST are already under `lib/` for macOS and Windows. Apple Silicon uses native arm64 engines; the Windows McAN and RMST executables are static-runtime x86-64 builds. If the bundled MAFFT is unavailable, the program falls back to a system `mafft` on `PATH`.
 
 ## Quick Start
 
@@ -233,9 +233,11 @@ If input sequences differ in length, the full analysis runs MAFFT first, falling
 
 ### RMST built-in implementation
 
-RMST reads `project_hap.fasta` and `project_seq.meta.csv` directly and computes uncorrected mutation counts (Hamming distance) over unique haplotypes, with no external executable. **Exact mode** (default, recommended) determines all edges that can appear in at least one MST by distance layer — deterministic and seed-independent. **Random mode** repeatedly randomizes haplotype order and runs stable Kruskal, reporting each edge's occurrence count and frequency; a fixed seed reproduces results, but finite replicates do not guarantee finding every compatible edge.
+The bundled C++17 `netst-rmst` executable reads `project_hap.fasta` and `project_seq.meta.csv` and computes uncorrected mutation counts (Hamming distance) over unique haplotypes. **Exact mode** (default, recommended) determines all edges that can appear in at least one MST by distance layer — deterministic and seed-independent. **Random mode** repeatedly randomizes haplotype order and runs stable Kruskal, reporting each edge's occurrence count and frequency; a fixed seed reproduces results across macOS and Windows, but finite replicates do not guarantee finding every compatible edge.
 
-By default any column with a character outside `A/C/G/T/U/-` is excluded, RNA `U` becomes `T`, and gap is a comparable state. Haplotypes that become identical after filtering merge into one node (recorded in `warnings` and node `haplotypes`). NumPy-vectorized distances and complete-graph ordering avoid per-edge Python objects; exact mode accepts ≤ 1000 filtered nodes, random mode ≤ 500 nodes and ≤ 1000 replicates. The RMST `project.gml` uses the same tcsBU dialect as fastHaN/McAN. Reference: Paradis, E. (2018), *Methods Ecol Evol* 9:1308–1317.
+The native randomized engine uses a platform-independent SplitMix64 permutation stream. Consequently, the same seed is stable between the new macOS and Windows binaries but is not intended to reproduce historical NumPy RNG samples byte-for-byte.
+
+By default any column with a character outside `A/C/G/T/U/-` is excluded, RNA `U` becomes `T`, and gap is a comparable state. Haplotypes that become identical after filtering merge into one node (recorded in `warnings` and node `haplotypes`). The standard-library-only native engine keeps RMST out of the Python package graph; exact mode accepts ≤ 1000 filtered nodes, random mode ≤ 500 nodes and ≤ 1000 replicates. The RMST `project.gml` uses the same tcsBU dialect as fastHaN/McAN. Reference: Paradis, E. (2018), *Methods Ecol Evol* 9:1308–1317.
 
 ### McAN adapter
 
@@ -337,7 +339,7 @@ NetST-py/
 │   ├── process_service.py          # Cancellable, timeout-aware external-process control
 │   ├── validation_service.py       # Analysis-input and safe filename-prefix checks
 │   ├── mcan_adapter.py             # aligned FASTA ↔ McAN ↔ tcsBU format adapter
-│   ├── rmst_service.py             # Built-in RMST, distances, GML/JSON/TSV output
+│   ├── rmst_service.py             # Native RMST process adapter and result model
 │   ├── interpretation_models.py    # Immutable aligned-sequence analysis snapshot
 │   ├── diversity_analysis_service.py   # QC and overall/group diversity
 │   ├── distance_analysis_service.py    # Missing-aware p-distance and PCoA
@@ -358,47 +360,30 @@ NetST-py/
 │   ├── tcsbu/                      # tcsBU, D3.js, CSS, and HTML
 │   ├── docs/                       # NetST and tcsBU help documents
 │   └── icon/                       # Application icons
-├── lib/                            # Platform MAFFT/MUSCLE/fastHaN/McAN
-└── tests/                          # Standard-library unittest tests
+└── lib/                            # Platform MAFFT/MUSCLE/fastHaN/McAN/RMST binaries
 ```
 
 **Layering** — `MainForm` extends `MainWindowUI` and orchestrates UI events and the analysis pipeline; `model/` holds and presents sample data; `service/` handles file operations, computation, and external-program lifecycle; `ui/` builds windows, tabs, and parameter collection; tcsBU is embedded as a local web app in `QWebEngineView`.
 
 ## Subprocess Control
 
-`service/process_service.py` provides a unified runner for MAFFT, MUSCLE, fastHaN, and McAN: it polls the Qt thread's interruption request via `Popen`, continuously drains stdout/stderr to avoid pipe deadlocks, gives each tool its own process group, sends `SIGTERM` (then `SIGKILL` after a grace period) to the whole group on POSIX and `taskkill /T /F` on Windows, distinguishes normal failure from a 600-second timeout and from user cancellation, and still loads partial alignment/haplotype files where applicable.
-
-## Testing
-
-The process-control tests depend only on the Python standard library:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-On a headless macOS/Linux test host, prefix the command with `QT_QPA_PLATFORM=offscreen`.
-
-Current coverage includes: FASTA/PHYLIP/VCF round-trips, VCF indel anchoring, reference-REF validation, metadata mapping, alignment parameters and forced FASTA output, bilingual-resource integrity, visualization-JavaScript escaping, tcsBU config normalization, RMST exact/random algorithms, the minimal published example, ambiguous-site merging, audit output and AnalysisService/tcsBU compatibility, native-VCF and mutation-input McAN adapters, GraphML conversion, length bounds, process timeout/cancellation/descendant cleanup, sample and project-name validation, diversity formulas/missing policies, p-distance/PCoA invariants, GML topology edge cases, the interpretation result tab, and the interpretation SVG charts.
-
-Full module syntax check:
-
-```bash
-python -m compileall -q main_form.py model service ui tests
-```
-
-Install `requirements.txt` before running GUI tests or any test that touches `AnalysisService`.
+`service/process_service.py` provides a unified runner for MAFFT, MUSCLE, fastHaN, and McAN. The RMST adapter uses the same polling approach for its native child process. Both paths honor Qt-thread cancellation; the shared runner also drains output continuously, manages process groups, and enforces tool timeouts.
 
 ## Packaging
 
 ```bash
-# macOS Apple Silicon → dist/NetST.app
-pyinstaller netst-mac-arm64.spec --noconfirm
+# Install the complete build environment in a dedicated virtual environment.
+python -m pip install -r requirements-build.txt
 
-# Windows → single-file dist/NetST.exe
-pyinstaller netst-win.spec --noconfirm
+# macOS Apple Silicon → dist/NetST.app
+# Windows x86-64 → dist/NetST/ (recommended directory build)
+python scripts/build.py
+
+# Optional Windows one-file build → dist/NetST.exe
+python scripts/build.py --onefile
 ```
 
-Before packaging, verify the architecture, executable permissions, and Qt WebEngine runtime resources of the bundled binaries on the target OS.
+The build driver checks dependencies, target architecture, bundled tools and executable modes, and validates the packaged structure and QtWebEngine resources. PyInstaller builds must run natively on each target OS; they cannot be cross-compiled. See the [cross-platform packaging guide](docs/PACKAGING.zh-CN.md) for signing, notarization, release archives, and troubleshooting.
 
 ## Development Notes
 
@@ -412,9 +397,9 @@ Before packaging, verify the architecture, executable permissions, and Qt WebEng
 
 - No complete Linux release yet.
 - Bundled external binaries must be verified per platform. Apple Silicon uses the native arm64 McAN 1.4.3 build. The McAN adapter accepts at most 30000 alignment sites.
-- Built-in RMST uses NumPy-accelerated dense pairwise distances and a complete graph; exact mode caps at 1000 filtered nodes, random mode at 500 nodes and bounded scale. Larger datasets warrant a sparse or compiled backend later.
+- Native RMST uses a dense pairwise distance matrix and complete graph; exact mode caps at 1000 filtered nodes and random mode at 500 nodes with bounded work.
 - VCF sequence conversion is limited to single-contig, non-overlapping small variant records; no structural variants, breakends, or symbolic ALTs.
-- Automated tests cover the core pure logic, but full GUI interaction, platform packaging, and real-data end-to-end runs still need verification on target systems.
+- Full GUI interaction, platform packaging, and real-data end-to-end workflows need manual verification on target systems.
 - The dependency-free PCoA solver defaults to 200 sequences; larger sets still output the distance matrix but skip PCoA with a warning.
 - The current interpretation analytics are descriptive/exploratory; trait significance, FST/AMOVA, community stability, and demographic null models are out of scope for this stage.
 - tcsBU depends on Qt WebEngine; without `PyQt6-WebEngine` the network tab falls back to a degraded text widget.

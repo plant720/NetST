@@ -1,0 +1,4 @@
+# Install this file only in an isolated packaging environment.
+-r requirements.txt
+PyInstaller==6.21.0
+pyinstaller-hooks-contrib==2026.6

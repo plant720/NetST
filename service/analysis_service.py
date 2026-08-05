@@ -140,7 +140,7 @@ class AnalysisService:
           1. Write input FASTA
           2. Align with MAFFT (or MUSCLE fallback) if sequences have different lengths
           3. Process haplotypes: identify unique sequences, write PHYLIP + supporting files
-          4. Call fastHaN/McAN or the internal RMST engine to build the network
+          4. Call fastHaN/McAN or the bundled native RMST engine to build the network
           5. Adapt the engine output to GML and generate a tcsBU visualization
 
         All output files are named  <output_path>/<prefix>_*.

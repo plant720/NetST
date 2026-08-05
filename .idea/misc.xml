@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.10 (NetST-py)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="$USER_HOME$/opt/anaconda3/envs/NetST-arm64" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="$USER_HOME$/miniforge3/envs/NetST-arm64" project-jdk-type="Python SDK" />
 </project>

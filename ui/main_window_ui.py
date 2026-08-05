@@ -34,6 +34,7 @@ from .haplotype_tab_widget import HaplotypeTabWidget
 from .alignment_tab_widget import AlignmentTabWidget
 from .interpretation_tab_widget import InterpretationTabWidget
 from .language_manager import lang_manager
+from service.resource_path import application_root
 
 
 class FallbackWebView(QTextEdit):
@@ -111,8 +112,7 @@ class MainWindowUI(QMainWindow):
         self.status_bar_widget: Optional[StatusBarWidget] = None
 
         # Application directory
-        self.current_directory = os.path.dirname(os.path.abspath(__file__))
-        self.current_directory = os.path.dirname(self.current_directory)
+        self.current_directory = application_root()
 
         # Initialize UI
         self._init_window()
