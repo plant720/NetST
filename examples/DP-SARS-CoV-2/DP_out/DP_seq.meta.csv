@@ -1,0 +1,483 @@
+sequence_name,haplotype,continuous_traits,discrete_traits
+Wuhan-Hu-1/2019,H1,2,China
+DP0005,H2,53,DP
+DP0027,H3,53,DP
+DP0037,H4,53,DP
+DP0058,H5,53,DP
+DP0059,H6,53,DP
+DP0065,H7,53,DP
+DP0077,H8,53,DP
+DP0078,H6,53,DP
+DP0104,H6,53,DP
+DP0107,H6,53,DP
+DP0121,H6,53,DP
+DP0133,H6,53,DP
+DP0134,H6,53,DP
+DP0152,H9,53,DP
+DP0158,H10,53,DP
+DP0184,H6,53,DP
+DP0190,H11,53,DP
+DP0191,H12,53,DP
+DP0196,H13,53,DP
+DP0200,H14,53,DP
+DP0236,H15,54,DP
+DP0274,H6,54,DP
+DP0278,H16,54,DP
+DP0286,H17,54,DP
+DP0287,H18,54,DP
+DP0289,H6,54,DP
+DP0290,H19,54,DP
+DP0294,H6,54,DP
+DP0311,H8,54,DP
+DP0319,H6,54,DP
+DP0328,H6,54,DP
+DP0344,H6,54,DP
+DP0346,H6,54,DP
+DP0357,H17,54,DP
+DP0361,H20,54,DP
+DP0438,H6,54,DP
+DP0457,H21,54,DP
+DP0462,H2,54,DP
+DP0464,H2,54,DP
+DP0476,H22,54,DP
+DP0481,H23,54,DP
+DP0482,H6,54,DP
+DP0543,H24,55,DP
+DP0544,H24,55,DP
+DP0568,H6,55,DP
+DP0588,H17,55,DP
+DP0644,H6,55,DP
+DP0645,H25,55,DP
+DP0654,H26,55,DP
+DP0687,H27,55,DP
+DP0690,H28,55,DP
+DP0697,H2,55,DP
+DP0699,H6,55,DP
+DP0700,H6,55,DP
+DP0703,H2,55,DP
+DP0724,H29,55,DP
+DP0743,H30,55,DP
+DP0752,H31,55,DP
+DP0763,H6,55,DP
+DP0764,H2,55,DP
+DP0765,H32,55,DP
+DP0779,H33,55,DP
+DP0785,H6,55,DP
+DP0786,H6,55,DP
+DP0802,H6,55,DP
+DP0803,H34,55,DP
+DP0804,H6,55,DP
+DP0827,H6,55,DP
+DP0880,H35,55,DP
+DP0890,H6,55,DP
+Wuhan/IVDC-HB-01/2019,H1,6,China
+Wuhan/IVDC-HB-04/2020,H36,8,China
+Wuhan/IVDC-HB-05/2019,H37,6,China
+Wuhan/IPBCAMS-WH-01/2019,H38,0,China
+Wuhan/WIV04/2019,H1,6,China
+Wuhan/WIV02/2019,H39,6,China
+Wuhan/WIV05/2019,H40,6,China
+Wuhan/WIV06/2019,H1,6,China
+Wuhan/WIV07/2019,H41,6,China
+Wuhan/HBCDC-HB-01/2019,H42,6,China
+Wuhan/IPBCAMS-WH-05/2020,H43,8,China
+Wuhan/IPBCAMS-WH-04/2019,H1,6,China
+Wuhan/IPBCAMS-WH-03/2019,H44,6,China
+Wuhan/IPBCAMS-WH-02/2019,H45,6,China
+Guangdong/20SF012/2020,H46,21,China
+Guangdong/20SF013/2020,H46,22,China
+Guangdong/20SF014/2020,H47,22,China
+Guangdong/20SF025/2020,H46,22,China
+Guangdong/20SF028/2020,H48,24,China
+Guangdong/20SF040/2020,H48,25,China
+Thailand/61/2020,H1,15,other Asia
+Thailand/74/2020,H1,20,other Asia
+Zhejiang/WZ-01/2020,H49,23,China
+Zhejiang/WZ-02/2020,H1,24,China
+USA/WA1/2020,H50,26,North America
+Shenzhen/HKU-SZ-005/2020,H51,18,China
+Shenzhen/HKU-SZ-002/2020,H46,17,China
+Taiwan/2/2020,H52,30,other Asia
+USA/CA1/2020,H53,30,North America
+USA/CA2/2020,H54,29,North America
+USA/AZ1/2020,H55,29,North America
+Guangdong/20SF174/2020,H48,29,China
+Guangzhou/20SF206/2020,H56,29,China
+Foshan/20SF207/2020,H57,29,China
+Foshan/20SF210/2020,H58,29,China
+Foshan/20SF211/2020,H58,29,China
+Guangdong/20SF201/2020,H1,30,China
+Shenzhen/SZTH-002/2020,H46,20,China
+Shenzhen/SZTH-003/2020,H59,23,China
+Shenzhen/SZTH-004/2020,H60,23,China
+France/IDF0372/2020,H61,30,Europe
+France/IDF0373/2020,H61,30,Europe
+Wuhan/WHU01/2020,H1,9,China
+Wuhan/WHU02/2020,H1,9,China
+Wuhan/WH01/2019,H62,2,China
+Wuhan/WH03/2020,H1,8,China
+Wuhan/WH04/2020,H63,12,China
+Australia/VIC01/2020,H64,32,Oceania
+Germany/BavPat1/2020,H65,35,Europe
+Hangzhou/HZ-1/2020,H1,27,China
+Singapore/1/2020,H66,30,other Asia
+England/02/2020,H67,36,Europe
+Japan/AI-I-004/2020,H68,32,Japan
+SouthKorea/KCDC03/2020,H69,32,other Asia
+USA/WA1-A12/2020,H50,32,North America
+USA/WA1-F6/2020,H50,32,North America
+Hangzhou/HZCDC0001/2020,H1,26,China
+Australia/NSW01/2020,H63,31,Oceania
+Australia/QLD01/2020,H70,35,Oceania
+Australia/QLD02/2020,H71,37,Oceania
+Belgium/GHB-03021/2020,H63,41,Europe
+Singapore/2/2020,H72,32,other Asia
+Singapore/3/2020,H6,39,other Asia
+USA/CA3/2020,H73,36,North America
+USA/CA4/2020,H73,36,North America
+USA/CA5/2020,H74,36,North America
+France/IDF0515/2020,H75,36,Europe
+France/IDF0626/2020,H76,36,Europe
+Chongqing/YC01/2020,H77,28,China
+Chongqing/ZX01/2020,H1,30,China
+Yunnan/IVDC-YN-003/2020,H78,24,China
+Chongqing/IVDC-CQ-001/2020,H6,25,China
+Shandong/IVDC-SD-001/2020,H79,26,China
+Sichuan/IVDC-SC-001/2020,H80,22,China
+Jiangxi/IVDC-JX-002/2020,H81,18,China
+Jiangsu/IVDC-JS-001/2020,H1,26,China
+env/Wuhan/IVDC-HBF13-20/2020,H1,8,China
+env/Wuhan/IVDC-HBF13-21/2020,H82,8,China
+Japan/TY-WK-012/2020,H83,36,Japan
+Japan/TY-WK-501/2020,H84,38,Japan
+Japan/TY-WK-521/2020,H85,38,Japan
+Vietnam/VR03-38142/2020,H86,31,other Asia
+Japan/KY-V-029/2020,H87,36,Japan
+USA/WI1/2020,H58,38,North America
+Australia/NSW02/2020,H88,29,Oceania
+Australia/NSW03/2020,H89,32,Oceania
+USA/CA6/2020,H1,34,North America
+USA/IL2/2020,H90,35,North America
+Taiwan/NTU02/2020,H91,43,other Asia
+Nepal/61/2020,H92,20,other Asia
+France/RA739/2020,H1,46,Europe
+Japan/NA-20-05-1/2020,H1,32,Japan
+Japan/OS-20-07-1/2020,H1,30,Japan
+Singapore/4/2020,H93,41,other Asia
+Singapore/5/2020,H94,44,other Asia
+Singapore/6/2020,H72,47,other Asia
+Italy/INMI1-cs/2020,H95,36,Europe
+Singapore/7/2020,H96,34,other Asia
+Singapore/8/2020,H97,41,other Asia
+Singapore/9/2020,H94,42,other Asia
+Singapore/10/2020,H94,42,other Asia
+Australia/QLD03/2020,H98,43,Oceania
+Australia/QLD04/2020,H70,43,Oceania
+Singapore/11/2020,H99,40,other Asia
+France/IDF0372-isl/2020,H61,30,Europe
+France/IDF0515-isl/2020,H75,36,Europe
+Fujian/8/2020,H50,28,China
+Fujian/13/2020,H100,29,China
+France/IDF0571/2020,H75,40,Europe
+France/IDF0386-islP1/2020,H61,35,Europe
+France/IDF0386-islP3/2020,H61,35,Europe
+Cambodia/0012/2020,H101,34,other Asia
+Taiwan/CGMH-CGU-01/2020,H1,32,other Asia
+Taiwan/3/2020,H63,31,other Asia
+Taiwan/4/2020,H1,35,other Asia
+SouthKorea/SNU01/2020,H102,8,other Asia
+Jiangsu/JS01/2020,H103,30,China
+Sweden/01/2020,H104,45,Europe
+Jiangsu/JS02/2020,H105,31,China
+Jiangsu/JS03/2020,H1,31,China
+USA/CA7/2020,H70,44,North America
+USA/CA8/2020,H106,48,North America
+USA/TX1/2020,H107,49,North America
+China/WH-09/2020,H108,15,China
+HongKong/VB20024950/2020,H109,37,other Asia
+HongKong/VB20026565/2020,H6,39,other Asia
+Jingzhou/HBCDC-HB-01/2020,H110,15,China
+SouthKorea/KCDC05/2020,H111,37,other Asia
+SouthKorea/KCDC06/2020,H69,37,other Asia
+SouthKorea/KCDC07/2020,H112,38,other Asia
+SouthKorea/KCDC12/2020,H1,39,other Asia
+SouthKorea/KCDC24/2020,H113,44,other Asia
+Wuhan/HBCDC-HB-02/2019,H106,6,China
+Wuhan/HBCDC-HB-03/2019,H1,6,China
+China/IQTC01/2020,H56,43,China
+China/IQTC02/2020,H114,36,China
+Japan/Hu_DP_Kng_19-020/2020,H6,48,DP
+Japan/Hu_DP_Kng_19-027/2020,H17,48,DP
+Italy/SPL1/2020,H95,36,Europe
+Wuhan/HBCDC-HB-02/2020,H115,24,China
+Wuhan/HBCDC-HB-03/2020,H63,25,China
+Wuhan/HBCDC-HB-04/2020,H116,25,China
+Wuhan/HBCDC-HB-06/2020,H117,45,China
+Canada/ON-PHL2445/2020,H118,32,North America
+Canada/ON-VIDO-01/2020,H119,30,North America
+SouthKorea/KUMC01/2020,H120,44,other Asia
+SouthKorea/KUMC02/2020,H121,44,other Asia
+Anhui/SZ005/2020,H122,31,China
+Beijing/105/2020,H69,33,China
+Beijing/231/2020,H69,35,China
+Beijing/233/2020,H123,35,China
+Beijing/235/2020,H69,35,China
+India/1-27/2020,H124,34,other Asia
+India/1-31/2020,H125,38,other Asia
+USA/CruiseA-1/2020,H126,55,CruiseA
+USA/CruiseA-2/2020,H127,56,CruiseA
+USA/CruiseA-3/2020,H1,56,CruiseA
+USA/CruiseA-7/2020,H128,55,CruiseA
+USA/CruiseA-8/2020,H129,55,CruiseA
+USA/CruiseA-9/2020,H1,55,CruiseA
+USA/CruiseA-10/2020,H130,55,CruiseA
+USA/CruiseA-11/2020,H131,55,CruiseA
+USA/CruiseA-15/2020,H1,56,CruiseA
+USA/CruiseA-16/2020,H1,56,CruiseA
+China/WF0001/2020,H63,8,China
+China/WF0002/2020,H132,8,China
+China/WF0003/2020,H133,8,China
+China/WF0004/2020,H132,8,China
+Guangdong/2020XN4243-P0035/2020,H70,37,China
+Guangdong/2020XN4475-P0042/2020,H134,37,China
+Guangdong/2020XN4448-P0002/2020,H135,38,China
+Guangdong/GD2020080-P0010/2020,H136,39,China
+Guangdong/GD2020087-P0008/2020,H137,39,China
+Guangdong/GD2020246-P0028/2020,H56,47,China
+USA/CruiseA-19/2020,H1,56,CruiseA
+USA/CruiseA-25/2020,H6,55,CruiseA
+Shanghai/SH01/2020,H138,40,China
+Japan/TKYE6182/2020,H139,27,Japan
+HongKong/VM20002493/2020,H140,47,other Asia
+HongKong/VM20002507/2020,H109,48,other Asia
+HongKong/VM20002582/2020,H141,50,other Asia
+Shandong/LY003/2020,H142,30,China
+Shandong/LY004/2020,H143,33,China
+Shandong/LY005/2020,H143,31,China
+Shandong/LY007/2020,H143,32,China
+Shandong/LY008/2020,H143,37,China
+Hangzhou/ZJU-01/2020,H144,32,China
+Hangzhou/ZJU-05/2020,H1,29,China
+Hangzhou/ZJU-02/2020,H63,33,China
+Hangzhou/ZJU-03/2020,H145,32,China
+Hangzhou/ZJU-04/2020,H1,31,China
+Hangzhou/ZJU-06/2020,H146,40,China
+Shanghai/SH0002/2020,H70,32,China
+Shanghai/SH0003/2020,H70,32,China
+Shanghai/SH0004/2020,H147,35,China
+Shanghai/SH0007/2020,H148,35,China
+Shanghai/SH0008/2020,H149,35,China
+Shanghai/SH0009/2020,H150,36,China
+Shanghai/SH0010/2020,H151,36,China
+Shanghai/SH0012/2020,H152,40,China
+Shanghai/SH0013/2020,H63,37,China
+Shanghai/SH0021/2020,H153,40,China
+Shanghai/SH0022/2020,H154,37,China
+Shanghai/SH0023/2020,H154,37,China
+Shanghai/SH0026/2020,H155,40,China
+Shanghai/SH0027/2020,H156,39,China
+Shanghai/SH0029/2020,H86,39,China
+Shanghai/SH0030/2020,H157,41,China
+Shanghai/SH0032/2020,H86,39,China
+Shanghai/SH0043/2020,H63,37,China
+Shanghai/SH0044/2020,H158,42,China
+Shanghai/SH0053/2020,H159,39,China
+Shanghai/SH0054/2020,H160,40,China
+Shanghai/SH0055/2020,H56,46,China
+Shanghai/SH0060/2020,H161,39,China
+Shanghai/SH0070/2020,H162,45,China
+Shanghai/SH0073/2020,H1,43,China
+Shanghai/SH0074/2020,H46,45,China
+Shanghai/SH0077/2020,H158,47,China
+Shanghai/SH0079/2020,H86,39,China
+Shanghai/SH0080/2020,H163,46,China
+Shanghai/SH0094/2020,H164,38,China
+Shanghai/SH0101/2020,H158,47,China
+Shanghai/SH0102/2020,H158,52,China
+Shanghai/SH0107/2020,H165,40,China
+Shanghai/SH0109/2020,H166,40,China
+Shanghai/SH0110/2020,H167,51,China
+Shanghai/SH0114/2020,H168,40,China
+Shanghai/SH0115/2020,H169,49,China
+Shanghai/SH0117/2020,H170,40,China
+Shanghai/SH0119/2020,H1,47,China
+Shanghai/SH0121/2020,H171,40,China
+Shanghai/SH0126/2020,H172,53,China
+Australia/VIC03/2020,H89,32,Oceania
+Australia/VIC07/2020,H173,46,Oceania
+Hangzhou/ZJU-07/2020,H174,41,China
+Vietnam/38142/2020,H86,31,other Asia
+Vietnam/CM99/2020,H175,49,other Asia
+Hangzhou/ZJU-08/2020,H50,33,China
+Hangzhou/ZJU-09/2020,H176,35,China
+Malaysia/MKAK-CL-2020-5045/2020,H177,31,other Asia
+Malaysia/MKAK-CL-2020-5047/2020,H72,31,other Asia
+Malaysia/MKAK-CL-2020-6430/2020,H178,42,other Asia
+Malaysia/MKAK-CL-2020-7554/2020,H179,44,other Asia
+Australia/NSW04/2020,H180,31,Oceania
+HongKong/VB20017970/2020,H181,28,other Asia
+HongKong/HKPU6_2101/2020,H182,32,other Asia
+HongKong/HKPU28_3001/2020,H89,47,other Asia
+HongKong/HKPU29_0102/2020,H183,46,other Asia
+HongKong/HKPU30_2901/2020,H183,46,other Asia
+HongKong/HKPU32_0402/2020,H184,47,other Asia
+HongKong/HKPU34_3001/2020,H185,47,other Asia
+Vietnam/19-02S/2020,H186,29,other Asia
+Vietnam/19-01S/2020,H186,29,other Asia
+Canada/ON_PHL4181/2020,H118,32,North America
+Hangzhou/HZ48/2020,H1,28,China
+Hangzhou/HZ49/2020,H1,28,China
+Hangzhou/HZ60/2020,H1,29,China
+Hangzhou/HZ79/2020,H1,28,China
+Hangzhou/HZ90/2020,H1,28,China
+Hangzhou/HZ91/2020,H1,28,China
+Hangzhou/HZ162/2020,H1,30,China
+Hangzhou/HZ178/2020,H1,30,China
+Hangzhou/HZ185/2020,H1,30,China
+Hangzhou/HZ477/2020,H1,31,China
+Hangzhou/HZ481/2020,H1,32,China
+Hangzhou/HZ551/2020,H1,32,China
+Hangzhou/HZ576/2020,H1,32,China
+Hangzhou/HZ638/2020,H1,32,China
+HongKong/HKPU36-0702/2020,H187,47,other Asia
+Hangzhou/ZJU-010/2020,H188,41,China
+Hangzhou/ZJU-011/2020,H189,42,China
+HongKong/HKPU39-3001/2020,H183,48,other Asia
+HongKong/HKPU41-0802/2020,H184,48,other Asia
+HongKong/HKPU48-0202/2020,H190,49,other Asia
+HongKong/HKPU52-3101/2020,H191,51,other Asia
+HongKong/HKPU63-1402/2020,H192,57,other Asia
+HongKong/HKPU64-1202/2020,H193,57,other Asia
+Japan/Hu_DP_Kng_19-031/2020,H194,52,Japan
+Hangzhou/HZCDC0119/2020,H1,29,China
+Hangzhou/HZCDC0091L/2020,H1,28,China
+Hangzhou/HZCDC0090L/2020,H1,28,China
+Hangzhou/HZCDC0049L/2020,H1,28,China
+Hangzhou/HZCDC0048L/2020,H1,28,China
+Hangzhou/HZCDC0048/2020,H1,28,China
+Hangzhou/HZCDC0013/2020,H195,27,China
+Hangzhou/HZCDC0012/2020,H195,27,China
+Jiujiang/JX22/2020,H63,29,China
+Nanchang/JX174/2020,H196,36,China
+Shangrao/JX105/2020,H197,33,China
+Shangrao/JX1948/2020,H63,43,China
+Nanchang/JX177/2020,H198,37,China
+Ganzhou/JX81/2020,H63,32,China
+Nanchang/JX14/2020,H199,28,China
+Shangrao/JX29/2020,H63,29,China
+Nanchang/JX90/2020,H200,32,China
+Nanchang/JX149/2020,H63,34,China
+Nanchang/JX39/2020,H201,30,China
+Xinyu/JX122/2020,H63,32,China
+Shangrao/JX1177/2020,H202,41,China
+Shangrao/JX1176/2020,H203,41,China
+Pingxiang/JX5/2020,H81,18,China
+Jian/JX129/2020,H204,33,China
+Shangrao/JX1178/2020,H205,41,China
+Jian/JX169/2020,H206,34,China
+Shangrao/JX1215/2020,H48,40,China
+Shangrao/JX1974/2020,H207,46,China
+Pingxiang/JX151/2020,H208,34,China
+Xinyu/JX124/2020,H209,33,China
+Nanchang/JX176/2020,H210,36,China
+Nanchang/JX155/2020,H211,36,China
+Zhejiang/HZ103/2020,H212,31,China
+Beijing/Wuhan_IME-BJ01/2020,H213,31,China
+Beijing/Wuhan_IME-BJ02/2020,H69,32,China
+Beijing/Wuhan_IME-BJ03/2020,H69,35,China
+Beijing/Wuhan_IME-BJ04/2020,H214,35,China
+Beijing/Wuhan_IME-BJ05/2020,H215,34,China
+Beijing/Wuhan_IME-BJ07/2020,H216,36,China
+Korea/KCDC2002/2020,H217,37,other Asia
+Korea/KCDC2004/2020,H1,40,other Asia
+Korea/KCDC2005/2020,H1,42,other Asia
+Korea/KCDC2006/2020,H218,40,other Asia
+Korea/KCDC2007/2020,H1,43,other Asia
+Korea/KCDC2008/2020,H219,43,other Asia
+Korea/KCDC2009/2020,H219,45,other Asia
+Korea/KCDC2010/2020,H220,43,other Asia
+Korea/KCDC2012/2020,H221,47,other Asia
+Korea/KCDC2014/2020,H222,50,other Asia
+Taiwan/TSGH-01/2020,H223,45,other Asia
+Korea/KCDC2016/2020,H224,56,other Asia
+Korea/KCDC2017/2020,H225,56,other Asia
+Korea/KCDC2018/2020,H69,57,other Asia
+Korea/KCDC2019/2020,H226,56,other Asia
+Guangdong/20SF1107/2020,H227,36,China
+Guangdong/20SF1152/2020,H228,37,China
+Guangdong/20SF123/2020,H50,27,China
+Guangdong/20SF2546/2020,H229,44,China
+Guangdong/20SF4047/2020,H229,55,China
+Guangdong/20SF602/2020,H89,32,China
+Guangdong/20SF616/2020,H230,31,China
+Guangdong/20SF629/2020,H231,33,China
+Guangdong/20SF632/2020,H232,33,China
+Guangdong/20SF665/2020,H1,34,China
+Guangdong/20SF684/2020,H63,34,China
+Guangdong/20SF685/2020,H63,34,China
+Guangdong/20SF753/2020,H233,35,China
+Guangdong/20SF758/2020,H234,34,China
+Guangdong/20SF808/2020,H235,35,China
+Guangdong/20SF812/2020,H236,35,China
+Guangdong/20SF813/2020,H63,35,China
+Taiwan/8/2020,H237,38,other Asia
+Taiwan/5/2020,H237,38,other Asia
+Guangzhou/GZMU0003/2020,H48,45,China
+Guangzhou/GZMU0008/2020,H63,45,China
+Guangzhou/GZMU0010/2020,H48,45,China
+Guangzhou/GZMU0013/2020,H48,45,China
+Guangzhou/GZMU0019/2020,H65,43,China
+Guangzhou/GZMU0023/2020,H63,43,China
+Guangzhou/GZMU0024/2020,H63,43,China
+Guangzhou/GZMU0025/2020,H63,43,China
+Guangzhou/GZMU0033/2020,H48,39,China
+Guangzhou/GZMU0034/2020,H48,39,China
+Guangzhou/GZMU0035/2020,H48,39,China
+Guangzhou/GZMU0037/2020,H65,46,China
+Guangzhou/GZMU0041/2020,H63,46,China
+Guangzhou/GZMU0045/2020,H63,46,China
+Guangzhou/GZMU0051/2020,H48,36,China
+Guangzhou/GZMU0052/2020,H48,36,China
+Guangzhou/GZMU0054/2020,H48,36,China
+Guangzhou/GZMU0059/2020,H48,34,China
+Guangzhou/GZMU0036/2020,H48,39,China
+Guangzhou/GZMU0055/2020,H48,36,China
+Lishui/LS111/2020,H146,32,China
+Lishui/LS556/2020,H146,35,China
+Lishui/LS557/2020,H63,39,China
+Malaysia/IMR_WC085/2020,H238,35,other Asia
+Malaysia/IMR_WC627/2020,H179,50,other Asia
+Beijing/BJ287/2020,H216,36,China
+Beijing/BJ752/2020,H239,46,China
+Beijing/BJ288/2020,H216,36,China
+Beijing/BJ492/2020,H240,40,China
+Beijing/BJ53/2020,H241,31,China
+Beijing/BJ54/2020,H241,31,China
+Beijing/BJ252/2020,H241,36,China
+Beijing/BJ710/2020,H242,45,China
+Beijing/BJ782/2020,H239,48,China
+Beijing/BJ251/2020,H241,36,China
+Fujian/3520022Y/2020,H243,30,China
+Wuhan/IVDC-HB-GX02/2019,H106,6,China
+HongKong/HK20/2020,H244,27,other Asia
+HongKong/HKU-902a/2020,H181,30,other Asia
+HongKong/HKU-902b/2020,H181,31,other Asia
+HongKong/HKU-903a/2020,H245,31,other Asia
+HongKong/HKU-903b/2020,H245,34,other Asia
+HongKong/HKU-907a/2020,H134,34,other Asia
+HongKong/HKU-907b/2020,H134,36,other Asia
+HongKong/HKU-908a/2020,H246,34,other Asia
+HongKong/HKU-908b/2020,H246,36,other Asia
+HongKong/HKU-001a/2020,H247,29,other Asia
+UnitedArabEmirates/L4280/2020,H248,46,other Asia
+UnitedArabEmirates/L5630/2020,H249,36,other Asia
+Thailand/SI203285-NT/2020,H250,30,other Asia
+Thailand/SI202205-NT/2020,H251,45,other Asia
+Thailand/SI201712-NT/2020,H252,41,other Asia
+Thailand/SI200615-NT/2020,H253,36,other Asia
+Thailand/SI200478-NST/2020,H254,33,other Asia
+Thailand/SI200468-NT/2020,H255,32,other Asia
+Thailand/SI200433-NT/2020,H1,32,other Asia
+Thailand/SI200383-NT/2020,H256,30,other Asia
+Thailand/SI200040-NT/2020,H1,15,other Asia
+Thailand/SI200893-NT/2020,H257,39,other Asia
