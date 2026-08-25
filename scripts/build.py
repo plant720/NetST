@@ -19,7 +19,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 BUILD = ROOT / "build" / "pyinstaller"
-APP_VERSION = "2.0.0"
 
 REQUIRED_DISTRIBUTIONS = (
     ("PyQt6", "PyQt6"),
@@ -254,8 +253,9 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Build NetST natively and validate the release package."
     )
-    parser.add_argument("--version", default=APP_VERSION,
-                        help=f"application version (default: {APP_VERSION})")
+    parser.add_argument("--version", required=True,
+                        help="application version to stamp on the release package, "
+                             "MAJOR.MINOR.PATCH (e.g. --version 2.0.0)")
     parser.add_argument("--onefile", action="store_true",
                         help="build a Windows one-file executable (directory mode is recommended)")
     parser.add_argument("--codesign-identity",

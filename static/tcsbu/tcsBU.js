@@ -28,8 +28,14 @@ $(function () {
     /*
      * variables that hold nodes which should be highlighted or labeled
      */
-    var labelNode = {}, highlightNode = [], seqHapFlag = false, distanceFlag = false;
+    // labelNode/nameIdNode store per-node visibility overrides.  The toolbar
+    // flags provide the default for every node; the Info panel can then adjust
+    // one node without creating a second SVG text element.
+    var labelNode = {}, nameIdNode = {}, highlightNode = [],
+        seqHapFlag = false, nameIdFlag = false, nodeNameId = {},
+        nodeTextLayout = {}, distanceFlag = false;
     var highlightLink = [], labelLink = {};
+    var defaultGroupColor = 'ffffff';
 
     var edgeWeightFlag = false;
     // When Edge Weight is enabled, Edge Line Width remains the base stroke.
@@ -59,6 +65,13 @@ $(function () {
 
     var defaultDistance = 12, defaultGravity = 0.05, defaultCharge = -30, defaultLinkDistance = 1,
         defaultLinkStrength = 1, defaultFriction = 0.95;
+    // Keep the current layout values in the page-level closure so NetST can
+    // serialize and restore them as part of a reproducible project.
+    var lnkdist = defaultLinkDistance;
+    var lnkstre = defaultLinkStrength;
+    var frict = defaultFriction;
+    var chrg = defaultCharge;
+    var grav = defaultGravity;
 
     /*
      * standard radius for true haplogroups with 'frequency' = 1
@@ -69,6 +82,8 @@ $(function () {
     var outerRadiusCoeff = 1.4;
     var innerRadiusCoeff = 0.7;
     var textOffset = 5;
+    var haplotypeFontSize = 13;
+    var nameIdFontSize = 13;
 
 
     /*
@@ -85,6 +100,7 @@ $(function () {
     var drag;
 
     var clickLink, clickNode;
+    var activeInfoNode = null, refreshActiveNodeInfo = null;
 
     /*
      * Default line widths. nodeLineWidth is the stroke around each node circle
@@ -132,6 +148,8 @@ $(function () {
      */
 
     var legend = 0;
+    var legendMinScale = 0.4;
+    var legendMaxScale = 3;
 
     /*
      * Save File available?
@@ -169,7 +187,7 @@ $(function () {
          * Grab the new color from groups' list ('newgroup' is the index of that array).
          * Additionally, grab a pattern if available.
          */
-        var newcolor = 'ffffff', newpattern = 'none';
+        var newcolor = defaultGroupColor, newpattern = 'none';
 
         var nc = w2ui.groups.find({recid: newgroup}, true)[0];
         if (typeof nc !== 'undefined' && w2ui.groups.records[nc]) {
@@ -486,6 +504,8 @@ $(function () {
         $('#advEdgeWeightScale').val(edgeWeightScale);
         $('#advMetaRingLineWidth').val(metaRingLineWidth);
         $('#advTextOffset').val(textOffset);
+        $('#advHaplotypeFontSize').val(haplotypeFontSize);
+        $('#advNameIdFontSize').val(nameIdFontSize);
         $('#advMetaRingRatio').val(metaRingRatio);
         $('#advMetaRingScales').val(metaRingScales.join(', '));
         var ringNames = [];
@@ -582,7 +602,8 @@ $(function () {
                 return normalizedMetaColor(categories[i].color, '#DDDDDD');
             }
         }
-        var color = metaHashColor(label);
+        var color = String(label) === 'Default'
+            ? '#' + defaultGroupColor : metaHashColor(label);
         if (label !== '') categories.push({label: label, color: color});
         return color;
     }
@@ -706,8 +727,18 @@ $(function () {
                         color: metaCategoryColor(trait, counts[key].value)
                     });
                 });
-                if (missing) segments.push({label: '', value: missing, color: '#DDDDDD'});
-                if (!segments.length) segments.push({label: '', value: 1, color: '#DDDDDD'});
+                if (missing) segments.push({
+                    label: trait.group ? 'Default' : '',
+                    value: missing,
+                    color: trait.group
+                        ? metaCategoryColor(trait, 'Default') : '#DDDDDD'
+                });
+                if (!segments.length) segments.push({
+                    label: trait.group ? 'Default' : '',
+                    value: 1,
+                    color: trait.group
+                        ? metaCategoryColor(trait, 'Default') : '#DDDDDD'
+                });
             }
             ring.segments = segments;
         });
@@ -721,7 +752,7 @@ $(function () {
         if (!metaConfig || !metaConfig.traits) return;
         var groupTrait = metaGroupTrait();
         if (groupTrait && w2ui.groups) {
-            var groups = [{recid: 'Default', color: 'ffffff', pattern: 'none', editable: false}];
+            var groups = [{recid: 'Default', color: defaultGroupColor, pattern: 'none'}];
             (groupTrait.categories || []).forEach(function (entry) {
                 var label = String(entry.label || '').trim();
                 if (!label || label === 'Default') return;
@@ -748,7 +779,7 @@ $(function () {
                 found = true;
             }
         });
-        if (!found && groupName !== 'Default') {
+        if (!found) {
             (trait.categories || (trait.categories = [])).push({
                 label: groupName, color: normalized
             });
@@ -933,6 +964,192 @@ $(function () {
         metapath.exit().remove();
     }
 
+    function hasOwn(object, key) {
+        return Object.prototype.hasOwnProperty.call(object, key);
+    }
+
+    function nodeLabelKey(node) {
+        return String(node.id);
+    }
+
+    function isIntermediateNode(node) {
+        if (!node) return false;
+        var nameIds = String(node.name || '').split('\n').filter(function (value) {
+            return value.trim() !== '';
+        });
+        var firstNameId = nameIds.length > 0 ? nameIds[0].trim() : '';
+        if (!/^IN/.test(firstNameId)) return false;
+
+        var activeGroups = (node.proportions || []).filter(function (proportion) {
+            return Number(proportion.value) > 0;
+        });
+        return activeGroups.length > 0 && activeGroups.every(function (proportion) {
+            return proportion.group === 'Default';
+        });
+    }
+
+    function getHaplotypeLabel(node) {
+        var haploNodes = nodeList.filter(function (item) {
+            return item.nodestyle === 1 && !isIntermediateNode(item);
+        });
+        var index = haploNodes.indexOf(node);
+        return index >= 0 ? 'H' + (index + 1) : null;
+    }
+
+    function getNodeDisplayLabel(node) {
+        if (node.nodestyle !== 1 || isIntermediateNode(node)) return 'Transition';
+        if (hapconfColumns === 3 && node.hap) return node.hap;
+        var names = node.name ? node.name.split('\n').filter(function (name) {
+            return name.trim() !== '';
+        }) : [];
+        return names.length > 0 ? names[0] : getHaplotypeLabel(node);
+    }
+
+    function isNodeTextVisible(node, type) {
+        // A generated intermediate is identified by an IN-prefixed Name/ID
+        // while all of its active members remain in Default. Toolbar-wide
+        // toggles and stale overrides must never expose text for such nodes.
+        if (!node || node.nodestyle !== 1 || isIntermediateNode(node)) return false;
+        var overrides = type === 'haplotype' ? labelNode : nameIdNode;
+        var globalFlag = type === 'haplotype' ? seqHapFlag : nameIdFlag;
+        return hasOwn(overrides, node.name) ? overrides[node.name] : globalFlag;
+    }
+
+    /*
+     * Text coordinates are stored as pixel offsets from the corresponding
+     * node's circle centre.  Keeping haplotype and Name/ID settings separate
+     * lets both labels retain independent positions through graph redraws and
+     * force-layout movement.
+     */
+    function getNodeTextLayout(node, type) {
+        var key = nodeLabelKey(node);
+        var stored = nodeTextLayout[key] && nodeTextLayout[key][type];
+        var defaults = {
+            x: textOffset + renderedNodeRadius(node),
+            y: type === 'haplotype' ? 4 : 5,
+            size: type === 'haplotype' ? haplotypeFontSize : nameIdFontSize
+        };
+        return {
+            x: stored && isFinite(stored.x) ? stored.x : defaults.x,
+            y: stored && isFinite(stored.y) ? stored.y : defaults.y,
+            size: stored && isFinite(stored.size) ? stored.size : defaults.size
+        };
+    }
+
+    function setNodeTextLayout(node, type, values) {
+        var key = nodeLabelKey(node);
+        if (!nodeTextLayout[key]) nodeTextLayout[key] = {};
+        nodeTextLayout[key][type] = {
+            x: Number(values.x),
+            y: Number(values.y),
+            size: Number(values.size)
+        };
+    }
+
+    function applyGlobalNodeFontSize(type, size) {
+        Object.keys(nodeTextLayout).forEach(function (key) {
+            if (nodeTextLayout[key] && nodeTextLayout[key][type]) {
+                nodeTextLayout[key][type].size = size;
+            }
+        });
+    }
+
+    function renderNodeTextLabels() {
+        node.each(function (datum) {
+            if (datum.nodestyle !== 1 || isIntermediateNode(datum)) return;
+            var parent = d3.select(this);
+            var labels = [{
+                type: 'haplotype',
+                className: 'node_hap',
+                text: getNodeDisplayLabel(datum)
+            }, {
+                type: 'nameId',
+                className: 'node_name_id',
+                text: getNodeNameIdLabel(datum)
+            }];
+
+            labels.forEach(function (label) {
+                if (!label.text || !isNodeTextVisible(datum, label.type)) return;
+                var layout = getNodeTextLayout(datum, label.type);
+                parent.append('text')
+                    .attr('class', 'node-label ' + label.className)
+                    .attr('data-label-type', label.type)
+                    .attr('dx', layout.x)
+                    .attr('dy', layout.y)
+                    .text(label.text)
+                    .style('font-family', 'Times New Roman')
+                    .style('stroke-width', '0.2px')
+                    .style('font-size', layout.size + 'px')
+                    .style('pointer-events', 'none');
+            });
+        });
+    }
+
+    /*
+     * Paint the current force-layout coordinates immediately.
+     *
+     * Normally D3 does this from the asynchronous "tick" callback.  Project
+     * restore is different: updateSVG() rebuilds every SVG element and starts
+     * the force, then applyProjectViewState() stops it straight away so the
+     * saved coordinates are not changed.  Without a synchronous paint, that
+     * first tick never runs and all newly-created nodes remain at the SVG
+     * origin.  Keep the coordinate painting in one function so both paths use
+     * exactly the same rendering logic.
+     */
+    function updateSVGPositions() {
+        if (!svg) return;
+
+        if (link) {
+            link.attr("x1", function (d) {
+                return d.source.x;
+            })
+                .attr("y1", function (d) {
+                    return d.source.y;
+                })
+                .attr("x2", function (d) {
+                    return d.target.x;
+                })
+                .attr("y2", function (d) {
+                    return d.target.y;
+                });
+        }
+
+        if (distanceFlag && linkText) {
+            linkText
+                .attr('x', function (d) {
+                    return (d.source.x + d.target.x) / 2;
+                })
+                .attr('y', function (d) {
+                    return (d.source.y + d.target.y) / 2;
+                });
+        }
+
+        Object.keys(labelLink).forEach(function (lid) {
+            var ldata = linkList.find(function (l) {
+                return l.id === lid;
+            });
+            if (!ldata) return;
+            var linkEl = svg.select('#' + lid);
+            if (!linkEl.empty()) {
+                svg.select('.link-label-info[data-lid="' + lid + '"]')
+                    .attr('x', (ldata.source.x + ldata.target.x) / 2)
+                    .attr('y', (ldata.source.y + ldata.target.y) / 2);
+            }
+        });
+
+        if (node) {
+            node.attr("x", function (d) {
+                return d.x;
+            })
+                .attr("y", function (d) {
+                    return d.y;
+                })
+                .attr("transform", function (d) {
+                    return "translate(" + d.x + "," + d.y + ")";
+                });
+        }
+    }
+
     function updateSVG() {
         svg.selectAll('.link-label-info').remove();
         link = svg.selectAll('.link').remove();
@@ -1089,99 +1306,18 @@ $(function () {
         }
 
         force.nodes(nodeList).links(linkList).start();
+        // Do not wait for the first asynchronous force tick before displaying
+        // the current coordinates.  This is required when restoring a saved
+        // project layout, because the force is intentionally stopped at once.
+        updateSVGPositions();
 
-        // Apply highlight and label decorations based on the highlightNode and labelNode globals.
+        // Apply node highlight and the unified per-node text decorations.
         highlightNode.forEach(function (name) {
             // Build a CSS selector, escaping any newline characters in the node name.
             var selector = '#' + name.replaceAll("\n", "\\a ");
-            d3.select(selector).select(".node-circle").style({'stroke': '#FF0000', 'stroke-width': nodeLineWidth * 3});
+            d3.select(selector).select(".node-circle").style({'stroke': '#FF0000', 'stroke-width': Math.max(nodeLineWidth, 1) * 3});
         });
-
-        Object.entries(labelNode).forEach(([key, value]) => {
-            // Build a CSS selector, escaping any newline characters in the node name.
-            var selector = '#' + key.replaceAll("\n", "\\a ");
-            d3.select(selector)
-                .append('text')
-                .attr('class', 'node-text')
-                .attr('dx', function (d) {
-                    return textOffset + renderedNodeRadius(d);
-                })
-                .attr('dy', '.35em')
-                .text(value.join(";"))
-                .style('font-family', 'Times New Roman') // Set the font family
-                .style("stroke-width", '0.2px')
-                .style('font-size', '13px');
-        });
-
-        // If enabled, show the hap label (from 3-col hapconf) on every haplotype node in the SVG.
-        if (seqHapFlag) {
-            d3.selectAll('.node')
-                .each(function (d) {
-                    if (!d.hap) return;
-                    d3.select(this)
-                        .append('text')
-                        .attr('class', 'node_hap')
-                        .attr('dx', function (d) {
-                            return textOffset + renderedNodeRadius(d);
-                        })
-                        .attr('dy', '.50em')
-                        .text(d.hap)
-                        .style('font-family', 'Times New Roman')
-                        .style("stroke-width", '0.2px')
-                        .style('font-size', '13px');
-                });
-        }
-
-        resolveNodeLabelCollisions();
-    }
-
-    function resolveNodeLabelCollisions() {
-        var labels = [];
-        svg.selectAll('.node-text, .node_hap').each(function () {
-            var el = d3.select(this);
-            var parent = d3.select(this.parentNode);
-            var datum = parent.datum();
-            if (!datum) return;
-            var bbox;
-            try {
-                bbox = this.getBBox();
-            } catch (e) {
-                return;
-            }
-            labels.push({
-                el: el,
-                x: datum.x + (parseFloat(el.attr('dx')) || 0),
-                y: datum.y + (parseFloat(el.attr('dy')) || 0),
-                w: bbox.width,
-                h: bbox.height,
-                dx: parseFloat(el.attr('dx')) || 0,
-                dy: parseFloat(el.attr('dy')) || 0,
-                datum: datum
-            });
-        });
-        for (var i = 0; i < labels.length; i++) {
-            for (var j = i + 1; j < labels.length; j++) {
-                var a = labels[i], b = labels[j];
-                var overlapX = (a.w + b.w) / 2 - Math.abs((a.x + a.w / 2) - (b.x + b.w / 2));
-                var overlapY = (a.h + b.h) / 2 - Math.abs((a.y) - (b.y));
-                if (overlapX > 0 && overlapY > 0) {
-                    var shift = overlapY / 2 + 2;
-                    if (a.y <= b.y) {
-                        a.dy -= shift;
-                        a.y -= shift;
-                        b.dy += shift;
-                        b.y += shift;
-                    } else {
-                        a.dy += shift;
-                        a.y += shift;
-                        b.dy -= shift;
-                        b.y -= shift;
-                    }
-                    a.el.attr('dy', a.dy + 'px');
-                    b.el.attr('dy', b.dy + 'px');
-                }
-            }
-        }
+        renderNodeTextLabels();
     }
 
     /*
@@ -1264,7 +1400,7 @@ $(function () {
                 render: function (r) {
                     return '<div>' + r.pattern + '</div>';
                 }
-            }], records: [{recid: 'Default', color: 'ffffff', pattern: 'none', editable: false}], toolbar: {
+            }], records: [{recid: 'Default', color: defaultGroupColor, pattern: 'none'}], toolbar: {
                 items: [{type: 'button', id: 'add_group', caption: 'Add', icon: 'w2ui-icon-plus'}, {
                     type: 'button', id: 'del_group', caption: 'Delete', icon: 'w2ui-icon-cross'
                 }, {type: 'button', id: 'load_group', caption: 'Load', icon: 'icon-folder-open'}, {
@@ -1293,7 +1429,7 @@ $(function () {
                              * Check if selected group is the default one [0]
                              */
 
-                            if (sel === 0) {
+                            if (sel === 0 || sel === 'Default') {
                                 e.preventDefault();
                                 w2alert('Cannot delete "default" group/color...');
                             } else {
@@ -1337,8 +1473,14 @@ $(function () {
             }, onChange: function (e) {
                 var i;
                 e.preventDefault();
+                var groupName = w2ui.groups.records[e.index].recid;
                 switch (e.column) {
                     case 0:  // Change a name
+
+                        if (groupName === 'Default') {
+                            w2alert('The Default group name is fixed; its color can be edited.');
+                            break;
+                        }
 
                         /*
                          * Check if a group with the same name already exists! If so get out...
@@ -1368,6 +1510,7 @@ $(function () {
                     case 1: // Change a color
 
                         w2ui.groups.records[e.index].color = e.value_new;
+                        if (groupName === 'Default') defaultGroupColor = e.value_new;
 
                         /*
                          * If there is a pattern, update it
@@ -1383,17 +1526,22 @@ $(function () {
                          * If this name is in haplotype list, change its color as well
                          */
 
-                        v = w2ui.haplotypes.find({group: e.recid}, true);
+                        v = w2ui.haplotypes.find({group: groupName}, true);
                         if (typeof v !== 'undefined' && v.length > 0) {
                             for (i = 0; i < v.length; i++) {
                                 w2ui.haplotypes.records[v[i]].color = e.value_new;
-                                if (svg) classify(v[i], e.recid, e.recid);
+                                if (svg) classify(v[i], groupName, groupName);
                             }
                         }
-                        if (hasMeta) syncMetaGroupColor(e.recid, e.value_new);
+                        if (hasMeta) syncMetaGroupColor(groupName, e.value_new);
                         break;
 
                     case 2: // Change a pattern
+
+                        if (groupName === 'Default') {
+                            w2alert('The Default group pattern is fixed; its color can be edited.');
+                            break;
+                        }
 
                         w2ui.groups.records[e.index].pattern = e.value_new;
 
@@ -1410,15 +1558,21 @@ $(function () {
                              * Reclassify any haloptypes that belong to this group
                              */
 
-                            v = w2ui.haplotypes.find({group: e.recid}, true);
+                            v = w2ui.haplotypes.find({group: groupName}, true);
                             if (typeof v !== 'undefined' && v.length > 0) {
                                 for (i = 0; i < v.length; i++) {
-                                    classify(v[i], e.recid, e.recid);
+                                    classify(v[i], groupName, groupName);
                                 }
                             }
                         }
                         break;
                 }
+
+                // Rebuild the graph after a Groups edit.  This is required for
+                // NetST metadata rings as well as the classic group pie.
+                if (svg) updateSVG();
+                if (w2ui.haplotypes) w2ui.haplotypes.refresh();
+                if (hasMeta) refreshMetaLegend();
 
                 /*
                  * If legend is present, delete it and redraw it
@@ -1528,7 +1682,7 @@ $(function () {
                     w2ui.haplotypes.records[e.index].color = w2ui.groups.records[r].color;
                 } else {
                     w2ui.haplotypes.records[e.index].group = 'Default';
-                    w2ui.haplotypes.records[e.index].color = 'ffffff';
+                    w2ui.haplotypes.records[e.index].color = defaultGroupColor;
                 }
 
                 classify(e.index, e.value_new, e.value_original);
@@ -1555,6 +1709,61 @@ $(function () {
         return String(parseFloat(number.toPrecision(6)));
     }
 
+    function legendTransform(state) {
+        return 'translate(' + state.x + ',' + state.y + ') scale(' + state.scale + ')';
+    }
+
+    /*
+     * Keep legend resizing independent from the network zoom. Hover a legend
+     * and use the mouse wheel to resize it around the pointer; double-clicking
+     * restores its original size. Stopping the wheel event here prevents the
+     * main SVG zoom handler from scaling the network at the same time.
+     */
+    function enableLegendScaling(legendSelection) {
+        legendSelection
+            .on('wheel.legend-scale', function (state) {
+                var event = d3.event;
+                if (!state || !event) return;
+
+                if (event.preventDefault) event.preventDefault();
+                if (event.stopPropagation) event.stopPropagation();
+
+                var delta = 0;
+                if (typeof event.deltaY === 'number') delta = -event.deltaY;
+                else if (typeof event.wheelDelta === 'number') delta = event.wheelDelta;
+                else if (typeof event.detail === 'number') delta = -event.detail;
+                if (delta === 0) return;
+
+                var oldScale = state.scale || 1;
+                var factor = delta > 0 ? 1.1 : (1 / 1.1);
+                var newScale = Math.max(
+                    legendMinScale,
+                    Math.min(legendMaxScale, oldScale * factor)
+                );
+                if (newScale === oldScale) return;
+
+                var root = document.getElementById('SVG');
+                if (root) {
+                    var pointer = d3.mouse(root);
+                    state.x = pointer[0] - (pointer[0] - state.x) * newScale / oldScale;
+                    state.y = pointer[1] - (pointer[1] - state.y) * newScale / oldScale;
+                }
+                state.scale = newScale;
+                d3.select(this).attr('transform', legendTransform(state));
+            })
+            .on('dblclick.legend-scale', function (state) {
+                var event = d3.event;
+                if (!state || !event) return;
+                if (event.preventDefault) event.preventDefault();
+                if (event.stopPropagation) event.stopPropagation();
+                state.scale = 1;
+                d3.select(this).attr('transform', legendTransform(state));
+            });
+
+        legendSelection.append('title')
+            .text('Drag to move. Scroll to resize. Double-click to reset size.');
+    }
+
     /*
      * Draw one draggable legend containing every visible metadata ring in the
      * same inner-to-outer order as the nodes. Discrete traits get categorical
@@ -1565,12 +1774,16 @@ $(function () {
         var traits = (metaConfig && metaConfig.traits) || [];
         if (traits.length === 0) return;
 
-        var coords = {x: 50, y: 100};
+        var coords = {x: 50, y: 100, scale: 1};
         var legendG = svgEl.append('g')
             .datum(coords)
-            .attr('transform', 'translate(' + coords.x + ',' + coords.y + ')')
+            .attr('transform', legendTransform(coords))
             .attr('class', 'legend legend-meta')
-            .style('cursor', 'move');
+            // Qt 6.11.0/6.11.1 on macOS renders CSS "move" as a pixmap
+            // cursor and can crash in QImage::toCGImage (QTBUG-147602).
+            // "grab" uses the native OpenHandCursor and keeps drag behaviour.
+            .style('cursor', 'grab');
+        enableLegendScaling(legendG);
         var background = legendG.append('rect')
             .attr('class', 'meta-legend-background')
             .attr('fill', 'white')
@@ -1584,10 +1797,7 @@ $(function () {
 
         for (var t = 0; t < traits.length; t++) {
             var trait = traits[t] || {};
-            var kind = trait.kind === 'continuous' ? 'Numeric' : 'Categorical';
             var title = 'Ring ' + (t + 1) + ' \u00b7 ' + (trait.name || 'Trait');
-            if (trait.group) title += ' [Group]';
-            title += ' \u00b7 ' + kind;
 
             content.append('text')
                 .attr('x', 0).attr('y', cursorY + 12)
@@ -1677,7 +1887,7 @@ $(function () {
                 d.x += d3.event.dx;
                 d.y += d3.event.dy;
                 d3.select(this)
-                    .attr('transform', 'translate(' + d.x + ',' + d.y + ')');
+                    .attr('transform', legendTransform(d));
             })
             .on('dragstart', function () {
                 d3.event.sourceEvent.stopPropagation();
@@ -1708,7 +1918,13 @@ $(function () {
                 lg.domain(grouplist);
                 lg.range(colorlist);
                 var verticalLegend = d3.svg.legend().labelFormat('none').cellPadding(5).orientation('vertical').units('Groups').cellWidth(25).cellHeight(18).inputScale(lg).cellStepping(10);
-                svgEl.append('g').attr('transform', 'translate(50,140)').attr('class', 'legend').call(verticalLegend);
+                var groupLegendState = {x: 50, y: 140, scale: 1};
+                var groupLegend = svgEl.append('g')
+                    .datum(groupLegendState)
+                    .attr('transform', legendTransform(groupLegendState))
+                    .attr('class', 'legend')
+                    .call(verticalLegend);
+                enableLegendScaling(groupLegend);
             }
 
             // styleid 0 (Dual-Trait) or 2 (Continuous): show trait gradient bar
@@ -1734,19 +1950,22 @@ $(function () {
                 grad.append('stop').attr('offset', '0%').attr('stop-color', maxColor);
                 grad.append('stop').attr('offset', '100%').attr('stop-color', minColor);
 
-                var traitCoords = {x: gradX, y: gradY};
+                var traitCoords = {x: gradX, y: gradY, scale: 1};
                 var legendG = svgEl.append('g')
                     .data([traitCoords])
-                    .attr('transform', 'translate(' + gradX + ',' + gradY + ')')
+                    .attr('transform', legendTransform(traitCoords))
                     .attr('class', 'legend legend-trait')
-                    .style('cursor', 'move');
+                    // Avoid Qt's crashing macOS pixmap cursor path; D3 owns
+                    // the actual drag behaviour, so only the hint changes.
+                    .style('cursor', 'grab');
+                enableLegendScaling(legendG);
 
                 // Drag — same pattern as group legend
                 var drag = d3.behavior.drag()
                     .on('drag', function (d) {
                         d.x += d3.event.dx;
                         d.y += d3.event.dy;
-                        d3.select(this).attr('transform', 'translate(' + [d.x, d.y] + ')');
+                        d3.select(this).attr('transform', legendTransform(d));
                     })
                     .on('dragstart', function () {
                         d3.event.sourceEvent.stopPropagation();
@@ -1884,6 +2103,13 @@ $(function () {
                                 disabled: true,
                                 checked: false
                             }, {
+                                id: 'btn-name-id',
+                                type: 'check',
+                                text: 'Name/ID',
+                                icon: 'icon-label',
+                                disabled: true,
+                                checked: false
+                            }, {
                                 id: 'btn-distance',
                                 type: 'check',
                                 text: 'Distance',
@@ -1929,6 +2155,9 @@ $(function () {
                                     break;
                                 case 'btn-haplotype':
                                     insertHaplotype();
+                                    break;
+                                case 'btn-name-id':
+                                    insertNameId();
                                     break;
                                 case 'btn-distance':
                                     insertDistance();
@@ -2270,6 +2499,11 @@ $(function () {
         labelLink = {};
         highlightNode = [];
         labelNode = {};
+        nameIdNode = {};
+        nodeNameId = {};
+        nodeTextLayout = {};
+        activeInfoNode = null;
+        refreshActiveNodeInfo = null;
 
         reader.onload = function () {
             var text = reader.result;
@@ -2277,17 +2511,22 @@ $(function () {
             var newnode = false;
             var newedge = false;
             var multilabels = false;
-            var frequency, radius, haplogroup, label, changes, source, target;
+            var frequency, radius, haplogroup, label, nodestyle, changes, source, target;
             var labels = [];
             for (var i = 0; i < lines.length; i++) {
-                if (lines[i].indexOf('node [') === 3) newnode = true;
+                if (lines[i].indexOf('node [') === 3) {
+                    newnode = true;
+                    // GML labels do not determine whether a node is inferred.
+                    // That state is evaluated dynamically from Name/ID + group.
+                    nodestyle = 1;
+                }
                 if (lines[i].indexOf('edge [') === 3) newedge = true;
                 if (lines[i].indexOf(']') === 3) {
                     if (newnode) {
                         newnode = false;
                         if (labels.length > 0) {
                             radius = standardRadius;
-                            if (label !== '') {
+                            if (nodestyle === 1) {
 
                                 /* This is a true haplotype (not a transition node). Add it
                                  * to the haplotypes' list that will be presented in the grid
@@ -2297,8 +2536,6 @@ $(function () {
                                  * JQuery can handle most of these and other characters as
                                  * element's ids, d3.js is much more restrictive...
                                  */
-                                var nodestyle = 1;
-
                                 for (var j = 0; j < labels.length; j++) {
                                     labels[j] = labels[j].replace(/[\W]/g, "_");
 
@@ -2313,7 +2550,7 @@ $(function () {
                                         recid: labels[j],
                                         haplogroup: haplogroup,
                                         group: 'Default',
-                                        color: 'ffffff',
+                                        color: defaultGroupColor,
                                         nodestyle: nodestyle,
                                         count: 1,
                                     });
@@ -2340,7 +2577,7 @@ $(function () {
                                     group: 'Default',
                                     value: frequency,
                                     radius: radius,
-                                    color: '#ffffff',
+                                    color: '#' + defaultGroupColor,
                                     pattern: 'none',
                                 }], timeProportions: []
                                 , id: haplogroup, //  label holds the info which should be shown
@@ -2395,6 +2632,10 @@ $(function () {
             hapconfLoaded = false;
             hapconfColumns = 0;
             seqHapFlag = false;
+            nameIdFlag = false;
+            if (w2ui.Layout_main_toolbar) {
+                w2ui.Layout_main_toolbar.uncheck('btn-haplotype', 'btn-name-id');
+            }
             styleid = 1;
             // Clear any metadata rings from a previous graph; a pending config
             // (set after this load was queued) is preserved and applied below.
@@ -2413,7 +2654,7 @@ $(function () {
 
             if (w2ui.groups.records.length > 1) {
                 w2ui.groups.clear();
-                w2ui.groups.add({recid: 'Default', color: 'ffffff', pattern: 'none', editable: false});
+                w2ui.groups.add({recid: 'Default', color: defaultGroupColor, pattern: 'none'});
             }
 
             /*
@@ -2479,8 +2720,9 @@ $(function () {
             var text = reader.result;
             var lines = text.split('\n');
             var line, l, name, color, pattern;
-            var names = [];
-            var g = [{recid: 'Default', color: 'ffffff', pattern: 'none', editable: false}];
+            var names = ['Default'];
+            var loadedGroups = 0;
+            var g = [{recid: 'Default', color: defaultGroupColor, pattern: 'none'}];
             for (i = 0; i < lines.length; i++) {
                 line = lines[i].trim();
                 if (line !== '') {
@@ -2489,12 +2731,13 @@ $(function () {
                         name = l[0].trim();
                         if (name !== '') {                       // There is at least a label or name or something as a first field...
                             k = names.indexOf(name);                // Check if this name is already in list
-                            if (k === -1) {
-                                names.push(name);                     // Add name to the names' list
-                                color = l[1].trim();                    // read the color
+                            if (k === -1 || name === 'Default') {
+                                if (k === -1) names.push(name);       // Add name to the names' list
+                                color = l[1].trim();                  // read the color
                                 if (/^#[0-9a-f]{3,6}$/i.test(color)) {  // check if it is a valid RGB color (e.g, #a2ff4b or #a0f)
                                     color = color.substr(1);              // strip the # prefix
                                 }
+                                if (!/^[0-9a-f]{6}$/i.test(color)) color = defaultGroupColor;
                                 pattern = 'none';
                                 if (typeof l[2] !== 'undefined') {   // read an optional pattern
                                     p = l[2].trim();
@@ -2503,13 +2746,20 @@ $(function () {
                                     })[0];
                                     if (typeof j !== 'undefined') pattern = p;
                                 }
-                                g.push({recid: name, color: color, pattern: pattern});
+                                if (name === 'Default') {
+                                    g[0].color = color;
+                                    g[0].pattern = 'none';
+                                } else {
+                                    g.push({recid: name, color: color, pattern: pattern});
+                                }
+                                loadedGroups += 1;
                             }
                         }
                     }
                 }
             }
-            if (g.length > 1) {
+            if (loadedGroups > 0) {
+                defaultGroupColor = g[0].color;
 
                 /*
                  * Some groups were added, besides the default one, so update w2ui.groups
@@ -2528,7 +2778,7 @@ $(function () {
                     for (i = 0; i < w2ui.haplotypes.records.length; i++) {
                         oldGroup = w2ui.haplotypes.records[i].group;
                         w2ui.haplotypes.records[i].group = 'Default';
-                        w2ui.haplotypes.records[i].color = 'ffffff';
+                        w2ui.haplotypes.records[i].color = g[0].color;
                         classify(i, 'Default', oldGroup);
                     }
                     w2ui.haplotypes.refresh();
@@ -2550,6 +2800,14 @@ $(function () {
                             createPattern(w2ui.groups.records[i].pattern, w2ui.groups.records[i].color);
                         }
                     }
+                }
+                if (hasMeta) {
+                    g.forEach(function (record) {
+                        syncMetaGroupColor(record.recid, record.color);
+                    });
+                    syncAllMetaHaplotypeGroups(false);
+                    updateSVG();
+                    refreshMetaLegend();
                 }
 
             } else {
@@ -2725,7 +2983,7 @@ $(function () {
 
             var text = reader.result;
             var lines = text.split('\n');
-            var line, l, name, group, seq2hap;
+            var line, l, name, displayName, group, seq2hap;
             var i, h = [];
 
             /*
@@ -2755,7 +3013,8 @@ $(function () {
                      */
 
                     if (l.length === 2 || l.length === 3) {
-                        name = l[0].trim();
+                            displayName = l[0].trim();
+                            name = displayName;
                         if (name !== '') {
 
                             /*
@@ -2773,7 +3032,12 @@ $(function () {
 
                             group = l[1].trim();
                             seq2hap = (l.length === 3) ? l[2].trim() : '';
-                            if (group !== "") h.push({label: name, group: group, seq2hap: seq2hap});
+                            if (group !== "") h.push({
+                                label: name,
+                                displayName: displayName,
+                                group: group,
+                                seq2hap: seq2hap
+                            });
                         }
                     }
                 }
@@ -2811,6 +3075,7 @@ $(function () {
                         w2ui.haplotypes.records[hap].group = h[i].group;
                         w2ui.haplotypes.records[hap].color = w2ui.groups.records[grp].color;
                         w2ui.haplotypes.records[hap].seq2hap = h[i].seq2hap;
+                        w2ui.haplotypes.records[hap].displayName = h[i].displayName;
 
                         classify(hap, h[i].group, ogrp);
                     }
@@ -2846,6 +3111,9 @@ $(function () {
                 if (hapconfColumns === 3) {
                     w2ui.Layout_main_toolbar.enable('btn-haplotype');
                 } else {
+                    seqHapFlag = false;
+                    labelNode = {};
+                    w2ui.Layout_main_toolbar.uncheck('btn-haplotype');
                     w2ui.Layout_main_toolbar.disable('btn-haplotype');
                 }
 
@@ -2904,7 +3172,52 @@ $(function () {
      */
     function insertHaplotype() {
         seqHapFlag = !seqHapFlag;
+        // A toolbar action means "all on" or "all off", so discard prior
+        // single-node exceptions.  Info can add fresh per-node overrides.
+        labelNode = {};
         updateSVG();
+        if (activeInfoNode && refreshActiveNodeInfo) refreshActiveNodeInfo(activeInfoNode);
+    }
+
+    function escapeHtml(value) {
+        return String(value === undefined || value === null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function nodeSequenceEntries(node) {
+        var ids = String(node && node.name ? node.name : '').split('\n').filter(function (value) {
+            return value.trim() !== '';
+        });
+        return ids.map(function (id) {
+            var record = null;
+            if (w2ui.haplotypes) {
+                var found = w2ui.haplotypes.find({recid: id}, true);
+                if (found && found.length > 0) record = w2ui.haplotypes.records[found[0]];
+            }
+            return {id: id, label: record && record.displayName ? record.displayName : id};
+        });
+    }
+
+    function getNodeNameIdLabel(node) {
+        var entries = nodeSequenceEntries(node);
+        if (!entries.length) return '';
+        var selected = nodeNameId[node.name];
+        if (selected && entries.some(function (entry) { return entry.label === selected; })) {
+            return selected;
+        }
+        nodeNameId[node.name] = entries[0].label;
+        return entries[0].label;
+    }
+
+    function insertNameId() {
+        nameIdFlag = !nameIdFlag;
+        nameIdNode = {};
+        updateSVG();
+        if (activeInfoNode && refreshActiveNodeInfo) refreshActiveNodeInfo(activeInfoNode);
     }
 
     /*
@@ -2996,6 +3309,200 @@ $(function () {
         };
     }
 
+    function detachedJSON(value) {
+        return JSON.parse(JSON.stringify(value));
+    }
+
+    function exportProjectViewState() {
+        if (!nodeList || nodeList.length === 0) return null;
+        return {
+            version: 1,
+            captured_at: new Date().toISOString(),
+            layout: {
+                link_distance: Number(lnkdist),
+                link_strength: Number(lnkstre),
+                friction: Number(frict),
+                charge: Number(chrg),
+                gravity: Number(grav)
+            },
+            style: {
+                node_radius: Number(standardRadius),
+                node_line_width: Number(nodeLineWidth),
+                edge_line_width: Number(edgeLineWidth),
+                edge_weight_scale: Number(edgeWeightScale),
+                ring_line_width: Number(metaRingLineWidth),
+                ring_ratio: Number(metaRingRatio),
+                ring_scales: metaRingScales.slice(),
+                text_offset: Number(textOffset),
+                haplotype_font_size: Number(haplotypeFontSize),
+                name_id_font_size: Number(nameIdFontSize)
+            },
+            toggles: {
+                legend: legend === 1,
+                haplotype_labels: !!seqHapFlag,
+                name_id_labels: !!nameIdFlag,
+                distance_labels: !!distanceFlag,
+                edge_weight: !!edgeWeightFlag
+            },
+            legend_transforms: $('.legend').map(function () {
+                return $(this).attr('transform') || '';
+            }).get(),
+            zoom: zoom ? {
+                scale: Number(zoom.scale()),
+                translate: zoom.translate().map(Number)
+            } : null,
+            nodes: nodeList.map(function (item) {
+                return {
+                    id: item.id,
+                    name: item.name,
+                    x: Number(item.x),
+                    y: Number(item.y),
+                    px: Number(item.px),
+                    py: Number(item.py),
+                    fixed: !!item.fixed
+                };
+            }),
+            visible_link_ids: linkList.map(function (item) { return item.id; }),
+            label_node: detachedJSON(labelNode),
+            name_id_node: detachedJSON(nameIdNode),
+            node_name_id: detachedJSON(nodeNameId),
+            node_text_layout: detachedJSON(nodeTextLayout),
+            label_link: detachedJSON(labelLink),
+            highlight_nodes: highlightNode.slice(),
+            highlight_links: highlightLink.slice(),
+            meta_config: metaConfig ? detachedJSON(metaConfig) : null
+        };
+    }
+
+    function applyProjectViewState(state) {
+        if (!state || state.version !== 1 || !nodeList || nodeList.length === 0) {
+            return false;
+        }
+        if (force) force.stop();
+
+        var savedNodes = {};
+        (state.nodes || []).forEach(function (item) {
+            savedNodes[String(item.id)] = item;
+        });
+        if (Object.keys(savedNodes).length > 0) {
+            nodeList = nodeList.filter(function (item) {
+                return Object.prototype.hasOwnProperty.call(savedNodes, String(item.id));
+            });
+        }
+
+        var visibleLinks = {};
+        (state.visible_link_ids || []).forEach(function (id) {
+            visibleLinks[String(id)] = true;
+        });
+        if (state.visible_link_ids) {
+            linkList = linkList.filter(function (item) {
+                return !!visibleLinks[String(item.id)];
+            });
+            var visiblePairs = {};
+            linkList.forEach(function (item) {
+                var a = String(item.source.id), b = String(item.target.id);
+                visiblePairs[a + '\u0000' + b] = true;
+                visiblePairs[b + '\u0000' + a] = true;
+            });
+            edgeList = edgeList.filter(function (item) {
+                return !!visiblePairs[String(item.source) + '\u0000' + String(item.target)];
+            });
+        }
+
+        var style = state.style || {};
+        var savedRadius = Number(style.node_radius);
+        if (isFinite(savedRadius) && savedRadius > 0 && savedRadius !== standardRadius) {
+            var radiusScale = savedRadius / standardRadius;
+            standardRadius = savedRadius;
+            nodeList.forEach(function (item) {
+                if (item.nodestyle !== 1) return;
+                item.radius *= radiusScale;
+                (item.proportions || []).forEach(function (part) {
+                    part.radius *= radiusScale;
+                });
+                (item.timeProportions || []).forEach(function (part) {
+                    if (part.radius) part.radius *= radiusScale;
+                });
+            });
+        }
+        function finiteOr(value, fallback) {
+            var number = Number(value);
+            return isFinite(number) ? number : fallback;
+        }
+        nodeLineWidth = finiteOr(style.node_line_width, nodeLineWidth);
+        edgeLineWidth = finiteOr(style.edge_line_width, edgeLineWidth);
+        edgeWeightScale = finiteOr(style.edge_weight_scale, edgeWeightScale);
+        metaRingLineWidth = finiteOr(style.ring_line_width, metaRingLineWidth);
+        metaRingRatio = finiteOr(style.ring_ratio, metaRingRatio);
+        metaRingScales = Array.isArray(style.ring_scales)
+            ? style.ring_scales.map(Number) : metaRingScales;
+        textOffset = finiteOr(style.text_offset, textOffset);
+        haplotypeFontSize = finiteOr(style.haplotype_font_size, haplotypeFontSize);
+        nameIdFontSize = finiteOr(style.name_id_font_size, nameIdFontSize);
+
+        var layout = state.layout || {};
+        lnkdist = finiteOr(layout.link_distance, lnkdist);
+        lnkstre = finiteOr(layout.link_strength, lnkstre);
+        frict = finiteOr(layout.friction, frict);
+        chrg = finiteOr(layout.charge, chrg);
+        grav = finiteOr(layout.gravity, grav);
+
+        var toggles = state.toggles || {};
+        var restoreLegend = !!toggles.legend;
+        legend = 0;
+        seqHapFlag = !!toggles.haplotype_labels;
+        nameIdFlag = !!toggles.name_id_labels;
+        distanceFlag = !!toggles.distance_labels;
+        edgeWeightFlag = !!toggles.edge_weight;
+        labelNode = detachedJSON(state.label_node || {});
+        nameIdNode = detachedJSON(state.name_id_node || {});
+        nodeNameId = detachedJSON(state.node_name_id || {});
+        nodeTextLayout = detachedJSON(state.node_text_layout || {});
+        labelLink = detachedJSON(state.label_link || {});
+        highlightNode = (state.highlight_nodes || []).slice();
+        highlightLink = (state.highlight_links || []).slice();
+
+        if (state.meta_config) {
+            pendingMetaConfig = detachedJSON(state.meta_config);
+            applyMetaConfig();
+        }
+        nodeList.forEach(function (item) {
+            var saved = savedNodes[String(item.id)];
+            if (!saved) return;
+            item.x = finiteOr(saved.x, item.x);
+            item.y = finiteOr(saved.y, item.y);
+            item.px = finiteOr(saved.px, item.x);
+            item.py = finiteOr(saved.py, item.y);
+            item.fixed = !!saved.fixed;
+        });
+
+        if (force) {
+            force.nodes(nodeList).links(linkList)
+                .linkDistance(function (item) { return item.ldist * lnkdist; })
+                .linkStrength(lnkstre).friction(frict).gravity(grav)
+                .charge(function (item) { return item ? item.radius * chrg : chrg; });
+        }
+        updateSVG();
+        $('.legend').remove();
+        legend = 0;
+        if (restoreLegend) {
+            insertLegend();
+            var transforms = state.legend_transforms || [];
+            $('.legend').each(function (index) {
+                if (transforms[index]) $(this).attr('transform', transforms[index]);
+            });
+        }
+        if (zoom && state.zoom) {
+            var scale = finiteOr(state.zoom.scale, zoom.scale());
+            var translate = Array.isArray(state.zoom.translate)
+                ? state.zoom.translate.map(Number) : zoom.translate();
+            zoom.scale(scale).translate(translate);
+            svg.attr("transform", "translate(" + translate + ")scale(" + scale + ")");
+        }
+        if (force) force.stop();
+        return true;
+    }
+
     function saveImage(format) {
         if (!filesave) {
             w2alert('FileSaver.js is not supported! Use a modern browser...',
@@ -3009,12 +3516,21 @@ $(function () {
             return;
         }
 
+        if (force) force.stop();
+        window._lastNetstExportState = exportProjectViewState();
         var exported = serializedNetworkSVG();
         if (!exported) {
             w2alert('Build or load a network before exporting an image.',
                 'No network to export');
             return;
         }
+        window._lastNetstExportState.export = {
+            format: imageFormat,
+            width: exported.width,
+            height: exported.height,
+            raster_scale: 1,
+            jpeg_quality: imageFormat === 'jpg' ? 0.95 : null
+        };
         var svgBlob = new Blob(
             [exported.markup], {type: 'image/svg+xml;charset=utf-8'});
         if (imageFormat === 'svg') {
@@ -3041,6 +3557,9 @@ $(function () {
             var longest = Math.max(exported.width, exported.height);
             if (longest * scale > maxSide) {
                 scale = Math.max(0.5, maxSide / longest);
+            }
+            if (window._lastNetstExportState && window._lastNetstExportState.export) {
+                window._lastNetstExportState.export.raster_scale = scale;
             }
             var canvas = document.createElement('canvas');
             canvas.width = Math.round(exported.width * scale);
@@ -3186,13 +3705,13 @@ $(function () {
     function svgStart() {
 
         var massFactor = 0; // reserved for future node-mass scaling; currently unused
-        var lnkdist = defaultLinkDistance;
-        var lnkstre = defaultLinkStrength;
-        var frict = defaultFriction;
-        var chrg = defaultCharge;
+        lnkdist = defaultLinkDistance;
+        lnkstre = defaultLinkStrength;
+        frict = defaultFriction;
+        chrg = defaultCharge;
         // Do not mess with this
         // var chrgdist = Infinity;
-        var grav = defaultGravity;
+        grav = defaultGravity;
 
         /*
          * clear linkList if not empty
@@ -3376,53 +3895,7 @@ $(function () {
          * Updates link endpoints and node positions on the SVG.
          */
 
-        force.on("tick", function () {
-            link.attr("x1", function (d) {
-                return d.source.x;
-            })
-                .attr("y1", function (d) {
-                    return d.source.y;
-                })
-                .attr("x2", function (d) {
-                    return d.target.x;
-                })
-                .attr("y2", function (d) {
-                    return d.target.y;
-                });
-
-            if (distanceFlag) {
-                linkText
-                    .attr('x', function (d) {
-                        return (d.source.x + d.target.x) / 2;
-                    })
-                    .attr('y', function (d) {
-                        return (d.source.y + d.target.y) / 2;
-                    });
-            }
-
-            Object.keys(labelLink).forEach(function (lid) {
-                var ldata = linkList.find(function (l) {
-                    return l.id === lid;
-                });
-                if (!ldata) return;
-                var linkEl = svg.select('#' + lid);
-                if (!linkEl.empty()) {
-                    svg.select('.link-label-info[data-lid="' + lid + '"]')
-                        .attr('x', (ldata.source.x + ldata.target.x) / 2)
-                        .attr('y', (ldata.source.y + ldata.target.y) / 2);
-                }
-            });
-
-            node.attr("x", function (d) {
-                return d.x;
-            })
-                .attr("y", function (d) {
-                    return d.y;
-                })
-                .attr("transform", function (d) {
-                    return "translate(" + d.x + "," + d.y + ")";
-                });
-        });
+        force.on("tick", updateSVGPositions);
 
         /*
          * Define costum drag
@@ -3432,12 +3905,14 @@ $(function () {
             d3.event.sourceEvent.stopPropagation();
         });
         force.stop();
+        refreshActiveNodeInfo = showNodeInfo;
         /*
          * Delete a selected node
          */
 
         clickNode = function (e) {
             if (deletenode) {
+                if (activeInfoNode === e) activeInfoNode = null;
                 pushUndoSnapshot();
                 nodeList.splice(nodeList.indexOf(e), 1);
                 edgeList = edgeList.filter(function (edge) {
@@ -3451,6 +3926,7 @@ $(function () {
                 });
                 updateSVG();
             } else {
+                activeInfoNode = e;
                 showNodeInfo(e);
             }
         };
@@ -3458,31 +3934,11 @@ $(function () {
         /*
          * Show node information in the Node Info right panel.
          */
-        function getHaplotypeLabel(node) {
-            var haploNodes = nodeList.filter(function (n) {
-                return n.nodestyle === 1;
-            });
-            var idx = haploNodes.indexOf(node);
-            return idx >= 0 ? 'H' + (idx + 1) : null;
-        }
-
-        function getNodeDisplayLabel(node) {
-            if (node.nodestyle !== 1) return 'Transition';
-            // 3-col hapconf: use the hap name stored in node.hap (e.g. "H1")
-            if (hapconfColumns === 3 && node.hap) return node.hap;
-            // 2-col hapconf or no hapconf: use the first sequence name in the node
-            var names = node.name ? node.name.split('\n').filter(function (s) {
-                return s.trim() !== '';
-            }) : [];
-            return names.length > 0 ? names[0] : getHaplotypeLabel(node);
-        }
-
         function showNodeInfo(node) {
-            var isHaplotype = node.nodestyle === 1;
+            var isHaplotype = node.nodestyle === 1 && !isIntermediateNode(node);
             var haploLabel = getNodeDisplayLabel(node);
-            var names = node.name ? node.name.split('\n').filter(function (s) {
-                return s.trim() !== '';
-            }) : [];
+            var nameEntries = nodeSequenceEntries(node);
+            var names = nameEntries.map(function (entry) { return entry.id; });
 
             var html = '<div style="padding:10px;">';
             // Top: haplotype label
@@ -3565,7 +4021,8 @@ $(function () {
             if (names.length > 1) {
                 html += '<div style="margin-top:10px;">';
                 html += '<div style="color:#666; font-size:11px; margin-bottom:4px; font-weight:bold;">Sequences (' + names.length + '):</div>';
-                names.forEach(function (s) {
+                nameEntries.forEach(function (entry) {
+                    var s = entry.id;
                     var rec = null;
                     if (w2ui.haplotypes) {
                         var found = w2ui.haplotypes.find({recid: s}, true);
@@ -3590,7 +4047,7 @@ $(function () {
 
                     html += '<div style="font-size:11px; background:#f0f2f5; padding:3px 6px; margin:2px 0; border-radius:2px; ' +
                         'display:flex; align-items:center; justify-content:space-between;">' +
-                        '<span style="word-break:break-all;">' + s + '</span>' +
+                        '<span style="word-break:break-all;">' + escapeHtml(entry.label) + '</span>' +
                         (tagHtml ? '<span style="white-space:nowrap; margin-left:4px;">' + tagHtml + '</span>' : '') +
                         '</div>';
                 });
@@ -3599,12 +4056,54 @@ $(function () {
 
             if (isHaplotype) {
                 var isHighlighted = highlightNode.indexOf(node.name) >= 0;
-                var hasLabel = labelNode.hasOwnProperty(node.name);
+                var haplotypeVisible = isNodeTextVisible(node, 'haplotype');
+                var nameIdVisible = isNodeTextVisible(node, 'nameId');
+                var haplotypeLayout = getNodeTextLayout(node, 'haplotype');
+                var nameIdLayout = getNodeTextLayout(node, 'nameId');
                 html += '<div style="margin-top:12px; border-top:1px solid #eee; padding-top:10px;">';
+                html += '<div style="color:#555; font-size:12px; font-weight:bold; margin-bottom:7px;">Node Text</div>';
+
+                html += '<div style="background:#f7f8fa; border:1px solid #e4e7eb; border-radius:4px; padding:7px; margin-bottom:8px;">';
+                html += '<button id="info-haplotype-label-btn" class="w2ui-btn" style="width:100%; margin-bottom:7px;">' +
+                    (haplotypeVisible ? 'Hide Haplotype' : 'Show Haplotype') + '</button>';
+                html += '<div style="font-size:10px; color:#777; margin-bottom:4px;">Position relative to node centre (px)</div>';
+                html += '<div style="display:grid; grid-template-columns:18px 1fr 18px 1fr; gap:4px; align-items:center; font-size:10px;">' +
+                    '<label for="info-hap-x">X</label><input id="info-hap-x" type="number" step="1" value="' + haplotypeLayout.x + '" style="width:100%; box-sizing:border-box;" />' +
+                    '<label for="info-hap-y">Y</label><input id="info-hap-y" type="number" step="1" value="' + haplotypeLayout.y + '" style="width:100%; box-sizing:border-box;" />' +
+                    '</div>';
+                html += '<div style="display:grid; grid-template-columns:48px 1fr; gap:4px; align-items:center; font-size:10px; margin-top:4px;">' +
+                    '<label for="info-hap-size">Size (px)</label><input id="info-hap-size" type="number" min="1" max="200" step="1" value="' + haplotypeLayout.size + '" style="width:100%; box-sizing:border-box;" />' +
+                    '</div></div>';
+
+                html += '<div style="background:#f7f8fa; border:1px solid #e4e7eb; border-radius:4px; padding:7px; margin-bottom:8px;">';
+                if (nameEntries.length > 0) {
+                    var selectedNameId = getNodeNameIdLabel(node);
+                    html += '<label for="info-name-id-select" style="display:block; color:#666; font-size:11px; margin-bottom:4px;">Displayed Name/ID:</label>';
+                    html += '<select id="info-name-id-select" style="width:100%; margin-bottom:7px;">';
+                    nameEntries.forEach(function (entry, index) {
+                        html += '<option value="' + index + '"' +
+                            (entry.label === selectedNameId ? ' selected' : '') + '>' +
+                            escapeHtml(entry.label) + '</option>';
+                    });
+                    html += '</select>';
+                }
+                html += '<button id="info-name-id-label-btn" class="w2ui-btn" style="width:100%; margin-bottom:7px;">' +
+                    (nameIdVisible ? 'Hide Name/ID' : 'Show Name/ID') + '</button>';
+                html += '<div style="font-size:10px; color:#777; margin-bottom:4px;">Position relative to node centre (px)</div>';
+                html += '<div style="display:grid; grid-template-columns:18px 1fr 18px 1fr; gap:4px; align-items:center; font-size:10px;">' +
+                    '<label for="info-name-x">X</label><input id="info-name-x" type="number" step="1" value="' + nameIdLayout.x + '" style="width:100%; box-sizing:border-box;" />' +
+                    '<label for="info-name-y">Y</label><input id="info-name-y" type="number" step="1" value="' + nameIdLayout.y + '" style="width:100%; box-sizing:border-box;" />' +
+                    '</div>';
+                html += '<div style="display:grid; grid-template-columns:48px 1fr; gap:4px; align-items:center; font-size:10px; margin-top:4px;">' +
+                    '<label for="info-name-size">Size (px)</label><input id="info-name-size" type="number" min="1" max="200" step="1" value="' + nameIdLayout.size + '" style="width:100%; box-sizing:border-box;" />' +
+                    '</div></div>';
+
+                html += '<div style="display:flex; gap:5px; margin-bottom:10px;">' +
+                    '<button id="info-text-settings-btn" class="w2ui-btn" style="flex:1;">Apply Text</button>' +
+                    '<button id="info-text-reset-btn" class="w2ui-btn" style="flex:1;">Reset Position</button>' +
+                    '</div>';
                 html += '<button id="info-highlight-btn" class="w2ui-btn" style="width:100%; margin-bottom:6px;">' +
                     (isHighlighted ? 'Remove Highlight' : 'Highlight Node') + '</button>';
-                html += '<button id="info-label-btn" class="w2ui-btn" style="width:100%;">' +
-                    (hasLabel ? 'Hide Haplotype Text' : 'Show Haplotype Text') + '</button>';
                 html += '</div>';
             }
 
@@ -3612,19 +4111,58 @@ $(function () {
             $('#node-info-panel').html(html);
 
             if (isHaplotype) {
+                $('#info-name-id-select').change(function () {
+                    var selectedIndex = Number($(this).val());
+                    if (nameEntries[selectedIndex]) {
+                        nodeNameId[node.name] = nameEntries[selectedIndex].label;
+                        if (isNodeTextVisible(node, 'nameId')) updateSVG();
+                        showNodeInfo(node);
+                    }
+                });
+                $('#info-haplotype-label-btn').click(function () {
+                    labelNode[node.name] = !isNodeTextVisible(node, 'haplotype');
+                    updateSVG();
+                    showNodeInfo(node);
+                });
+                $('#info-name-id-label-btn').click(function () {
+                    nameIdNode[node.name] = !isNodeTextVisible(node, 'nameId');
+                    updateSVG();
+                    showNodeInfo(node);
+                });
+                $('#info-text-settings-btn').click(function () {
+                    var hapValues = {
+                        x: Number($('#info-hap-x').val()),
+                        y: Number($('#info-hap-y').val()),
+                        size: Number($('#info-hap-size').val())
+                    };
+                    var nameValues = {
+                        x: Number($('#info-name-x').val()),
+                        y: Number($('#info-name-y').val()),
+                        size: Number($('#info-name-size').val())
+                    };
+                    var values = [hapValues, nameValues];
+                    var valid = values.every(function (item) {
+                        return isFinite(item.x) && isFinite(item.y) &&
+                            isFinite(item.size) && item.size >= 1 && item.size <= 200;
+                    });
+                    if (!valid) {
+                        w2alert('Text X/Y must be numbers and Size must be between 1 and 200 px.');
+                        return;
+                    }
+                    setNodeTextLayout(node, 'haplotype', hapValues);
+                    setNodeTextLayout(node, 'nameId', nameValues);
+                    updateSVG();
+                    showNodeInfo(node);
+                });
+                $('#info-text-reset-btn').click(function () {
+                    delete nodeTextLayout[nodeLabelKey(node)];
+                    updateSVG();
+                    showNodeInfo(node);
+                });
                 $('#info-highlight-btn').click(function () {
                     var idx = highlightNode.indexOf(node.name);
                     if (idx >= 0) highlightNode.splice(idx, 1);
                     else highlightNode.push(node.name);
-                    updateSVG();
-                    showNodeInfo(node);
-                });
-                $('#info-label-btn').click(function () {
-                    if (labelNode.hasOwnProperty(node.name)) {
-                        delete labelNode[node.name];
-                    } else {
-                        labelNode[node.name] = [haploLabel];
-                    }
                     updateSVG();
                     showNodeInfo(node);
                 });
@@ -3699,6 +4237,7 @@ $(function () {
                 });
                 updateSVG();
             } else {
+                activeInfoNode = null;
                 showLinkInfo(e);
             }
         };
@@ -3745,7 +4284,8 @@ $(function () {
          */
 
         function linkStrengthChanged(e) {
-            force.stop().linkStrength(e).start();
+            lnkstre = Number(e);
+            force.stop().linkStrength(lnkstre).start();
         }
 
         $('#linkStrength').on('change', function (event) {
@@ -3757,7 +4297,8 @@ $(function () {
          */
 
         function frictionChanged(e) {
-            force.stop().friction(e).start();
+            frict = Number(e);
+            force.stop().friction(frict).start();
         }
 
         $('#friction').on('change', function (event) {
@@ -3786,7 +4327,8 @@ $(function () {
          */
 
         function gravityChanged(e) {
-            force.stop().gravity(e).start();
+            grav = Number(e);
+            force.stop().gravity(grav).start();
         }
 
         $('#gravity').on('change', function (event) {
@@ -3811,6 +4353,8 @@ $(function () {
         $('#advEdgeWeightScale').attr('value', edgeWeightScale);
         $('#advMetaRingLineWidth').attr('value', metaRingLineWidth);
         $('#advTextOffset').attr('value', textOffset);
+        $('#advHaplotypeFontSize').attr('value', haplotypeFontSize);
+        $('#advNameIdFontSize').attr('value', nameIdFontSize);
         $('#advMetaRingRatio').attr('value', metaRingRatio);
         $('#advMetaRingScales').attr('value', metaRingScales.join(', '));
 
@@ -3848,7 +4392,7 @@ $(function () {
          * Enable editing buttons
          */
 
-        w2ui.Layout_main_toolbar.enable('btn-dellink', 'btn-delnode', 'btn-saveimage', 'btn-zoomin', 'btn-zoomout', 'btn-legend', 'btn-distance', 'btn-edgeweight', 'btn-advanced');
+        w2ui.Layout_main_toolbar.enable('btn-dellink', 'btn-delnode', 'btn-saveimage', 'btn-zoomin', 'btn-zoomout', 'btn-legend', 'btn-name-id', 'btn-distance', 'btn-edgeweight', 'btn-advanced');
         // btn-haplotype is only enabled after a 3-column hapconf file is loaded
         w2ui.Layout_main_toolbar.disable('btn-haplotype');
 
@@ -3957,6 +4501,9 @@ $(function () {
             '<div class="w2ui-field"><label>Edge Weight Scale:</label><div><input type="text" id="advEdgeWeightScale" /></div></div>' +
             '<div class="adv-hint">Maximum multiplier of Edge Line Width when Edge Weight is on. Edges thin toward the base width as Changes increases.</div>' +
             '<div class="w2ui-field"><label>Text Offset:</label><div><input type="text" id="advTextOffset" /></div></div>' +
+            '<div class="w2ui-field"><label>Haplotype Font Size:</label><div><input type="text" id="advHaplotypeFontSize" /></div></div>' +
+            '<div class="w2ui-field"><label>Name/ID Font Size:</label><div><input type="text" id="advNameIdFontSize" /></div></div>' +
+            '<div class="adv-hint">Global font sizes in pixels. Applying these values updates every node label; individual nodes can still be adjusted in Info.</div>' +
             '<div class="adv-section">Metadata Ring Settings</div>' +
             '<div class="w2ui-field"><label>Ring Line Width:</label><div><input type="text" id="advMetaRingLineWidth" /></div></div>' +
             '<div class="w2ui-field"><label>Ring Width Ratio:</label><div><input type="text" id="advMetaRingRatio" /></div></div>' +
@@ -4105,6 +4652,8 @@ $(function () {
         $('#advEdgeWeightScale').w2field('float', {min: 1, max: 30, step: 0.5, arrows: false});
         $('#advMetaRingLineWidth').w2field('float', {min: 0, max: 10, step: 0.1, arrows: false});
         $('#advTextOffset').w2field('float', {min: 0, max: 50, step: 0.5, arrows: false});
+        $('#advHaplotypeFontSize').w2field('float', {min: 1, max: 200, step: 1, arrows: false});
+        $('#advNameIdFontSize').w2field('float', {min: 1, max: 200, step: 1, arrows: false});
         $('#advMetaRingRatio').w2field('float', {min: 0.05, max: 5, step: 0.05, arrows: false});
 
         $('#adv-apply').on('click', function () {
@@ -4114,6 +4663,8 @@ $(function () {
             var newEdgeWeightScale = parseFloat($('#advEdgeWeightScale').val());
             var newMetaRingLineWidth = parseFloat($('#advMetaRingLineWidth').val());
             var newTextOffset = parseFloat($('#advTextOffset').val());
+            var newHaplotypeFontSize = parseFloat($('#advHaplotypeFontSize').val());
+            var newNameIdFontSize = parseFloat($('#advNameIdFontSize').val());
             var newMetaRingRatio = parseFloat($('#advMetaRingRatio').val());
             var ringScaleText = $.trim($('#advMetaRingScales').val());
             var newMetaRingScales = [];
@@ -4140,6 +4691,12 @@ $(function () {
                 errors.push('Ring Line Width must be \u2265 0.');
             }
             if (isNaN(newTextOffset) || newTextOffset < 0) errors.push('Text Offset must be \u2265 0.');
+            if (isNaN(newHaplotypeFontSize) || newHaplotypeFontSize < 1 || newHaplotypeFontSize > 200) {
+                errors.push('Haplotype Font Size must be between 1 and 200 px.');
+            }
+            if (isNaN(newNameIdFontSize) || newNameIdFontSize < 1 || newNameIdFontSize > 200) {
+                errors.push('Name/ID Font Size must be between 1 and 200 px.');
+            }
             if (isNaN(newMetaRingRatio) || newMetaRingRatio <= 0) {
                 errors.push('Ring Width Ratio must be > 0.');
             }
@@ -4184,10 +4741,15 @@ $(function () {
             edgeWeightScale = newEdgeWeightScale;
             metaRingLineWidth = newMetaRingLineWidth;
             textOffset = newTextOffset;
+            haplotypeFontSize = newHaplotypeFontSize;
+            nameIdFontSize = newNameIdFontSize;
+            applyGlobalNodeFontSize('haplotype', haplotypeFontSize);
+            applyGlobalNodeFontSize('nameId', nameIdFontSize);
             metaRingRatio = newMetaRingRatio;
             metaRingScales = newMetaRingScales;
 
             updateSVG();
+            if (activeInfoNode && refreshActiveNodeInfo) refreshActiveNodeInfo(activeInfoNode);
             $('#advanced-settings-overlay').hide();
         });
 
@@ -4199,6 +4761,8 @@ $(function () {
             $('#advEdgeWeightScale').val(edgeWeightScale);
             $('#advMetaRingLineWidth').val(metaRingLineWidth);
             $('#advTextOffset').val(textOffset);
+            $('#advHaplotypeFontSize').val(haplotypeFontSize);
+            $('#advNameIdFontSize').val(nameIdFontSize);
             $('#advMetaRingRatio').val(metaRingRatio);
             $('#advMetaRingScales').val(metaRingScales.join(', '));
             $('#adv-layout-error').hide();
@@ -4221,6 +4785,8 @@ $(function () {
     window.loadHaplotypes = loadHaplotypes;
     window.loadTraits = loadTraits;
     window.loadMetaConfig = loadMetaConfig;
+    window.exportProjectViewState = exportProjectViewState;
+    window.applyProjectViewState = applyProjectViewState;
     window.exportMetaConfig = function () {
         if (!metaConfig) return null;
         // Return a detached JSON value so QWebEngine can safely serialize it

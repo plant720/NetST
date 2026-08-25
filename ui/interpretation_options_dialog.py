@@ -31,6 +31,7 @@ class InterpretationOptionsDialog(QDialog):
         self.minimum_sites = None
         self.minimum_coverage = None
         self.group_trait = None
+        self.permutation_count = None
 
         if mode == 'diversity':
             # Choose which discrete trait groups samples (Hd, pi, private haplotypes).
@@ -53,6 +54,15 @@ class InterpretationOptionsDialog(QDialog):
                 'pairwise_deletion')
             form.addRow(lang_manager.get(
                 'label_missing_policy', 'Missing-data policy:'), self.missing_policy)
+            self.permutation_count = QSpinBox()
+            self.permutation_count.setRange(0, 100000)
+            self.permutation_count.setSingleStep(100)
+            self.permutation_count.setValue(999)
+            self.permutation_count.setToolTip(lang_manager.get(
+                'permutation_count_tip',
+                'Permutations for global FST and AMOVA; 0 disables P values.'))
+            form.addRow(lang_manager.get(
+                'label_permutation_count', 'Permutations:'), self.permutation_count)
         elif mode == 'distance':
             self.minimum_sites = QSpinBox()
             self.minimum_sites.setRange(1, max(1, alignment_length))
@@ -88,7 +98,10 @@ class InterpretationOptionsDialog(QDialog):
 
     def config(self) -> Dict[str, object]:
         if self.mode == 'diversity':
-            result = {'missing_policy': self.missing_policy.currentData()}
+            result = {
+                'missing_policy': self.missing_policy.currentData(),
+                'permutation_count': self.permutation_count.value(),
+            }
             if self.group_trait is not None:
                 result['group_trait'] = self.group_trait.currentData()
             return result
@@ -107,4 +120,3 @@ class InterpretationOptionsDialog(QDialog):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             return dialog.config()
         return None
-

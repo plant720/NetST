@@ -5,7 +5,7 @@ Dialog for configuring sequence name standardization options.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, Callable
+from typing import Any, Dict, List, Optional, Callable
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -39,6 +39,31 @@ class StandardizationConfig:
     split_continuous_index: int = 2
 
     use_numbering: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            name: getattr(self, name)
+            for name in self.__dataclass_fields__
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Dict[str, Any]) -> "StandardizationConfig":
+        if not isinstance(payload, dict):
+            raise ValueError("Standardization configuration must be an object")
+        unknown = set(payload) - set(cls.__dataclass_fields__)
+        if unknown:
+            raise ValueError(
+                "Unknown standardization configuration field(s): "
+                + ", ".join(sorted(unknown)))
+        config = cls(**payload)
+        for enabled, delimiter, label in (
+            (config.split_name_enabled, config.split_name_delimiter, "name"),
+            (config.split_discrete_enabled, config.split_discrete_delimiter, "discrete"),
+            (config.split_continuous_enabled, config.split_continuous_delimiter, "continuous"),
+        ):
+            if enabled and not delimiter:
+                raise ValueError(f"The {label} split delimiter cannot be empty")
+        return config
 
 
 class SplitOptionWidget(QFrame):

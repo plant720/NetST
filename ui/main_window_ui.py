@@ -5,6 +5,7 @@ Defines the main window UI layout and component initialization,
 separating UI design from business logic.
 """
 
+import logging
 import os
 from typing import Optional, Dict, Callable
 
@@ -21,7 +22,8 @@ try:
     WEBENGINE_AVAILABLE = True
 except ImportError:
     WEBENGINE_AVAILABLE = False
-    print("Warning: PyQt6-WebEngine not available. Using fallback text widget.")
+    logging.getLogger(__name__).warning(
+        "PyQt6-WebEngine is unavailable; using the fallback text widget")
     QWebEngineView = None
 
 from .menu_bar import MenuBarBuilder

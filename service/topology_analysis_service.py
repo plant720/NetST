@@ -83,6 +83,11 @@ class NodeMetrics:
     component: int
     articulation_point: bool
     is_intermediate: bool
+    haplotype: str = ""
+    frequency: float = 0.0
+    samples: Tuple[str, ...] = ()
+    traits: Mapping[str, Tuple[str, ...]] = field(
+        default_factory=dict, compare=False)
 
 
 @dataclass(frozen=True)
@@ -93,6 +98,8 @@ class EdgeMetrics:
     mutation_distance: float
     bridge: bool
     betweenness: float
+    source_haplotype: str = ""
+    target_haplotype: str = ""
 
 
 @dataclass(frozen=True)
@@ -104,6 +111,7 @@ class TopologyAnalysisResult:
         "Centrality and articulation metrics describe graph topology only; "
         "they do not identify ancestors, origins, or transmission sources."
     )
+    trait_types: Mapping[str, str] = field(default_factory=dict, compare=False)
 
 
 @dataclass(frozen=True)
@@ -235,15 +243,31 @@ def parse_tcsbu_gml_text(text: str) -> TopologyGraph:
     return TopologyGraph(tuple(nodes), tuple(edges), directed, graph_attributes)
 
 
-def analyze_gml(path: str, cancel_requested: CancelCallback = None) -> TopologyAnalysisResult:
+def analyze_gml(
+    path: str,
+    cancel_requested: CancelCallback = None,
+    *,
+    sample_haplotypes: Optional[Mapping[str, str]] = None,
+    sample_traits: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    trait_types: Optional[Mapping[str, str]] = None,
+) -> TopologyAnalysisResult:
     """Parse and analyse a NetST GML file."""
     _check_cancelled(cancel_requested)
-    return analyze_topology(parse_tcsbu_gml(path), cancel_requested)
+    return analyze_topology(
+        parse_tcsbu_gml(path), cancel_requested,
+        sample_haplotypes=sample_haplotypes,
+        sample_traits=sample_traits,
+        trait_types=trait_types,
+    )
 
 
 def analyze_topology(
     graph: TopologyGraph,
     cancel_requested: CancelCallback = None,
+    *,
+    sample_haplotypes: Optional[Mapping[str, str]] = None,
+    sample_traits: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    trait_types: Optional[Mapping[str, str]] = None,
 ) -> TopologyAnalysisResult:
     """Calculate mutation-distance-aware metrics on an undirected projection.
 
@@ -307,6 +331,8 @@ def analyze_topology(
     )
 
     node_lookup = {node.id: node for node in graph.nodes}
+    annotations = _node_annotations(
+        graph.nodes, sample_haplotypes or {}, sample_traits or {})
     node_metrics = tuple(NodeMetrics(
         node_id=node_id,
         degree=len(adjacency[node_id]),
@@ -316,6 +342,10 @@ def analyze_topology(
         component=component_by_node[node_id],
         articulation_point=node_id in articulation,
         is_intermediate=node_lookup[node_id].is_intermediate,
+        haplotype=annotations[node_id][0],
+        frequency=node_lookup[node_id].frequency,
+        samples=node_lookup[node_id].samples,
+        traits=annotations[node_id][1],
     ) for node_id in node_order)
     edge_metrics = tuple(EdgeMetrics(
         edge_index=edge.index,
@@ -324,8 +354,61 @@ def analyze_topology(
         mutation_distance=edge.mutation_distance,
         bridge=edge.index in bridges,
         betweenness=edge_between[edge.index],
+        source_haplotype=annotations[edge.source][0],
+        target_haplotype=annotations[edge.target][0],
     ) for edge in graph.edges)
-    return TopologyAnalysisResult(summary, node_metrics, edge_metrics)
+    return TopologyAnalysisResult(
+        summary, node_metrics, edge_metrics,
+        trait_types=dict(trait_types or {}))
+
+
+def _node_annotations(
+    nodes: Sequence[TopologyNode],
+    sample_haplotypes: Mapping[str, str],
+    sample_traits: Mapping[str, Mapping[str, Any]],
+) -> Dict[NodeId, Tuple[str, Mapping[str, Tuple[str, ...]]]]:
+    """Resolve observed GML nodes to haplotypes and aggregate sample traits.
+
+    The sample-to-haplotype file is authoritative.  A label is only used as a
+    fallback when it exactly matches a haplotype present in that mapping; this
+    avoids accidentally presenting internal GML labels as biological names.
+    """
+    normalized_haplotypes = {
+        str(sample).strip(): str(haplotype).strip()
+        for sample, haplotype in sample_haplotypes.items()
+        if str(sample).strip() and str(haplotype).strip()
+    }
+    known_haplotypes = set(normalized_haplotypes.values())
+    normalized_traits = {
+        str(sample).strip(): values
+        for sample, values in sample_traits.items()
+        if str(sample).strip()
+    }
+    result: Dict[NodeId, Tuple[str, Mapping[str, Tuple[str, ...]]]] = {}
+    for node in nodes:
+        haplotypes = list(dict.fromkeys(
+            normalized_haplotypes[sample]
+            for sample in node.samples
+            if sample in normalized_haplotypes
+        ))
+        haplotype = haplotypes[0] if len(haplotypes) == 1 else ""
+        if not haplotype and node.label in known_haplotypes:
+            haplotype = node.label
+
+        aggregated: Dict[str, List[str]] = {}
+        for sample in node.samples:
+            for name, raw_value in normalized_traits.get(sample, {}).items():
+                value = str(raw_value).strip()
+                if not value:
+                    continue
+                key = str(name).strip()
+                if key and value not in aggregated.setdefault(key, []):
+                    aggregated[key].append(value)
+        result[node.id] = (
+            haplotype,
+            {name: tuple(values) for name, values in aggregated.items()},
+        )
+    return result
 
 
 def _components(

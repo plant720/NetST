@@ -9,7 +9,13 @@ import sys
 if sys.platform != "darwin" or platform.machine().lower() not in {"arm64", "aarch64"}:
     raise SystemExit("netst-mac-arm64.spec must be built on Apple Silicon macOS")
 
-version = os.environ.get("NETST_VERSION", "2.0.0")
+# The version is provided by scripts/build.py through NETST_VERSION (its
+# --version argument). No version number is hardcoded anywhere in the tree.
+version = os.environ.get("NETST_VERSION")
+if not version:
+    raise SystemExit(
+        "NETST_VERSION is not set. Build through scripts/build.py --version X.Y.Z"
+    )
 codesign_identity = os.environ.get("NETST_CODESIGN_IDENTITY") or None
 entitlements_file = os.environ.get("NETST_ENTITLEMENTS_FILE") or None
 

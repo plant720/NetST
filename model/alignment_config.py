@@ -1,7 +1,7 @@
 """Pure configuration model for MAFFT and MUSCLE command arguments."""
 
 from dataclasses import dataclass
-from typing import List
+from typing import Any, Dict, List
 
 
 @dataclass
@@ -21,6 +21,47 @@ class SequenceAlignmentConfig:
     muscle_diags: bool = False
     muscle_output_format: str = "fasta"
     muscle_quiet: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return the stable project-file representation."""
+        return {
+            name: getattr(self, name)
+            for name in self.__dataclass_fields__
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Dict[str, Any]) -> "SequenceAlignmentConfig":
+        if not isinstance(payload, dict):
+            raise ValueError("Alignment configuration must be an object")
+        unknown = set(payload) - set(cls.__dataclass_fields__)
+        if unknown:
+            raise ValueError(
+                "Unknown alignment configuration field(s): "
+                + ", ".join(sorted(unknown)))
+        config = cls(**payload)
+        if config.tool not in {"mafft", "muscle"}:
+            raise ValueError(f"Unsupported alignment tool: {config.tool!r}")
+        if config.mafft_algorithm not in {
+            "auto", "retree1", "retree2", "linsi", "ginsi", "einsi"
+        }:
+            raise ValueError(
+                f"Unsupported MAFFT algorithm: {config.mafft_algorithm!r}")
+        if config.muscle_output_format not in {
+            "fasta", "html", "msf", "clw", "clwstrict"
+        }:
+            raise ValueError(
+                f"Unsupported MUSCLE output format: {config.muscle_output_format!r}")
+        if not 0 <= config.mafft_op <= 100 or not 0 <= config.mafft_ep <= 100:
+            raise ValueError("MAFFT gap parameters are out of range")
+        if not -1 <= config.mafft_thread <= 256:
+            raise ValueError("MAFFT thread count is out of range")
+        if not 0 <= config.mafft_maxiterate <= 9999:
+            raise ValueError("MAFFT iteration count is out of range")
+        if not 1 <= config.muscle_maxiters <= 9999:
+            raise ValueError("MUSCLE iteration count is out of range")
+        if not 0 <= config.muscle_maxhours <= 9999:
+            raise ValueError("MUSCLE time limit is out of range")
+        return config
 
     def to_mafft_method_args(self, force_fasta: bool = False) -> List[str]:
         algorithm_map = {

@@ -379,7 +379,7 @@ def scatter_svg(title: str, points: Sequence[Tuple[float, float, str, str]],
 
 def heatmap_svg(title: str, labels: Sequence[str],
                 matrix: Sequence[Sequence[Any]], *,
-                max_cells: int = 44) -> str:
+                max_cells: int = 44, legend_label: str = "p-dist") -> str:
     """Symmetric distance heatmap with a sequential colour scale."""
     labels = list(labels)
     n = len(labels)
@@ -432,7 +432,7 @@ def heatmap_svg(title: str, labels: Sequence[str],
                        extra=f'stroke="{GRID}"'))
     parts.append(_text(gx + 22, gy + 10, _fmt(vmax, 3), size=10, fill=MUTED))
     parts.append(_text(gx + 22, gy + gh, _fmt(vmin, 3), size=10, fill=MUTED))
-    parts.append(_text(gx, gy - 8, "p-dist", size=10, fill=MUTED))
+    parts.append(_text(gx, gy - 8, legend_label, size=10, fill=MUTED))
     if n > show:
         parts.append(_text(label_w, height - 10,
                            f"… {n} × {n}", size=10.5, fill=MUTED))
@@ -595,6 +595,12 @@ def diversity_cards(result: Any, tr: Tr) -> List[dict]:
          "value": _fmt(overall.hd), "tone": "accent"},
         {"label": tr("核苷酸多样性 π", "Nucleotide div. π"),
          "value": _fmt(overall.pi), "tone": "accent"},
+        {"label": "Tajima's D", "value": _fmt(overall.tajima_d),
+         "tone": "accent"},
+        {"label": tr("总体 Hudson FST", "Global Hudson FST"),
+         "value": _fmt(result.fst.global_fst), "tone": "info"},
+        {"label": tr("AMOVA ΦST", "AMOVA Phi-ST"),
+         "value": _fmt(result.amova.phi_st), "tone": "info"},
     ]
 
 
@@ -619,6 +625,44 @@ def diversity_figures(result: Any, tr: Tr) -> List[dict]:
                 "每个面板按各自量程独立缩放；组间比较应同时结合样本量与缺失率。",
                 "Each panel is scaled independently; compare groups alongside "
                 "their sample sizes and missing rates."),
+        })
+
+    mismatch = result.overall.mismatch_distribution
+    if mismatch.bins:
+        figures.append({
+            "svg": vbar_svg(
+                tr("总体错配分布", "Overall mismatch distribution"),
+                [(item.differences, item.pair_count) for item in mismatch.bins],
+                x_label=tr("成对核苷酸差异数", "Pairwise nucleotide differences"),
+                y_label=tr("序列对数", "Pair count"),
+                color=SERIES[1],
+            ),
+            "desc": tr(
+                f"基于 {mismatch.callable_site_count} 个完整位点；平均成对差异 k={_fmt(mismatch.mean_differences)}。",
+                f"Based on {mismatch.callable_site_count} complete sites; mean pairwise differences k={_fmt(mismatch.mean_differences)}."),
+        })
+
+    fst_labels = [group.label for group in groups]
+    if len(fst_labels) >= 2 and result.fst.pairs:
+        fst_index = {label: index for index, label in enumerate(fst_labels)}
+        fst_matrix: List[List[Optional[float]]] = [
+            [None for _ in fst_labels] for _ in fst_labels
+        ]
+        for index in range(len(fst_labels)):
+            fst_matrix[index][index] = 0.0
+        for pair in result.fst.pairs:
+            left = fst_index.get(pair.group_a)
+            right = fst_index.get(pair.group_b)
+            if left is not None and right is not None:
+                fst_matrix[left][right] = pair.fst
+                fst_matrix[right][left] = pair.fst
+        figures.append({
+            "svg": heatmap_svg(
+                tr("两两群体 Hudson FST", "Pairwise population Hudson FST"),
+                fst_labels, fst_matrix, legend_label="FST"),
+            "desc": tr(
+                "允许出现负估计值；负值通常表示组内差异不小于组间差异，不应强制截断为 0。",
+                "Negative estimates are retained; they usually mean within-population diversity is not lower than between-population diversity."),
         })
 
     samples = sorted(result.quality.samples,
@@ -719,6 +763,7 @@ def distance_figures(result: Any, tr: Tr,
 
 def topology_cards(result: Any, tr: Tr) -> List[dict]:
     graph = result.graph
+    mapped = sum(bool(getattr(node, "haplotype", "")) for node in result.nodes)
     return [
         {"label": tr("节点数", "Nodes"), "value": _fmt(graph.node_count),
          "sub": tr(f"中间节点 {graph.intermediate_node_count}",
@@ -734,14 +779,20 @@ def topology_cards(result: Any, tr: Tr) -> List[dict]:
         {"label": tr("环秩", "Cycle rank"), "value": _fmt(graph.cycle_rank),
          "sub": tr("独立环数", "independent loops"),
          "tone": "accent"},
-        {"label": tr("观测单倍型", "Observed nodes"),
-         "value": _fmt(graph.observed_node_count), "tone": "info"},
+        {"label": tr("已映射单倍型", "Mapped haplotypes"),
+         "value": _fmt(mapped),
+         "sub": tr(f"观测节点 {graph.observed_node_count}",
+                   f"{graph.observed_node_count} observed nodes"),
+         "tone": "info"},
     ]
 
 
 def topology_figures(result: Any, tr: Tr) -> List[dict]:
     figures: List[dict] = []
-    nodes = list(result.nodes)
+    # Only observed nodes with a verified biological haplotype label belong in
+    # user-facing plots. Inferred transition nodes still contribute to the
+    # metrics calculated on the complete graph.
+    nodes = [node for node in result.nodes if getattr(node, "haplotype", "")]
     if nodes:
         degree_counts: dict = {}
         for node in nodes:
@@ -751,12 +802,11 @@ def topology_figures(result: Any, tr: Tr) -> List[dict]:
         figures.append({
             "svg": vbar_svg(tr("节点度分布", "Node degree distribution"),
                             items,
-                            x_label=tr("度（相邻单倍型数）", "Degree (neighbours)"),
-                            y_label=tr("节点数", "Node count")),
+                            x_label=tr("度（相邻节点数）", "Degree (adjacent nodes)"),
+                            y_label=tr("已映射单倍型数", "Mapped haplotypes")),
             "desc": tr(
-                "多数单倍型只与少数邻居相连；高度节点是网络枢纽。",
-                "Most haplotypes connect to only a few neighbours; high-degree "
-                "nodes are network hubs."),
+                "仅统计已映射单倍型；度仍按完整网络的相邻节点（包括中间节点）计算。高度节点是结构枢纽。",
+                "Only mapped haplotypes are plotted; degree still counts adjacent nodes in the complete network, including intermediate nodes. High-degree nodes are structural hubs."),
         })
 
         ranked = sorted(nodes, key=lambda n: _num(n.betweenness) or 0.0,
@@ -776,7 +826,7 @@ def topology_figures(result: Any, tr: Tr) -> List[dict]:
 
 def _topology_hub_svg(nodes: Sequence[Any], tr: Tr) -> str:
     """Horizontal betweenness bars with articulation points highlighted red."""
-    articulation = {str(node.node_id) for node in nodes
+    articulation = {str(node.haplotype) for node in nodes
                     if node.articulation_point}
     peak = max((_num(node.betweenness) or 0.0 for node in nodes), default=0.0) \
         or 1.0
@@ -796,7 +846,7 @@ def _topology_hub_svg(nodes: Sequence[Any], tr: Tr) -> str:
     ]
     for index, node in enumerate(nodes):
         y = top + index * row_h
-        node_id = str(node.node_id)
+        node_id = str(node.haplotype)
         is_cut = node_id in articulation
         colour_value = TONE["bad"] if is_cut else TONE["neutral"]
         value = _num(node.betweenness) or 0.0

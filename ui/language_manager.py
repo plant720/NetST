@@ -37,6 +37,10 @@ class LanguageManager:
 
             # File Menu
             'menu_file': {'cn': '文件', 'en': 'File'},
+            'menu_import_project': {
+                'cn': '导入并复现项目...', 'en': 'Import and Replay Project...'},
+            'menu_export_project': {
+                'cn': '导出项目配置...', 'en': 'Export Project Configuration...'},
             'menu_load_sequence': {'cn': '导入 FASTA...', 'en': 'Import FASTA...'},
             'menu_load_nexus': {'cn': '导入 NEXUS...', 'en': 'Import NEXUS...'},
             'menu_load_phylip': {'cn': '导入 PHYLIP...', 'en': 'Import PHYLIP...'},
@@ -45,6 +49,27 @@ class LanguageManager:
             'menu_export_sequence': {'cn': '导出序列数据...', 'en': 'Export Sequence Data...'},
             'menu_export_traits': {'cn': '导出 metadata...', 'en': 'Export Metadata...'},
             'menu_exit': {'cn': '退出', 'en': 'Exit'},
+            'dlg_import_project': {
+                'cn': '导入 NetST 项目', 'en': 'Import NetST Project'},
+            'dlg_export_project': {
+                'cn': '导出 NetST 项目', 'en': 'Export NetST Project'},
+            'dlg_relocate_project_source': {
+                'cn': '重新定位项目源文件：{role}',
+                'en': 'Locate project source: {role}'},
+            'filter_netst_project': {
+                'cn': 'NetST 项目文件 (*.netst.json);;JSON 文件 (*.json)',
+                'en': 'NetST Project Files (*.netst.json);;JSON Files (*.json)'},
+            'msg_no_project_to_export': {
+                'cn': '请先导入序列数据，再导出项目。',
+                'en': 'Import sequence data before exporting a project.'},
+            'log_project_exported': {
+                'cn': '项目配置已导出至：{path}',
+                'en': 'Project configuration exported to: {path}'},
+            'log_project_import_failed': {
+                'cn': '项目导入失败：{error}',
+                'en': 'Project import failed: {error}'},
+            'log_project_replay_complete': {
+                'cn': '项目复现完成。', 'en': 'Project replay completed.'},
 
             # Metadata Import Dialog (CSV / TSV)
             'dlg_csv_title': {'cn': '从文件导入 metadata', 'en': 'Import Metadata from File'},
@@ -182,6 +207,11 @@ class LanguageManager:
                 'cn': '辅助分析选项', 'en': 'Interpretation Analysis Options'},
             'label_missing_policy': {
                 'cn': '缺失数据策略:', 'en': 'Missing-data policy:'},
+            'label_permutation_count': {
+                'cn': '置换次数:', 'en': 'Permutations:'},
+            'permutation_count_tip': {
+                'cn': '用于总体 FST 与 AMOVA 显著性检验；设为 0 则不计算 P 值。',
+                'en': 'Permutations for global FST and AMOVA; 0 disables P values.'},
             'option_complete_deletion': {
                 'cn': '完整删除（仅所有样本均有效的位点）',
                 'en': 'Complete deletion (sites called in every sample)'},
@@ -656,10 +686,8 @@ class LanguageManager:
             'msg_name_mismatch_extra': {'cn': 'CSV 中存在但数据表中缺失的名称:',
                                         'en': 'Names in CSV NOT found in data table:'},
             'msg_about_text': {
-                'cn': '单倍型网络分析工具\n\n版本: 2.0.0\n\n基于 PyQt6 重构的 Python 版本\n\n用于单倍型网络的构建与分析',
+                'cn': '单倍型网络分析工具\n\n用于单倍型网络的构建与分析',
                 'en': 'Haplotype Network Analysis Tool\n\n'
-                      'Version: 2.0.0\n\n'
-                      'Python version rebuilt with PyQt6\n\n'
                       'For haplotype network construction and analysis',
             },
 
@@ -679,8 +707,8 @@ class LanguageManager:
             'analysis_diversity_title': {
                 'cn': '序列质量与遗传多样性', 'en': 'Sequence Quality and Genetic Diversity'},
             'analysis_diversity_description': {
-                'cn': '基于当前选择的已比对序列，统一报告缺失数据、变异位点及总体/分组多样性。',
-                'en': 'Reports missing data, variable sites, and overall/group diversity from the selected aligned sequences.'},
+                'cn': '基于当前选择的已比对序列，报告多样性、Tajima’s D、错配分布、FST 与 AMOVA。',
+                'en': "Reports diversity, Tajima's D, mismatch distributions, FST, and AMOVA from the selected aligned sequences."},
             'analysis_distance_title': {
                 'cn': '遗传距离与 PCoA', 'en': 'Genetic Distance and PCoA'},
             'analysis_distance_description': {
@@ -689,8 +717,8 @@ class LanguageManager:
             'analysis_topology_title': {
                 'cn': '单倍型网络拓扑指标', 'en': 'Haplotype Network Topology Metrics'},
             'analysis_topology_description': {
-                'cn': '描述网络组件、环、中心性、割点和桥；拓扑中心不等同于祖先或传播源。',
-                'en': 'Describes components, cycles, centrality, articulation points, and bridges; topological centrality does not imply ancestry or origin.'},
+                'cn': '联合单倍型、样本频数与性状解释网络组件、环、中心性、割点和桥；拓扑中心不等同于祖先或传播源。',
+                'en': 'Interprets components, cycles, centrality, articulation points, and bridges together with haplotypes, sample frequency, and traits; topological centrality does not imply ancestry or origin.'},
             'report_overview': {'cn': '概览', 'en': 'Overview'},
             'report_charts': {'cn': '图表', 'en': 'Visualizations'},
             'report_metric': {'cn': '指标', 'en': 'Metric'},

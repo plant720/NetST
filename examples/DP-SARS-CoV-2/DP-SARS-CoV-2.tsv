@@ -1,0 +1,482 @@
+*	Wuhan-Hu-1/2019	2019/12/26	China	*	*
+*	DP0005	2020/2/15	DP	*	*
+*	DP0027	2020/2/15	DP	*	*
+*	DP0037	2020/2/15	DP	*	*
+*	DP0058	2020/2/15	DP	*	*
+*	DP0059	2020/2/15	DP	*	*
+*	DP0065	2020/2/15	DP	*	*
+*	DP0077	2020/2/15	DP	*	*
+*	DP0078	2020/2/15	DP	*	*
+*	DP0104	2020/2/15	DP	*	*
+*	DP0107	2020/2/15	DP	*	*
+*	DP0121	2020/2/15	DP	*	*
+*	DP0133	2020/2/15	DP	*	*
+*	DP0134	2020/2/15	DP	*	*
+*	DP0152	2020/2/15	DP	*	*
+*	DP0158	2020/2/15	DP	*	*
+*	DP0184	2020/2/15	DP	*	*
+*	DP0190	2020/2/15	DP	*	*
+*	DP0191	2020/2/15	DP	*	*
+*	DP0196	2020/2/15	DP	*	*
+*	DP0200	2020/2/15	DP	*	*
+*	DP0236	2020/2/16	DP	*	*
+*	DP0274	2020/2/16	DP	*	*
+*	DP0278	2020/2/16	DP	*	*
+*	DP0286	2020/2/16	DP	*	*
+*	DP0287	2020/2/16	DP	*	*
+*	DP0289	2020/2/16	DP	*	*
+*	DP0290	2020/2/16	DP	*	*
+*	DP0294	2020/2/16	DP	*	*
+*	DP0311	2020/2/16	DP	*	*
+*	DP0319	2020/2/16	DP	*	*
+*	DP0328	2020/2/16	DP	*	*
+*	DP0344	2020/2/16	DP	*	*
+*	DP0346	2020/2/16	DP	*	*
+*	DP0357	2020/2/16	DP	*	*
+*	DP0361	2020/2/16	DP	*	*
+*	DP0438	2020/2/16	DP	*	*
+*	DP0457	2020/2/16	DP	*	*
+*	DP0462	2020/2/16	DP	*	*
+*	DP0464	2020/2/16	DP	*	*
+*	DP0476	2020/2/16	DP	*	*
+*	DP0481	2020/2/16	DP	*	*
+*	DP0482	2020/2/16	DP	*	*
+*	DP0543	2020/2/17	DP	*	*
+*	DP0544	2020/2/17	DP	*	*
+*	DP0568	2020/2/17	DP	*	*
+*	DP0588	2020/2/17	DP	*	*
+*	DP0644	2020/2/17	DP	*	*
+*	DP0645	2020/2/17	DP	*	*
+*	DP0654	2020/2/17	DP	*	*
+*	DP0687	2020/2/17	DP	*	*
+*	DP0690	2020/2/17	DP	*	*
+*	DP0697	2020/2/17	DP	*	*
+*	DP0699	2020/2/17	DP	*	*
+*	DP0700	2020/2/17	DP	*	*
+*	DP0703	2020/2/17	DP	*	*
+*	DP0724	2020/2/17	DP	*	*
+*	DP0743	2020/2/17	DP	*	*
+*	DP0752	2020/2/17	DP	*	*
+*	DP0763	2020/2/17	DP	*	*
+*	DP0764	2020/2/17	DP	*	*
+*	DP0765	2020/2/17	DP	*	*
+*	DP0779	2020/2/17	DP	*	*
+*	DP0785	2020/2/17	DP	*	*
+*	DP0786	2020/2/17	DP	*	*
+*	DP0802	2020/2/17	DP	*	*
+*	DP0803	2020/2/17	DP	*	*
+*	DP0804	2020/2/17	DP	*	*
+*	DP0827	2020/2/17	DP	*	*
+*	DP0880	2020/2/17	DP	*	*
+*	DP0890	2020/2/17	DP	*	*
+*	Wuhan/IVDC-HB-01/2019	2019/12/30	China	*	*
+*	Wuhan/IVDC-HB-04/2020	2020/1/1	China	*	*
+*	Wuhan/IVDC-HB-05/2019	2019/12/30	China	*	*
+*	Wuhan/IPBCAMS-WH-01/2019	2019/12/24	China	*	*
+*	Wuhan/WIV04/2019	2019/12/30	China	*	*
+*	Wuhan/WIV02/2019	2019/12/30	China	*	*
+*	Wuhan/WIV05/2019	2019/12/30	China	*	*
+*	Wuhan/WIV06/2019	2019/12/30	China	*	*
+*	Wuhan/WIV07/2019	2019/12/30	China	*	*
+*	Wuhan/HBCDC-HB-01/2019	2019/12/30	China	*	*
+*	Wuhan/IPBCAMS-WH-05/2020	2020/1/1	China	*	*
+*	Wuhan/IPBCAMS-WH-04/2019	2019/12/30	China	*	*
+*	Wuhan/IPBCAMS-WH-03/2019	2019/12/30	China	*	*
+*	Wuhan/IPBCAMS-WH-02/2019	2019/12/30	China	*	*
+*	Guangdong/20SF012/2020	2020/1/14	China	*	*
+*	Guangdong/20SF013/2020	2020/1/15	China	*	*
+*	Guangdong/20SF014/2020	2020/1/15	China	*	*
+*	Guangdong/20SF025/2020	2020/1/15	China	*	*
+*	Guangdong/20SF028/2020	2020/1/17	China	*	*
+*	Guangdong/20SF040/2020	2020/1/18	China	*	*
+*	Thailand/61/2020	2020/1/8	other Asia	*	*
+*	Thailand/74/2020	2020/1/13	other Asia	*	*
+*	Zhejiang/WZ-01/2020	2020/1/16	China	*	*
+*	Zhejiang/WZ-02/2020	2020/1/17	China	*	*
+*	USA/WA1/2020	2020/1/19	North America	*	*
+*	Shenzhen/HKU-SZ-005/2020	2020/1/11	China	*	*
+*	Shenzhen/HKU-SZ-002/2020	2020/1/10	China	*	*
+*	Taiwan/2/2020	2020/1/23	other Asia	*	*
+*	USA/CA1/2020	2020/1/23	North America	*	*
+*	USA/CA2/2020	2020/1/22	North America	*	*
+*	USA/AZ1/2020	2020/1/22	North America	*	*
+*	Guangdong/20SF174/2020	2020/1/22	China	*	*
+*	Guangzhou/20SF206/2020	2020/1/22	China	*	*
+*	Foshan/20SF207/2020	2020/1/22	China	*	*
+*	Foshan/20SF210/2020	2020/1/22	China	*	*
+*	Foshan/20SF211/2020	2020/1/22	China	*	*
+*	Guangdong/20SF201/2020	2020/1/23	China	*	*
+*	Shenzhen/SZTH-002/2020	2020/1/13	China	*	*
+*	Shenzhen/SZTH-003/2020	2020/1/16	China	*	*
+*	Shenzhen/SZTH-004/2020	2020/1/16	China	*	*
+*	France/IDF0372/2020	2020/1/23	Europe	*	*
+*	France/IDF0373/2020	2020/1/23	Europe	*	*
+*	Wuhan/WHU01/2020	2020/1/2	China	*	*
+*	Wuhan/WHU02/2020	2020/1/2	China	*	*
+*	Wuhan/WH01/2019	2019/12/26	China	*	*
+*	Wuhan/WH03/2020	2020/1/1	China	*	*
+*	Wuhan/WH04/2020	2020/1/5	China	*	*
+*	Australia/VIC01/2020	2020/1/25	Oceania	*	*
+*	Germany/BavPat1/2020	2020/1/28	Europe	*	*
+*	Hangzhou/HZ-1/2020	2020/1/20	China	*	*
+*	Singapore/1/2020	2020/1/23	other Asia	*	*
+*	England/02/2020	2020/1/29	Europe	*	*
+*	Japan/AI-I-004/2020	2020/1/25	Japan	*	*
+*	SouthKorea/KCDC03/2020	2020/1/25	other Asia	*	*
+*	USA/WA1-A12/2020	2020/1/25	North America	*	*
+*	USA/WA1-F6/2020	2020/1/25	North America	*	*
+*	Hangzhou/HZCDC0001/2020	2020/1/19	China	*	*
+*	Australia/NSW01/2020	2020/1/24	Oceania	*	*
+*	Australia/QLD01/2020	2020/1/28	Oceania	*	*
+*	Australia/QLD02/2020	2020/1/30	Oceania	*	*
+*	Belgium/GHB-03021/2020	2020/2/3	Europe	*	*
+*	Singapore/2/2020	2020/1/25	other Asia	*	*
+*	Singapore/3/2020	2020/2/1	other Asia	*	*
+*	USA/CA3/2020	2020/1/29	North America	*	*
+*	USA/CA4/2020	2020/1/29	North America	*	*
+*	USA/CA5/2020	2020/1/29	North America	*	*
+*	France/IDF0515/2020	2020/1/29	Europe	*	*
+*	France/IDF0626/2020	2020/1/29	Europe	*	*
+*	Chongqing/YC01/2020	2020/1/21	China	*	*
+*	Chongqing/ZX01/2020	2020/1/23	China	*	*
+*	Yunnan/IVDC-YN-003/2020	2020/1/17	China	*	*
+*	Chongqing/IVDC-CQ-001/2020	2020/1/18	China	*	*
+*	Shandong/IVDC-SD-001/2020	2020/1/19	China	*	*
+*	Sichuan/IVDC-SC-001/2020	2020/1/15	China	*	*
+*	Jiangxi/IVDC-JX-002/2020	2020/1/11	China	*	*
+*	Jiangsu/IVDC-JS-001/2020	2020/1/19	China	*	*
+*	env/Wuhan/IVDC-HBF13-20/2020	2020/1/1	China	*	*
+*	env/Wuhan/IVDC-HBF13-21/2020	2020/1/1	China	*	*
+*	Japan/TY-WK-012/2020	2020/1/29	Japan	*	*
+*	Japan/TY-WK-501/2020	2020/1/31	Japan	*	*
+*	Japan/TY-WK-521/2020	2020/1/31	Japan	*	*
+*	Vietnam/VR03-38142/2020	2020/1/24	other Asia	*	*
+*	Japan/KY-V-029/2020	2020/1/29	Japan	*	*
+*	USA/WI1/2020	2020/1/31	North America	*	*
+*	Australia/NSW02/2020	2020/1/22	Oceania	*	*
+*	Australia/NSW03/2020	2020/1/25	Oceania	*	*
+*	USA/CA6/2020	2020/1/27	North America	*	*
+*	USA/IL2/2020	2020/1/28	North America	*	*
+*	Taiwan/NTU02/2020	2020/2/5	other Asia	*	*
+*	Nepal/61/2020	2020/1/13	other Asia	*	*
+*	France/RA739/2020	2020/2/8	Europe	*	*
+*	Japan/NA-20-05-1/2020	2020/1/25	Japan	*	*
+*	Japan/OS-20-07-1/2020	2020/1/23	Japan	*	*
+*	Singapore/4/2020	2020/2/3	other Asia	*	*
+*	Singapore/5/2020	2020/2/6	other Asia	*	*
+*	Singapore/6/2020	2020/2/9	other Asia	*	*
+*	Italy/INMI1-cs/2020	2020/1/29	Europe	*	*
+*	Singapore/7/2020	2020/1/27	other Asia	*	*
+*	Singapore/8/2020	2020/2/3	other Asia	*	*
+*	Singapore/9/2020	2020/2/4	other Asia	*	*
+*	Singapore/10/2020	2020/2/4	other Asia	*	*
+*	Australia/QLD03/2020	2020/2/5	Oceania	*	*
+*	Australia/QLD04/2020	2020/2/5	Oceania	*	*
+*	Singapore/11/2020	2020/2/2	other Asia	*	*
+*	France/IDF0372-isl/2020	2020/1/23	Europe	*	*
+*	France/IDF0515-isl/2020	2020/1/29	Europe	*	*
+*	Fujian/8/2020	2020/1/21	China	*	*
+*	Fujian/13/2020	2020/1/22	China	*	*
+*	France/IDF0571/2020	2020/2/2	Europe	*	*
+*	France/IDF0386-islP1/2020	2020/1/28	Europe	*	*
+*	France/IDF0386-islP3/2020	2020/1/28	Europe	*	*
+*	Cambodia/0012/2020	2020/1/27	other Asia	*	*
+*	Taiwan/CGMH-CGU-01/2020	2020/1/25	other Asia	*	*
+*	Taiwan/3/2020	2020/1/24	other Asia	*	*
+*	Taiwan/4/2020	2020/1/28	other Asia	*	*
+*	SouthKorea/SNU01/2020	2020/1/1	other Asia	*	*
+*	Jiangsu/JS01/2020	2020/1/23	China	*	*
+*	Sweden/01/2020	2020/2/7	Europe	*	*
+*	Jiangsu/JS02/2020	2020/1/24	China	*	*
+*	Jiangsu/JS03/2020	2020/1/24	China	*	*
+*	USA/CA7/2020	2020/2/6	North America	*	*
+*	USA/CA8/2020	2020/2/10	North America	*	*
+*	USA/TX1/2020	2020/2/11	North America	*	*
+*	China/WH-09/2020	2020/1/8	China	*	*
+*	HongKong/VB20024950/2020	2020/1/30	other Asia	*	*
+*	HongKong/VB20026565/2020	2020/2/1	other Asia	*	*
+*	Jingzhou/HBCDC-HB-01/2020	2020/1/8	China	*	*
+*	SouthKorea/KCDC05/2020	2020/1/30	other Asia	*	*
+*	SouthKorea/KCDC06/2020	2020/1/30	other Asia	*	*
+*	SouthKorea/KCDC07/2020	2020/1/31	other Asia	*	*
+*	SouthKorea/KCDC12/2020	2020/2/1	other Asia	*	*
+*	SouthKorea/KCDC24/2020	2020/2/6	other Asia	*	*
+*	Wuhan/HBCDC-HB-02/2019	2019/12/30	China	*	*
+*	Wuhan/HBCDC-HB-03/2019	2019/12/30	China	*	*
+*	China/IQTC01/2020	2020/2/5	China	*	*
+*	China/IQTC02/2020	2020/1/29	China	*	*
+*	Japan/Hu_DP_Kng_19-020/2020	2020/2/10	DP	*	*
+*	Japan/Hu_DP_Kng_19-027/2020	2020/2/10	DP	*	*
+*	Italy/SPL1/2020	2020/1/29	Europe	*	*
+*	Wuhan/HBCDC-HB-02/2020	2020/1/17	China	*	*
+*	Wuhan/HBCDC-HB-03/2020	2020/1/18	China	*	*
+*	Wuhan/HBCDC-HB-04/2020	2020/1/18	China	*	*
+*	Wuhan/HBCDC-HB-06/2020	2020/2/7	China	*	*
+*	Canada/ON-PHL2445/2020	2020/1/25	North America	*	*
+*	Canada/ON-VIDO-01/2020	2020/1/23	North America	*	*
+*	SouthKorea/KUMC01/2020	2020/2/6	other Asia	*	*
+*	SouthKorea/KUMC02/2020	2020/2/6	other Asia	*	*
+*	Anhui/SZ005/2020	2020/1/24	China	*	*
+*	Beijing/105/2020	2020/1/26	China	*	*
+*	Beijing/231/2020	2020/1/28	China	*	*
+*	Beijing/233/2020	2020/1/28	China	*	*
+*	Beijing/235/2020	2020/1/28	China	*	*
+*	India/1-27/2020	2020/1/27	other Asia	*	*
+*	India/1-31/2020	2020/1/31	other Asia	*	*
+*	USA/CruiseA-1/2020	2020/2/17	CruiseA	*	*
+*	USA/CruiseA-2/2020	2020/2/18	CruiseA	*	*
+*	USA/CruiseA-3/2020	2020/2/18	CruiseA	*	*
+*	USA/CruiseA-7/2020	2020/2/17	CruiseA	*	*
+*	USA/CruiseA-8/2020	2020/2/17	CruiseA	*	*
+*	USA/CruiseA-9/2020	2020/2/17	CruiseA	*	*
+*	USA/CruiseA-10/2020	2020/2/17	CruiseA	*	*
+*	USA/CruiseA-11/2020	2020/2/17	CruiseA	*	*
+*	USA/CruiseA-15/2020	2020/2/18	CruiseA	*	*
+*	USA/CruiseA-16/2020	2020/2/18	CruiseA	*	*
+*	China/WF0001/2020	2020/1/1	China	*	*
+*	China/WF0002/2020	2020/1/1	China	*	*
+*	China/WF0003/2020	2020/1/1	China	*	*
+*	China/WF0004/2020	2020/1/1	China	*	*
+*	Guangdong/2020XN4243-P0035/2020	2020/1/30	China	*	*
+*	Guangdong/2020XN4475-P0042/2020	2020/1/30	China	*	*
+*	Guangdong/2020XN4448-P0002/2020	2020/1/31	China	*	*
+*	Guangdong/GD2020080-P0010/2020	2020/2/1	China	*	*
+*	Guangdong/GD2020087-P0008/2020	2020/2/1	China	*	*
+*	Guangdong/GD2020246-P0028/2020	2020/2/9	China	*	*
+*	USA/CruiseA-19/2020	2020/2/18	CruiseA	*	*
+*	USA/CruiseA-25/2020	2020/2/17	CruiseA	*	*
+*	Shanghai/SH01/2020	2020/2/2	China	*	*
+*	Japan/TKYE6182/2020	2020/1/20	Japan	*	*
+*	HongKong/VM20002493/2020	2020/2/9	other Asia	*	*
+*	HongKong/VM20002507/2020	2020/2/10	other Asia	*	*
+*	HongKong/VM20002582/2020	2020/2/12	other Asia	*	*
+*	Shandong/LY003/2020	2020/1/23	China	*	*
+*	Shandong/LY004/2020	2020/1/26	China	*	*
+*	Shandong/LY005/2020	2020/1/24	China	*	*
+*	Shandong/LY007/2020	2020/1/25	China	*	*
+*	Shandong/LY008/2020	2020/1/30	China	*	*
+*	Hangzhou/ZJU-01/2020	2020/1/25	China	*	*
+*	Hangzhou/ZJU-05/2020	2020/1/22	China	*	*
+*	Hangzhou/ZJU-02/2020	2020/1/26	China	*	*
+*	Hangzhou/ZJU-03/2020	2020/1/25	China	*	*
+*	Hangzhou/ZJU-04/2020	2020/1/24	China	*	*
+*	Hangzhou/ZJU-06/2020	2020/2/2	China	*	*
+*	Shanghai/SH0002/2020	2020/1/25	China	*	*
+*	Shanghai/SH0003/2020	2020/1/25	China	*	*
+*	Shanghai/SH0004/2020	2020/1/28	China	*	*
+*	Shanghai/SH0007/2020	2020/1/28	China	*	*
+*	Shanghai/SH0008/2020	2020/1/28	China	*	*
+*	Shanghai/SH0009/2020	2020/1/29	China	*	*
+*	Shanghai/SH0010/2020	2020/1/29	China	*	*
+*	Shanghai/SH0012/2020	2020/2/2	China	*	*
+*	Shanghai/SH0013/2020	2020/1/30	China	*	*
+*	Shanghai/SH0021/2020	2020/2/2	China	*	*
+*	Shanghai/SH0022/2020	2020/1/30	China	*	*
+*	Shanghai/SH0023/2020	2020/1/30	China	*	*
+*	Shanghai/SH0026/2020	2020/2/2	China	*	*
+*	Shanghai/SH0027/2020	2020/2/1	China	*	*
+*	Shanghai/SH0029/2020	2020/2/1	China	*	*
+*	Shanghai/SH0030/2020	2020/2/3	China	*	*
+*	Shanghai/SH0032/2020	2020/2/1	China	*	*
+*	Shanghai/SH0043/2020	2020/1/30	China	*	*
+*	Shanghai/SH0044/2020	2020/2/4	China	*	*
+*	Shanghai/SH0053/2020	2020/2/1	China	*	*
+*	Shanghai/SH0054/2020	2020/2/2	China	*	*
+*	Shanghai/SH0055/2020	2020/2/8	China	*	*
+*	Shanghai/SH0060/2020	2020/2/1	China	*	*
+*	Shanghai/SH0070/2020	2020/2/7	China	*	*
+*	Shanghai/SH0073/2020	2020/2/5	China	*	*
+*	Shanghai/SH0074/2020	2020/2/7	China	*	*
+*	Shanghai/SH0077/2020	2020/2/9	China	*	*
+*	Shanghai/SH0079/2020	2020/2/1	China	*	*
+*	Shanghai/SH0080/2020	2020/2/8	China	*	*
+*	Shanghai/SH0094/2020	2020/1/31	China	*	*
+*	Shanghai/SH0101/2020	2020/2/9	China	*	*
+*	Shanghai/SH0102/2020	2020/2/14	China	*	*
+*	Shanghai/SH0107/2020	2020/2/2	China	*	*
+*	Shanghai/SH0109/2020	2020/2/2	China	*	*
+*	Shanghai/SH0110/2020	2020/2/13	China	*	*
+*	Shanghai/SH0114/2020	2020/2/2	China	*	*
+*	Shanghai/SH0115/2020	2020/2/11	China	*	*
+*	Shanghai/SH0117/2020	2020/2/2	China	*	*
+*	Shanghai/SH0119/2020	2020/2/9	China	*	*
+*	Shanghai/SH0121/2020	2020/2/2	China	*	*
+*	Shanghai/SH0126/2020	2020/2/15	China	*	*
+*	Australia/VIC03/2020	2020/1/25	Oceania	*	*
+*	Australia/VIC07/2020	2020/2/8	Oceania	*	*
+*	Hangzhou/ZJU-07/2020	2020/2/3	China	*	*
+*	Vietnam/38142/2020	2020/1/24	other Asia	*	*
+*	Vietnam/CM99/2020	2020/2/11	other Asia	*	*
+*	Hangzhou/ZJU-08/2020	2020/1/26	China	*	*
+*	Hangzhou/ZJU-09/2020	2020/1/28	China	*	*
+*	Malaysia/MKAK-CL-2020-5045/2020	2020/1/24	other Asia	*	*
+*	Malaysia/MKAK-CL-2020-5047/2020	2020/1/24	other Asia	*	*
+*	Malaysia/MKAK-CL-2020-6430/2020	2020/2/4	other Asia	*	*
+*	Malaysia/MKAK-CL-2020-7554/2020	2020/2/6	other Asia	*	*
+*	Australia/NSW04/2020	2020/1/24	Oceania	*	*
+*	HongKong/VB20017970/2020	2020/1/21	other Asia	*	*
+*	HongKong/HKPU6_2101/2020	2020/1/25	other Asia	*	*
+*	HongKong/HKPU28_3001/2020	2020/2/9	other Asia	*	*
+*	HongKong/HKPU29_0102/2020	2020/2/8	other Asia	*	*
+*	HongKong/HKPU30_2901/2020	2020/2/8	other Asia	*	*
+*	HongKong/HKPU32_0402/2020	2020/2/9	other Asia	*	*
+*	HongKong/HKPU34_3001/2020	2020/2/9	other Asia	*	*
+*	Vietnam/19-02S/2020	2020/1/22	other Asia	*	*
+*	Vietnam/19-01S/2020	2020/1/22	other Asia	*	*
+*	Canada/ON_PHL4181/2020	2020/1/25	North America	*	*
+*	Hangzhou/HZ48/2020	2020/1/21	China	*	*
+*	Hangzhou/HZ49/2020	2020/1/21	China	*	*
+*	Hangzhou/HZ60/2020	2020/1/22	China	*	*
+*	Hangzhou/HZ79/2020	2020/1/21	China	*	*
+*	Hangzhou/HZ90/2020	2020/1/21	China	*	*
+*	Hangzhou/HZ91/2020	2020/1/21	China	*	*
+*	Hangzhou/HZ162/2020	2020/1/23	China	*	*
+*	Hangzhou/HZ178/2020	2020/1/23	China	*	*
+*	Hangzhou/HZ185/2020	2020/1/23	China	*	*
+*	Hangzhou/HZ477/2020	2020/1/24	China	*	*
+*	Hangzhou/HZ481/2020	2020/1/25	China	*	*
+*	Hangzhou/HZ551/2020	2020/1/25	China	*	*
+*	Hangzhou/HZ576/2020	2020/1/25	China	*	*
+*	Hangzhou/HZ638/2020	2020/1/25	China	*	*
+*	HongKong/HKPU36-0702/2020	2020/2/9	other Asia	*	*
+*	Hangzhou/ZJU-010/2020	2020/2/3	China	*	*
+*	Hangzhou/ZJU-011/2020	2020/2/4	China	*	*
+*	HongKong/HKPU39-3001/2020	2020/2/10	other Asia	*	*
+*	HongKong/HKPU41-0802/2020	2020/2/10	other Asia	*	*
+*	HongKong/HKPU48-0202/2020	2020/2/11	other Asia	*	*
+*	HongKong/HKPU52-3101/2020	2020/2/13	other Asia	*	*
+*	HongKong/HKPU63-1402/2020	2020/2/19	other Asia	*	*
+*	HongKong/HKPU64-1202/2020	2020/2/19	other Asia	*	*
+*	Japan/Hu_DP_Kng_19-031/2020	2020/2/14	Japan	*	*
+*	Hangzhou/HZCDC0119/2020	2020/1/22	China	*	*
+*	Hangzhou/HZCDC0091L/2020	2020/1/21	China	*	*
+*	Hangzhou/HZCDC0090L/2020	2020/1/21	China	*	*
+*	Hangzhou/HZCDC0049L/2020	2020/1/21	China	*	*
+*	Hangzhou/HZCDC0048L/2020	2020/1/21	China	*	*
+*	Hangzhou/HZCDC0048/2020	2020/1/21	China	*	*
+*	Hangzhou/HZCDC0013/2020	2020/1/20	China	*	*
+*	Hangzhou/HZCDC0012/2020	2020/1/20	China	*	*
+*	Jiujiang/JX22/2020	2020/1/22	China	*	*
+*	Nanchang/JX174/2020	2020/1/29	China	*	*
+*	Shangrao/JX105/2020	2020/1/26	China	*	*
+*	Shangrao/JX1948/2020	2020/2/5	China	*	*
+*	Nanchang/JX177/2020	2020/1/30	China	*	*
+*	Ganzhou/JX81/2020	2020/1/25	China	*	*
+*	Nanchang/JX14/2020	2020/1/21	China	*	*
+*	Shangrao/JX29/2020	2020/1/22	China	*	*
+*	Nanchang/JX90/2020	2020/1/25	China	*	*
+*	Nanchang/JX149/2020	2020/1/27	China	*	*
+*	Nanchang/JX39/2020	2020/1/23	China	*	*
+*	Xinyu/JX122/2020	2020/1/25	China	*	*
+*	Shangrao/JX1177/2020	2020/2/3	China	*	*
+*	Shangrao/JX1176/2020	2020/2/3	China	*	*
+*	Pingxiang/JX5/2020	2020/1/11	China	*	*
+*	Jian/JX129/2020	2020/1/26	China	*	*
+*	Shangrao/JX1178/2020	2020/2/3	China	*	*
+*	Jian/JX169/2020	2020/1/27	China	*	*
+*	Shangrao/JX1215/2020	2020/2/2	China	*	*
+*	Shangrao/JX1974/2020	2020/2/8	China	*	*
+*	Pingxiang/JX151/2020	2020/1/27	China	*	*
+*	Xinyu/JX124/2020	2020/1/26	China	*	*
+*	Nanchang/JX176/2020	2020/1/29	China	*	*
+*	Nanchang/JX155/2020	2020/1/29	China	*	*
+*	Zhejiang/HZ103/2020	2020/1/24	China	*	*
+*	Beijing/Wuhan_IME-BJ01/2020	2020/1/24	China	*	*
+*	Beijing/Wuhan_IME-BJ02/2020	2020/1/25	China	*	*
+*	Beijing/Wuhan_IME-BJ03/2020	2020/1/28	China	*	*
+*	Beijing/Wuhan_IME-BJ04/2020	2020/1/28	China	*	*
+*	Beijing/Wuhan_IME-BJ05/2020	2020/1/27	China	*	*
+*	Beijing/Wuhan_IME-BJ07/2020	2020/1/29	China	*	*
+*	Korea/KCDC2002/2020	2020/1/30	other Asia	*	*
+*	Korea/KCDC2004/2020	2020/2/2	other Asia	*	*
+*	Korea/KCDC2005/2020	2020/2/4	other Asia	*	*
+*	Korea/KCDC2006/2020	2020/2/2	other Asia	*	*
+*	Korea/KCDC2007/2020	2020/2/5	other Asia	*	*
+*	Korea/KCDC2008/2020	2020/2/5	other Asia	*	*
+*	Korea/KCDC2009/2020	2020/2/7	other Asia	*	*
+*	Korea/KCDC2010/2020	2020/2/5	other Asia	*	*
+*	Korea/KCDC2012/2020	2020/2/9	other Asia	*	*
+*	Korea/KCDC2014/2020	2020/2/12	other Asia	*	*
+*	Taiwan/TSGH-01/2020	2020/2/7	other Asia	*	*
+*	Korea/KCDC2016/2020	2020/2/18	other Asia	*	*
+*	Korea/KCDC2017/2020	2020/2/18	other Asia	*	*
+*	Korea/KCDC2018/2020	2020/2/19	other Asia	*	*
+*	Korea/KCDC2019/2020	2020/2/18	other Asia	*	*
+*	Guangdong/20SF1107/2020	2020/1/29	China	*	*
+*	Guangdong/20SF1152/2020	2020/1/30	China	*	*
+*	Guangdong/20SF123/2020	2020/1/20	China	*	*
+*	Guangdong/20SF2546/2020	2020/2/6	China	*	*
+*	Guangdong/20SF4047/2020	2020/2/17	China	*	*
+*	Guangdong/20SF602/2020	2020/1/25	China	*	*
+*	Guangdong/20SF616/2020	2020/1/24	China	*	*
+*	Guangdong/20SF629/2020	2020/1/26	China	*	*
+*	Guangdong/20SF632/2020	2020/1/26	China	*	*
+*	Guangdong/20SF665/2020	2020/1/27	China	*	*
+*	Guangdong/20SF684/2020	2020/1/27	China	*	*
+*	Guangdong/20SF685/2020	2020/1/27	China	*	*
+*	Guangdong/20SF753/2020	2020/1/28	China	*	*
+*	Guangdong/20SF758/2020	2020/1/27	China	*	*
+*	Guangdong/20SF808/2020	2020/1/28	China	*	*
+*	Guangdong/20SF812/2020	2020/1/28	China	*	*
+*	Guangdong/20SF813/2020	2020/1/28	China	*	*
+*	Taiwan/8/2020	2020/1/31	other Asia	*	*
+*	Taiwan/5/2020	2020/1/31	other Asia	*	*
+*	Guangzhou/GZMU0003/2020	2020/2/7	China	*	*
+*	Guangzhou/GZMU0008/2020	2020/2/7	China	*	*
+*	Guangzhou/GZMU0010/2020	2020/2/7	China	*	*
+*	Guangzhou/GZMU0013/2020	2020/2/7	China	*	*
+*	Guangzhou/GZMU0019/2020	2020/2/5	China	*	*
+*	Guangzhou/GZMU0023/2020	2020/2/5	China	*	*
+*	Guangzhou/GZMU0024/2020	2020/2/5	China	*	*
+*	Guangzhou/GZMU0025/2020	2020/2/5	China	*	*
+*	Guangzhou/GZMU0033/2020	2020/2/1	China	*	*
+*	Guangzhou/GZMU0034/2020	2020/2/1	China	*	*
+*	Guangzhou/GZMU0035/2020	2020/2/1	China	*	*
+*	Guangzhou/GZMU0037/2020	2020/2/8	China	*	*
+*	Guangzhou/GZMU0041/2020	2020/2/8	China	*	*
+*	Guangzhou/GZMU0045/2020	2020/2/8	China	*	*
+*	Guangzhou/GZMU0051/2020	2020/1/29	China	*	*
+*	Guangzhou/GZMU0052/2020	2020/1/29	China	*	*
+*	Guangzhou/GZMU0054/2020	2020/1/29	China	*	*
+*	Guangzhou/GZMU0059/2020	2020/1/27	China	*	*
+*	Guangzhou/GZMU0036/2020	2020/2/1	China	*	*
+*	Guangzhou/GZMU0055/2020	2020/1/29	China	*	*
+*	Lishui/LS111/2020	2020/1/25	China	*	*
+*	Lishui/LS556/2020	2020/1/28	China	*	*
+*	Lishui/LS557/2020	2020/2/1	China	*	*
+*	Malaysia/IMR_WC085/2020	2020/1/28	other Asia	*	*
+*	Malaysia/IMR_WC627/2020	2020/2/12	other Asia	*	*
+*	Beijing/BJ287/2020	2020/1/29	China	*	*
+*	Beijing/BJ752/2020	2020/2/8	China	*	*
+*	Beijing/BJ288/2020	2020/1/29	China	*	*
+*	Beijing/BJ492/2020	2020/2/2	China	*	*
+*	Beijing/BJ53/2020	2020/1/24	China	*	*
+*	Beijing/BJ54/2020	2020/1/24	China	*	*
+*	Beijing/BJ252/2020	2020/1/29	China	*	*
+*	Beijing/BJ710/2020	2020/2/7	China	*	*
+*	Beijing/BJ782/2020	2020/2/10	China	*	*
+*	Beijing/BJ251/2020	2020/1/29	China	*	*
+*	Fujian/3520022Y/2020	2020/1/23	China	*	*
+*	Wuhan/IVDC-HB-GX02/2019	2019/12/30	China	*	*
+*	HongKong/HK20/2020	2020/1/20	other Asia	*	*
+*	HongKong/HKU-902a/2020	2020/1/23	other Asia	*	*
+*	HongKong/HKU-902b/2020	2020/1/24	other Asia	*	*
+*	HongKong/HKU-903a/2020	2020/1/24	other Asia	*	*
+*	HongKong/HKU-903b/2020	2020/1/27	other Asia	*	*
+*	HongKong/HKU-907a/2020	2020/1/27	other Asia	*	*
+*	HongKong/HKU-907b/2020	2020/1/29	other Asia	*	*
+*	HongKong/HKU-908a/2020	2020/1/27	other Asia	*	*
+*	HongKong/HKU-908b/2020	2020/1/29	other Asia	*	*
+*	HongKong/HKU-001a/2020	2020/1/22	other Asia	*	*
+*	UnitedArabEmirates/L4280/2020	2020/2/8	other Asia	*	*
+*	UnitedArabEmirates/L5630/2020	2020/1/29	other Asia	*	*
+*	Thailand/SI203285-NT/2020	2020/1/23	other Asia	*	*
+*	Thailand/SI202205-NT/2020	2020/2/7	other Asia	*	*
+*	Thailand/SI201712-NT/2020	2020/2/3	other Asia	*	*
+*	Thailand/SI200615-NT/2020	2020/1/29	other Asia	*	*
+*	Thailand/SI200478-NST/2020	2020/1/26	other Asia	*	*
+*	Thailand/SI200468-NT/2020	2020/1/25	other Asia	*	*
+*	Thailand/SI200433-NT/2020	2020/1/25	other Asia	*	*
+*	Thailand/SI200383-NT/2020	2020/1/23	other Asia	*	*
+*	Thailand/SI200040-NT/2020	2020/1/8	other Asia	*	*
+*	Thailand/SI200893-NT/2020	2020/2/1	other Asia	*	*

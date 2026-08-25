@@ -3,9 +3,9 @@
 > 🌐 **English** | [中文](NetST-使用手册.md)
 
 > **NetST — Haplotype Network Analysis Tool / 单倍型网络分析工具**
-> Interface version: **2.0.0**　·　Audience: researchers in population genetics, phylogeography, and molecular epidemiology
+> Audience: researchers in population genetics, phylogeography, and molecular epidemiology
 >
-> This manual describes **NetST-py**, the PyQt6 rewrite. It keeps the core workflow of the legacy VB.NET NetST while rewriting and extending data import, network construction, visualization, and interpretation. Its content follows the current source code and `README.md`. Some features mentioned in older promotional material — community detection, modularity analysis, automatic Tajima's D, dual-trait ANOVA association — are **not** provided in this version and are deliberately omitted here to avoid misleading readers.
+> NetST covers sequence import, standardization, multiple-sequence alignment, haplotype identification, network construction, interactive visualization, and interpretation. 
 
 ---
 
@@ -33,17 +33,16 @@
 
 ## 1. Overview
 
-**NetST** is an integrated analysis platform for large-scale, multi-trait haplotype datasets. It covers the full path from raw sequences to interactive network visualization, unifying several established bioinformatics engines (MAFFT, MUSCLE, fastHaN, McAN) with built-in algorithms (RMST, interpretation analytics) in a single graphical interface. Every long-running task runs on a background thread and can be cancelled at any time.
+**NetST** is an open-source desktop application for project-based haplotype network analysis with metadata integration. It covers the path from sequence import to interactive visualization while retaining the input data, sample-to-haplotype mapping, categorical and continuous metadata, construction settings, analytical results, and visualization state as one reusable project. Established bioinformatics engines (MAFFT, MUSCLE, fastHaN, and McAN) and the RMST reimplementation are accessed through one graphical interface. Long-running tasks run on background threads and can be cancelled.
 
 **Core capabilities**
 
 - **Multi-format import**: FASTA, NEXUS, PHYLIP, VCF/VCF.GZ; metadata can be parsed from sample IDs or imported separately from CSV/TSV.
 - **Multiple network algorithms**: Original TCS, Modified TCS, MSN, MJN (fastHaN), built-in RMST, and McAN minimum-cost arborescence network.
-- **Multi-trait concentric-ring visualization**: an enhanced tcsBU / D3.js view overlays several categorical and continuous traits as concentric rings with a matching legend; export to SVG/PNG/JPG.
+- **Multi-trait concentric-layer visualization**: an enhanced tcsBU / D3.js view displays several categorical and continuous traits on the same network with a matching legend; export to SVG/PNG/JPG/PDF.
+- **Persistent project state**: a portable `.netst.json` file records inputs, sample-to-haplotype membership, method settings, metadata mappings, analysis outputs, and the current network view for later replay.
 - **Interpretation module**: visual quality, diversity, genetic-distance/PCoA, and network-topology metrics that help you understand the data and network at a glance.
 - **Bilingual UI**: menus, tabs, table headers, logs, and result summaries refresh together on a language switch.
-
-**Design principle**: topological description and biological inference are strictly separated. Centrality, bridges, PCoA proximity, etc. are **exploratory descriptors**; the software never automatically equates them with ancestry, origin, transmission source, or true populations.
 
 ---
 
@@ -64,6 +63,8 @@ fastHaN (TCS / MSN / MJN), built-in RMST, or McAN directed network
 Convert to a common GML and generate tcsBU config
   ▼
 Interactive visualization in Qt WebEngine ── optional: Interpretation Analysis
+  ▼
+Portable project export / replay (`<project>.netst.json`)
 ```
 
 | Stage | Module | Notes |
@@ -81,39 +82,32 @@ Interactive visualization in Qt WebEngine ── optional: Interpretation Analys
 
 ### 3.1 Release build (recommended for end users)
 
-- Download the platform package from [NetST GitHub Releases](https://github.com/sculab/NetST/releases).
+- Download the platform package from [NetST GitHub Releases](https://github.com/plant720/NetST/releases).
 - Extract and launch from **inside** the extracted directory (`NetST.app` on macOS, `NetST.exe` on Windows). No installation required.
 - **Important**: run the program from within the extracted NetST folder. External dependencies (MAFFT, MUSCLE, fastHaN, McAN) are bundled and linked per platform.
 
 | Platform | Run from source | Bundled analysis programs | PyInstaller spec |
 |---|:---:|---|---|
-| macOS Apple Silicon | Yes | MAFFT, MUSCLE 3, fastHaN, McAN 1.4.3 arm64 | `netst-mac-arm64.spec` |
-| Windows x86-64 | Yes | MAFFT, MUSCLE 3, fastHaN, McAN 1.4.3 | `netst-win.spec` |
-| Linux | Code path exists | Provide your own | Not provided |
+| macOS Apple Silicon | Yes | MAFFT, MUSCLE 3, fastHaN, RMST, McAN | `netst-mac-arm64.spec` |
+| Windows x86-64 | Yes | MAFFT, MUSCLE 3, fastHaN, RMST, McAN | `netst-win.spec` |
 
 > McAN is bundled for both supported platforms. NetST probes the executable and automatically selects the version-specific output option.
 
 ### 3.2 Run from source (developers / Linux users)
 
-Use Python 3.10 and an isolated virtual environment.
+Use Python 3.10, 3.11, or 3.12 and an isolated virtual environment.
 
 **macOS / Linux**
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+pip install -r requirements.txt
 python main_form.py
 ```
 
 **Windows PowerShell**
 
 ```powershell
-py -3.10 -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+pip install -r requirements.txt
 python main_form.py
 ```
 
@@ -122,14 +116,14 @@ Main Python dependencies: `PyQt6`, `PyQt6-WebEngine`, and `chardet` (`PyInstalle
 ### 3.3 Packaging
 
 ```bash
-python -m pip install -r requirements-build.txt
+pip install -r requirements-build.txt
 python scripts/build.py
 
 # Optional Windows one-file mode
 python scripts/build.py --onefile
 ```
 
-macOS produces `dist/NetST.app`; Windows produces the complete `dist/NetST/` directory by default. The build driver checks dependencies, architecture, bundled tools, the packaged structure, and Qt WebEngine resources. Build natively on each target OS. See `docs/PACKAGING.zh-CN.md` for signing, notarization, and release packaging.
+macOS produces `dist/NetST.app`; Windows produces the complete `dist/NetST/` directory by default. The build driver checks dependencies, architecture, bundled tools, the packaged structure, and Qt WebEngine resources. Build natively on each target OS; signing and notarization remain maintainer release steps.
 
 ---
 
@@ -141,7 +135,7 @@ The main window has a **menu bar**, a **tabbed workspace**, and a bottom **statu
 
 | Menu | Items |
 |---|---|
-| **File** | Import FASTA / NEXUS / PHYLIP / VCF; Load Metadata (CSV/TSV); Export Sequence Data; Export Metadata; Exit |
+| **File** | Import and Replay Project; Export Project Configuration; Import FASTA / NEXUS / PHYLIP / VCF; Load Metadata; Export Sequence Data; Export Metadata; Exit |
 | **Analysis** | **Build / Rebuild Haplotype Network**; **Interpretation Analysis** ▸ Sequence Quality and Diversity / Genetic Distance and PCoA / Network Topology Metrics |
 | **Tools** | Multiple Sequence Alignment (alignment only); Calculate Haplotype (align + haplotypes, no network); Sequence Format Conversion; Language (中文 / English) |
 | **Help** | About; TCS-BU Help; NetST Help |
@@ -170,21 +164,21 @@ While an analysis runs, the bottom of the window shows a progress bar and a **Ca
 
 Two SARS-CoV-2 example datasets are provided:
 
-- **SL-SARS-CoV-2**: 130 representative haplotypes distinguishing the L / S lineages (categorical trait).
+- **SL-SARS-CoV-2**: 130 aligned sequences with L / S lineage labels (categorical trait).
 - **DP-SARS-CoV-2**: 482 genome sequences (72 from the Diamond Princess + 410 worldwide) with geographic location (categorical) and collection date (continuous).
 
 Shortest path using DP-SARS-CoV-2:
 
-1. **File → Import FASTA**, choose `DP-SARS-CoV-2.fasta`.
-2. In the **standardization dialog**, set the delimiter to `|` and map field positions: `0 = sample name`, `1 = categorical trait (region)`, `2 = continuous trait (collection day)`.
-3. On the **Data** tab, review the data and tick the samples to include (all selected by default).
+1. **File → Import FASTA**, choose `examples/DP-SARS-CoV-2/DP-SARS-CoV-2.fasta`. Keep each complete FASTA header as the sample name in the standardization dialog.
+2. **File → Load Metadata**, choose `DP-SARS-CoV-2.meta.csv`. Map `ID` to **Sample name**, `Location` to **Categorical trait + Group**, and `Time` to **Continuous trait**. For `Time`, use the date conversion so values such as `2019/12/26` become a numeric interval.
+3. On the **Data** tab, verify that all names matched and select the samples to include (all are selected by default).
 4. On the right, enter a **project name** and choose the **output directory** (default `~/HaplotypeOutput`).
-5. **Analysis → Build / Rebuild Haplotype Network**, pick an algorithm (e.g. Original TCS), and run. NetST automatically performs alignment → haplotype identification → construction → visualization.
-6. View the interactive network on the **Network** tab; inspect intermediate results on **Alignment / Haplotype**.
-7. For statistical interpretation, run any analysis under **Analysis → Interpretation Analysis**; results appear on the **Interpretation** tab.
-8. Export via **File → Export Sequence Data** or the toolbar **Save Image**.
+5. **Analysis → Build / Rebuild Haplotype Network**, choose a method and run. NetST performs alignment when needed, identifies haplotypes, constructs the network, and opens the visualization.
+6. Inspect the **Network**, **Alignment**, and **Haplotype** tabs. Change displayed traits or colours on **Metadata**, then click **Apply Visualization Config** without rebuilding topology.
+7. Run optional analyses under **Analysis → Interpretation Analysis**; results appear on the **Interpretation** tab.
+8. Export tables from **File**, figures from **Save Image**, or a portable record from **File → Export Project Configuration**.
 
-> A FASTA header like `>DP0005|DP|54|1|Human` encodes (name | region | collection day | quantity | organism). Field positions are 0-based; use only the fields you need.
+> Composite FASTA headers such as `sample_01|population_A|12.5` can still be split by delimiter and 0-based field position, but the supplied DP example uses a separate metadata file.
 
 ---
 
@@ -332,7 +326,7 @@ NetST aligns with **MAFFT** (several modes) or **MUSCLE**:
 
 - **MSN**: simplest connectivity — intraspecific / population-level, low-divergence data.
 - **MJN**: accommodates reticulate evolution and infers ancestral haplotypes — complex reconstructions, ancient DNA, viral dynamics.
-- **TCS**: 95% connection threshold for statistically reliable links — intraspecific phylogeography.
+- **TCS family**: statistical-parsimony representations commonly used for shallow, intraspecific variation; Original and Modified TCS expose different fastHaN options.
 - **RMST**: bundled native C++ engine; exact mode is deterministic and reproducible — a fast, robust default.
 - **McAN**: a mutation-inclusion network rooted at the reference; time-orientable when real sampling dates are provided.
 
@@ -348,11 +342,14 @@ Each haplotype node is drawn as concentric rings: **Group innermost**, other ena
 
 ### 10.2 Toolbar
 
-- **Save Image**: export **SVG (vector) / PNG / JPG**, then choose a location in the system save dialog. SVG is standard `image/svg+xml`; PNG/JPG default to 2× resolution.
+- **Save Image**: export **SVG (vector) / PNG / JPG / PDF**, then choose a location in the system save dialog. SVG is standard `image/svg+xml`; PNG/JPG default to 2× resolution.
 - **Zoom In / Zoom Out**, **Delete Node / Delete Link** (interactive editing).
 - **Legend**: show/hide the legend.
-- **Haplotype / Distance**: show haplotype labels / per-edge mutation-distance labels.
+- **Haplotype / Name-ID / Distance**: show the H1/H2 label, a selected member name/ID, or the per-edge changes count.
+- **Edge Weight**: scale edge width inversely by the numeric changes count; **Undo** restores the latest deleted node or link.
 - **Advanced**: open the advanced-settings dialog (below).
+
+Use the right **Info** panel to search for a node, inspect node/edge attributes, highlight one item, control labels for one node or edge, and adjust per-node text position and size. See the full [tcsBU help](../static/tcsbu/help.html) for standalone configuration files and all controls.
 
 ### 10.3 Advanced settings dialog
 
@@ -365,17 +362,19 @@ The dialog can be **moved by dragging its title bar** and is organized into thre
 | Parameter | Meaning | Default |
 |---|---|---|
 | Node Radius | radius (px) of a frequency-1 haplotype node; preserves relative sizes when adjusted | 5 |
-| **Node Line Width** | node outline stroke width | 1.5 |
-| **Edge Line Width** | base edge (link) line width | 1.5 |
-| **Edge Weight Scale** | maximum Edge Line Width multiplier when Edge Weight is enabled | 4 |
+| **Node Line Width** | node outline stroke width | 0 |
+| **Edge Line Width** | base edge (link) line width | 1 |
+| **Edge Weight Scale** | maximum Edge Line Width multiplier when Edge Weight is enabled | 2 |
 | Text Offset | label offset beside a node | 5 |
+| Haplotype Font Size | global H1/H2 label size; one node can override it in Info | 13 |
+| Name/ID Font Size | global member-name label size; one node can override it in Info | 13 |
 
 **Metadata Ring Settings**
 
 | Parameter | Meaning | Default |
 |---|---|---|
-| **Ring Line Width** | ring-segment stroke width | 0.5 |
-| Base Ring Width | base thickness (px) of each non-Group outer ring at ratio 1; actual = base × ring ratio | 7 |
+| **Ring Line Width** | ring-segment stroke width | 0.1 |
+| Ring Width Ratio | each non-Group ring width as a fraction of the frequency-scaled node radius | 0.5 |
 | Outer Ring Ratios | comma-separated ratios inner→outer (missing values use 1) | — |
 
 > Node/Edge Line Width are independent, separately adjustable parameters. Edge Weight reads the numeric Changes distance and scales every edge from the configured base line width; fewer changes produce thicker edges.
@@ -392,11 +391,11 @@ The **Sequence column on the Data tab is read-only** to prevent accidental edits
 
 | Menu item | Input & computation | Main results |
 |---|---|---|
-| **Sequence Quality and Diversity** | current selected equal-length aligned sequences; complete or pairwise deletion | per-sample/per-site missing rates, effective sites, variable sites, parsimony-informative sites, S, Hd, π, θW, group richness, private haplotypes |
+| **Sequence Quality and Population Genetics** | current selected equal-length aligned sequences; complete or pairwise deletion; categorical population trait | S, Hd, π, θW, mean pairwise differences, Tajima's D, mismatch distribution, Hudson FST, one-level AMOVA/ΦST, permutation P values |
 | **Genetic Distance and PCoA** | only A/C/G/T as called states; gap, N, ?, and IUPAC ambiguity pairwise-deleted | p-distance matrix, comparable sites per pair, PCoA coordinates, positive/negative eigenvalue diagnostics |
 | **Network Topology Metrics** | the current project GML, or a user-selected tcsBU-compatible GML | node/edge counts, connected components, density, cycle rank, degree, closeness, betweenness, articulation points, bridges |
 
-Before running, **Sequence Quality and Diversity** and **Genetic Distance and PCoA** show a parameter dialog: the former offers the missing-data policy (complete / pairwise deletion) and the categorical trait used for grouping; the latter sets the minimum comparable sites and minimum comparable coverage.
+Before running, **Sequence Quality and Diversity** and **Genetic Distance and PCoA** show a parameter dialog: the former offers the missing-data policy, population trait, and permutation count for global FST/AMOVA; the latter sets the minimum comparable sites and minimum comparable coverage.
 
 ### 11.1 Result-tab visualizations
 
@@ -418,7 +417,7 @@ The Interpretation tab organizes results as **Overview + Charts + Detail tables*
 - PCoA uses classical multidimensional scaling; it does not run PCA on the distance matrix as if it were ordinary features.
 - The direction of a McAN directed GML is kept as provenance; current centrality, articulation, and bridge metrics use an **undirected projection**.
 - **Topological centrality, bridging nodes, and PCoA proximity are exploratory descriptors — never automatically equated with ancestry, origin, transmission source, or true populations.**
-- **Tajima's D is not computed automatically**, because defensible interpretation requires demographic, recombination, sampling, and null-model assumptions.
+- **Tajima's D and mismatch distributions use population-complete sites**. Their biological interpretation still requires appropriate neutrality, recombination, sampling, and demographic assumptions.
 
 ---
 
@@ -472,8 +471,13 @@ All generated files share the "output directory + project name" prefix (examples
 | `project_diversity_analysis.json` | sequence QC, overall/group diversity, and computation warnings |
 | `project_distance_analysis.json` | p-distance, comparable sites, PCoA eigenvalues and coordinates |
 | `project_topology_analysis.json` | network overview, node/edge topology metrics, direction provenance |
+| `project.netst.json` | replayable project manifest: source paths/SHA-256, standardization, samples and traits, workflow parameters, tool/run provenance, output hashes, and final image view state |
 
 > The Alignment and Haplotype tabs render only the first 500 sites for responsiveness; output files always keep the complete sequences.
+
+### Replaying a project
+
+After sequence import, NetST updates `project.netst.json` in the output folder. Each imported sequence, VCF companion, reference, and metadata file is copied to `inputs/<role>/` inside that project folder. **File → Export Project Configuration** saves the current manifest elsewhere and copies its managed inputs beside the new manifest. **File → Import and Replay Project** validates every referenced input against its saved SHA-256 (prompting to relocate missing files), restores the editable sample/trait state, reruns the recorded network and interpretation workflow, then applies the network state captured at image export. A changed source file is rejected instead of silently producing a different result. Manifest paths are relative to the `.netst.json` location, so transferring the complete project directory preserves replayability.
 
 ---
 
@@ -505,7 +509,7 @@ McAN natively accepts a VCF or mutation + metadata + site mask and outputs Graph
   5. convert to a tcsBU-readable GML, restoring original names and network distances.
 
 > NetST limits the maximum McAN sequence coordinate to 30000 and rejects longer alignments before calling it. The adapter automatically selects McAN 1.2 `--outDir` or McAN 1.4.x `--out`, and supports both GraphML formats. When a FASTA has no sampling dates, it does not fabricate a time order — it yields a mutation-inclusion network rooted at the reference.
-> Reference: Li, L. et al. (2022) *McAN: an ultrafast haplotype network construction algorithm.* bioRxiv 2022.07.23.501111.
+> Reference: Li L, et al. (2023) *McAN: a novel computational algorithm and platform for constructing and visualizing haplotype networks.* Briefings in Bioinformatics 24:bbad174. https://doi.org/10.1093/bib/bbad174
 
 ### 14.3 Interpretation metric definitions
 
@@ -519,8 +523,8 @@ McAN natively accepts a VCF or mutation + metadata + site mask and outputs Graph
 
 ## 15. FAQ & Known Limitations
 
-**Q: Why is there no Tajima's D / community detection / dual-trait significance test in Interpretation?**
-A: These are deliberately not provided. Defensible interpretation of Tajima's D, FST/AMOVA, community stability, and demographic null models requires extra sampling, recombination, and null-model assumptions beyond the scope of the current descriptive/exploratory analytics.
+**Q: Which population-structure estimators are implemented?**
+A: NetST reports equal-population Hudson sequence FST and one-level AMOVA/ΦST with optional label permutations. It does not yet provide hierarchical AMOVA, genotype-based Weir-Cockerham FST, or demographic-model fitting for mismatch distributions.
 
 **Q: I edited metadata or colours — do I need to rebuild the network?**
 A: No. As long as sequences and the sample set are unchanged, click **Apply Visualization Config** on the Metadata tab (see [§7.3](#73-when-to-rebuild-vs-only-refresh-the-visualization-config)).
@@ -542,17 +546,17 @@ A: tcsBU depends on Qt WebEngine. Without `PyQt6-WebEngine`, the network tab fal
 
 ## 16. Citation & Acknowledgements
 
-If you use NetST in your research, please cite:
+The manuscript citation is provisional until journal publication:
 
-> Zhang Z, Yu Y. *NetST: An integrated software for large-scale haplotype network construction, visualization, and automated analytics.*
+> Zhang Z, Song Y, Yu X, Hou J, Yu Y. *NetST: a desktop application for project-based haplotype network analysis with metadata integration.* Manuscript.
 
 Please also cite the relevant dependencies:
 
-- Chi L, Zhang X, Xue Y, Chen H. 2023. *fastHaN: a fast and scalable program for constructing haplotype network for large-sample sequences.* Mol Ecol Resour. https://doi.org/10.1111/1755-0998.13829
-- Múrias Dos Santos A, et al. 2016. *tcsBU: a tool to extend TCS network layout and visualization.* Bioinformatics 32:627–628.
-- Nakamura T, et al. 2018. *Parallelization of MAFFT for large-scale multiple sequence alignments.* Bioinformatics 34:2490–2492.
-- Paradis E. 2018. *Analysis of haplotype networks: The randomized minimum spanning tree method.* Methods Ecol Evol 9:1308–1317.
-- Li L, et al. 2022. *McAN: an ultrafast haplotype network construction algorithm.* bioRxiv 2022.07.23.501111.
+- Chi L, Zhang X, Xue Y, Chen H. 2025. *fastHaN: a fast and scalable program for constructing haplotype network for large-sample sequences.* Molecular Ecology Resources 25:e13829. https://doi.org/10.1111/1755-0998.13829
+- Múrias Dos Santos A, et al. 2016. *tcsBU: a tool to extend TCS network layout and visualization.* Bioinformatics 32:627–628. https://doi.org/10.1093/bioinformatics/btv636
+- Nakamura T, et al. 2018. *Parallelization of MAFFT for large-scale multiple sequence alignments.* Bioinformatics 34:2490–2492. https://doi.org/10.1093/bioinformatics/bty121
+- Paradis E. 2018. *Analysis of haplotype networks: The randomized minimum spanning tree method.* Methods in Ecology and Evolution 9:1308–1317. https://doi.org/10.1111/2041-210X.12969
+- Li L, et al. 2023. *McAN: a novel computational algorithm and platform for constructing and visualizing haplotype networks.* Briefings in Bioinformatics 24:bbad174. https://doi.org/10.1093/bib/bbad174
 
 Example-data citation:
 
@@ -562,9 +566,4 @@ Example-data citation:
 
 ## 17. Contact
 
-For any questions, suggestions, or comments about NetST, please contact:
-[yyu@scu.edu.cn](mailto:yyu@scu.edu.cn)　·　[zzhen0302@163.com](mailto:zzhen0302@163.com)
-
----
-
-*This manual is based on the current NetST-py source and README and may change as the software evolves. License: MIT.*
+For any questions, suggestions, or comments about NetST, please contact: [yyu@scu.edu.cn](mailto:yyu@scu.edu.cn)　·　[zzhen0302@163.com](mailto:zzhen0302@163.com)

@@ -79,6 +79,11 @@ class MenuBarBuilder:
         file_menu = self.menubar.addMenu(lang_manager.get('menu_file'))
         self.menus['file'] = file_menu
 
+        file_menu.addAction(self._create_action(
+            'menu_import_project', 'import_project'))
+        file_menu.addAction(self._create_action(
+            'menu_export_project', 'export_project'))
+        file_menu.addSeparator()
         file_menu.addAction(self._create_action('menu_load_sequence', 'load_sequence'))
         file_menu.addAction(self._create_action('menu_load_nexus', 'load_nexus'))
         file_menu.addAction(self._create_action('menu_load_phylip', 'load_phylip'))

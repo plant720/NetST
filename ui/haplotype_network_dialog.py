@@ -6,7 +6,7 @@ McAN, or RMST) and configure the corresponding engine parameters.
 """
 
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
@@ -35,6 +35,38 @@ class HaplotypeNetworkConfig:
     rmst_iterations: int = 100
     rmst_seed: int = 42
     rmst_exclude_ambiguous: bool = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            name: getattr(self, name)
+            for name in self.__dataclass_fields__
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Dict[str, Any]) -> "HaplotypeNetworkConfig":
+        if not isinstance(payload, dict):
+            raise ValueError("Network configuration must be an object")
+        unknown = set(payload) - set(cls.__dataclass_fields__)
+        if unknown:
+            raise ValueError(
+                "Unknown network configuration field(s): "
+                + ", ".join(sorted(unknown)))
+        config = cls(**payload)
+        if config.algorithm not in {item[0] for item in _ALGORITHMS}:
+            raise ValueError(f"Unsupported network algorithm: {config.algorithm!r}")
+        if not 1 <= config.threads <= 256:
+            raise ValueError("Network thread count is out of range")
+        if config.ambiguous not in (0, 1) or config.merge not in (0, 1):
+            raise ValueError("Network boolean engine flags must be 0 or 1")
+        if not 0 <= config.epsilon <= 9999:
+            raise ValueError("Network epsilon is out of range")
+        if config.rmst_method not in {"exact", "randomized"}:
+            raise ValueError(f"Unsupported RMST method: {config.rmst_method!r}")
+        if not 1 <= config.rmst_iterations <= 1000:
+            raise ValueError("RMST iteration count is out of range")
+        if not -2147483648 <= config.rmst_seed <= 2147483647:
+            raise ValueError("RMST seed is out of range")
+        return config
 
     def to_extra_args(self) -> List[str]:
         """Build allow-listed engine arguments (excluding common input/output paths)."""

@@ -7,8 +7,11 @@ Implements the main window business logic, inheriting from MainWindowUI base cla
 import os
 import sys
 import json
+import logging
 import math
+import platform
 import re
+import uuid
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 from typing import Optional, Dict, Callable
@@ -21,6 +24,7 @@ from PyQt6.QtWidgets import (
 
 from model.taxon_data import TaxonData
 from model.taxon_table_model import TaxonTableModel
+from model.project_config import ProjectConfigError, ProjectManifest
 from model.trait_schema import (
     CONTINUOUS, DISCRETE, TraitDefinition, TraitSchema, normalize_hex_color,
 )
@@ -56,23 +60,48 @@ from service.validation_service import (
     validate_project_prefix,
     validate_taxons,
 )
+from service.logging_config import configure_logging, user_log_path
+from service.project_service import (
+    apply_taxon_snapshot,
+    deserialize_trait_schema,
+    json_compatible as project_json_compatible,
+    load_project,
+    managed_source_reference,
+    resolve_source_path,
+    runtime_environment,
+    save_project,
+    serialize_trait_schema,
+    sha256_file,
+    snapshot_taxons,
+    utc_now_iso,
+    verify_source,
+)
 from ui.main_window_ui import MainWindowUI
 from ui.alignment_tab_widget import AlignmentTabWidget
 from ui.csv_traits_import_dialog import CsvTraitsImportDialog
 from ui.format_conversion_dialog import FormatConversionDialog
-from ui.haplotype_network_dialog import HaplotypeNetworkDialog
+from ui.haplotype_network_dialog import (
+    HaplotypeNetworkConfig, HaplotypeNetworkDialog,
+)
 from ui.haplotype_tab_widget import HaplotypeTabWidget
 from ui.language_manager import lang_manager
 from ui.interpretation_options_dialog import InterpretationOptionsDialog
 from ui.metadata_tab_widget import MetadataTabWidget
 from ui.sequence_alignment_dialog import SequenceAlignmentDialog, SequenceAlignmentConfig
-from ui.standardization_dialog import StandardizationDialog
+from ui.standardization_dialog import StandardizationConfig, StandardizationDialog
 from ui.vcf_import_dialog import VcfImportDialog
 
 # Platform-specific WebEngine flags
 if sys.platform.startswith('win'):
-    # Windows x86_64: disable sandbox for compatibility in restricted environments
-    os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--no-sandbox')
+    # Windows: the Chromium sandbox fails to start in some restricted
+    # environments (locked-down VMs, certain group policies), which stops the
+    # embedded network view from rendering at all. NetST only loads locally
+    # generated pages under static/tcsbu, so the sandbox is disabled by default
+    # here for compatibility. Security-conscious deployments can keep the
+    # sandbox enabled by setting NETST_WEBENGINE_SANDBOX=1, or override the
+    # Chromium flags entirely with QTWEBENGINE_CHROMIUM_FLAGS.
+    if os.environ.get('NETST_WEBENGINE_SANDBOX', '').strip().lower() not in ('1', 'true', 'yes'):
+        os.environ.setdefault('QTWEBENGINE_CHROMIUM_FLAGS', '--no-sandbox')
 
 
 # macOS arm64 (native Apple Silicon Python): no flags needed.
@@ -81,10 +110,22 @@ if sys.platform.startswith('win'):
 # WebEngine runs correctly without any workarounds.
 
 
+logger = logging.getLogger(__name__)
+
+
+def _unexpected_error_message(task: str) -> str:
+    """Return a user-safe worker failure message with its diagnostic location."""
+    return (
+        f"An unexpected internal error occurred during {task}. "
+        f"Details were written to {user_log_path()}."
+    )
+
+
 class AnalysisWorker(QThread):
     """Worker thread for running analysis tasks in background."""
 
     finished = pyqtSignal(object)
+    error = pyqtSignal(str)
     progress = pyqtSignal(int)
     log = pyqtSignal(str)
 
@@ -109,12 +150,19 @@ class AnalysisWorker(QThread):
         self.analysis_service.set_log_callback(lambda m: self.log.emit(m))
         self.analysis_service.set_cancel_callback(self.isInterruptionRequested)
 
-        result = self.analysis_service.run_network_analysis(
-            self.network_type, self.taxons, self.output_path, self.prefix,
-            extra_args=self.extra_args,
-            mcan_vcf_input=self.mcan_vcf_input,
-            group_colors=self.group_colors,
-        )
+        try:
+            result = self.analysis_service.run_network_analysis(
+                self.network_type, self.taxons, self.output_path, self.prefix,
+                extra_args=self.extra_args,
+                mcan_vcf_input=self.mcan_vcf_input,
+                group_colors=self.group_colors,
+            )
+        except Exception:
+            logger.exception("Unhandled network-analysis worker failure")
+            message = _unexpected_error_message("network analysis")
+            self.error.emit(message)
+            result = AnalysisResult(
+                self.prefix, False, self.output_path, message)
         self.finished.emit(result)
 
 
@@ -122,6 +170,7 @@ class AlignmentWorker(QThread):
     """Worker thread for running standalone sequence alignment in the background."""
 
     finished = pyqtSignal(object)  # AlignmentResult
+    error = pyqtSignal(str)
     log = pyqtSignal(str)
 
     def __init__(self, analysis_service: AnalysisService, taxons: list,
@@ -136,8 +185,14 @@ class AlignmentWorker(QThread):
     def run(self):
         self.analysis_service.set_log_callback(lambda m: self.log.emit(m))
         self.analysis_service.set_cancel_callback(self.isInterruptionRequested)
-        result = self.analysis_service.run_alignment(
-            self.taxons, self.output_path, self.prefix, self.config)
+        try:
+            result = self.analysis_service.run_alignment(
+                self.taxons, self.output_path, self.prefix, self.config)
+        except Exception:
+            logger.exception("Unhandled alignment worker failure")
+            message = _unexpected_error_message("sequence alignment")
+            self.error.emit(message)
+            result = AlignmentResult(success=False, error_message=message)
         self.finished.emit(result)
 
 
@@ -145,6 +200,7 @@ class HaplotypeWorker(QThread):
     """Worker thread for MSA + haplotype calculation (no network construction)."""
 
     finished = pyqtSignal(object)  # AnalysisResult
+    error = pyqtSignal(str)
     progress = pyqtSignal(int)
     log = pyqtSignal(str)
 
@@ -161,8 +217,15 @@ class HaplotypeWorker(QThread):
         self.analysis_service.set_progress_callback(lambda v: self.progress.emit(v))
         self.analysis_service.set_log_callback(lambda m: self.log.emit(m))
         self.analysis_service.set_cancel_callback(self.isInterruptionRequested)
-        result = self.analysis_service.run_haplotype_calculation(
-            self.taxons, self.output_path, self.prefix, self.config)
+        try:
+            result = self.analysis_service.run_haplotype_calculation(
+                self.taxons, self.output_path, self.prefix, self.config)
+        except Exception:
+            logger.exception("Unhandled haplotype worker failure")
+            message = _unexpected_error_message("haplotype calculation")
+            self.error.emit(message)
+            result = AnalysisResult(
+                self.prefix, False, self.output_path, message)
         self.finished.emit(result)
 
 
@@ -170,6 +233,7 @@ class NetworkMetadataWorker(QThread):
     """Reapply metadata to an existing network without rerunning the engine."""
 
     finished = pyqtSignal(object)  # AnalysisResult
+    error = pyqtSignal(str)
     progress = pyqtSignal(int)
     log = pyqtSignal(str)
 
@@ -187,9 +251,16 @@ class NetworkMetadataWorker(QThread):
         self.analysis_service.set_progress_callback(lambda v: self.progress.emit(v))
         self.analysis_service.set_log_callback(lambda m: self.log.emit(m))
         self.analysis_service.set_cancel_callback(self.isInterruptionRequested)
-        result = self.analysis_service.refresh_network_metadata(
-            self.taxons, self.output_path, self.prefix,
-            group_colors=self.group_colors)
+        try:
+            result = self.analysis_service.refresh_network_metadata(
+                self.taxons, self.output_path, self.prefix,
+                group_colors=self.group_colors)
+        except Exception:
+            logger.exception("Unhandled metadata-refresh worker failure")
+            message = _unexpected_error_message("metadata refresh")
+            self.error.emit(message)
+            result = AnalysisResult(
+                self.prefix, False, self.output_path, message)
         self.finished.emit(result)
 
 
@@ -247,6 +318,8 @@ class InterpretationWorker(QThread):
                     group_trait=self.options.get('group_trait') or 'group',
                     missing_policy=self.options.get(
                         'missing_policy', 'complete_deletion'),
+                    permutation_count=int(self.options.get(
+                        'permutation_count', 999)),
                     cancel_check=self.isInterruptionRequested,
                 )
             elif self.kind == 'distance':
@@ -260,9 +333,21 @@ class InterpretationWorker(QThread):
                 )
             elif self.kind == 'topology':
                 from service.topology_analysis_service import analyze_gml
+                payload = self.payload
+                if isinstance(payload, dict):
+                    gml_path = payload['gml_path']
+                    annotations = {
+                        'sample_haplotypes': payload.get('sample_haplotypes'),
+                        'sample_traits': payload.get('sample_traits'),
+                        'trait_types': payload.get('trait_types'),
+                    }
+                else:  # Backward-compatible worker payload.
+                    gml_path = payload
+                    annotations = {}
                 result = analyze_gml(
-                    self.payload,
+                    gml_path,
                     cancel_requested=self.isInterruptionRequested,
+                    **annotations,
                 )
             else:
                 raise ValueError(f'Unsupported interpretation analysis: {self.kind}')
@@ -279,9 +364,12 @@ class InterpretationWorker(QThread):
             # Topology cancellation uses its own exception type and is imported
             # lazily; treating an interrupted worker as cancelled keeps this
             # adapter independent of the topology module's implementation.
+            logger.exception("Unhandled interpretation worker failure")
             self.finished.emit({
                 'kind': self.kind, 'success': False, 'result': None,
-                'cancelled': self.isInterruptionRequested(), 'error': str(exc),
+                'cancelled': self.isInterruptionRequested(),
+                'error': (_unexpected_error_message("interpretation analysis")
+                          if not self.isInterruptionRequested() else str(exc)),
             })
 
 
@@ -327,6 +415,19 @@ class MainForm(MainWindowUI):
         # is snapshotted, so the PCoA ordination can colour points by group.
         self._interpretation_group_map: Dict[str, str] = {}
 
+        # Reproducible project manifest. The in-memory session is refreshed
+        # from the editable model before every save; a sidecar is written to
+        # the output directory after material import/analysis changes.
+        self._project_manifest: Optional[ProjectManifest] = None
+        self._project_manifest_path: Optional[str] = None
+        self._project_replaying = False
+        self._project_replay_analysis_queue = []
+        self._project_replay_start_run_index = 0
+        self._pending_project_view_state: Optional[dict] = None
+        self._project_save_timer = QTimer(self)
+        self._project_save_timer.setSingleShot(True)
+        self._project_save_timer.timeout.connect(self._autosave_project)
+
         # Result files remain on disk between projects. Track which editable
         # input revision produced them so interpretation never silently reuses
         # an older alignment or network that only happens to share a prefix.
@@ -352,20 +453,33 @@ class MainForm(MainWindowUI):
         QTimer.singleShot(100, self._load_initial_pages)
 
     @staticmethod
-    def _stop_worker(worker: Optional[QThread]) -> None:
+    def _stop_worker(worker: Optional[QThread]) -> bool:
         """Stop a previous QThread worker so a new one can take its place.
 
         Prevents abandoned threads when the user kicks off a new analysis
-        (or tab loader) before the previous one has finished.
+        (or tab loader) before the previous one has finished. Returns False
+        rather than calling QThread.terminate(), which can interrupt Python or
+        file I/O while invariants and locks are in an unknown state.
         """
         if worker is None or not worker.isRunning():
-            return
+            return True
         worker.requestInterruption()
         # run() is synchronous, so quit() alone cannot stop it. The analysis
         # service observes requestInterruption() and terminates its process tree.
-        if not worker.wait(7000):
-            worker.terminate()
-            worker.wait()
+        if worker.wait(7000):
+            return True
+        logger.error("Background worker did not stop within seven seconds: %r", worker)
+        return False
+
+    def _worker_stop_timed_out(self) -> None:
+        """Tell the user why a replacement task was not started."""
+        message = (
+            "The previous background task is still stopping. Wait a moment and "
+            f"try again. Diagnostic details are in {user_log_path()}."
+        )
+        self.log_tab.append_warning(message)
+        QMessageBox.warning(
+            self, lang_manager.get('title_warning', 'Warning'), message)
 
     def _init_components(self):
         """Initialize components."""
@@ -399,7 +513,7 @@ class MainForm(MainWindowUI):
             return
         for key in (
             'load_sequence', 'load_nexus', 'load_phylip', 'load_vcf',
-            'load_csv_traits',
+            'load_csv_traits', 'import_project', 'export_project',
             'build_haplotype_network',
             'run_msa', 'calculate_haplotype',
             'analyze_diversity_qc', 'analyze_distance_pcoa', 'analyze_topology',
@@ -433,6 +547,8 @@ class MainForm(MainWindowUI):
         """Get all menu callback functions."""
         return {
             # File Menu
+            'import_project': self._import_project,
+            'export_project': self._export_project,
             'load_sequence': self._load_sequence,
             'load_nexus': self._load_nexus,
             'load_phylip': self._load_phylip,
@@ -465,6 +581,10 @@ class MainForm(MainWindowUI):
         """Setup signal connections."""
         self.table_model.dataChanged.connect(self._on_table_data_changed)
         self.data_tab.selection_changed.connect(self._update_selected_count)
+        self.output_panel.project_name_edit.textChanged.connect(
+            self._on_project_target_changed)
+        self.output_panel.output_path_edit.textChanged.connect(
+            self._on_project_target_changed)
         # Connect WebEngine loadFinished so we can inject data JS after each analysis.
         if hasattr(self.web_view_main, 'loadFinished'):
             self.web_view_main.loadFinished.connect(self._on_web_view_load_finished)
@@ -476,6 +596,21 @@ class MainForm(MainWindowUI):
                 page.profile().downloadRequested.connect(
                     self._on_web_download_requested)
         self.tab_widget.currentChanged.connect(self._on_main_tab_changed)
+
+    def _on_project_target_changed(self, _value: str) -> None:
+        if self._project_manifest is None or self._project_replaying:
+            return
+        # Preserve resolved locations while the manifest is being rebased to a
+        # newly edited output directory or project name. _prepare_manifest_paths
+        # removes these temporary absolute fallbacks before writing JSON.
+        if self._project_manifest_path:
+            for source in self._project_manifest.sources:
+                resolved = resolve_source_path(
+                    source, self._project_manifest_path)
+                if resolved:
+                    source["path"] = resolved
+        self._project_manifest_path = None
+        self._schedule_project_save()
 
     def _on_web_download_requested(self, download) -> None:
         """Choose a destination and accept a file download from tcsBU."""
@@ -522,7 +657,55 @@ class MainForm(MainWindowUI):
             file_path += extension
         download.setDownloadDirectory(os.path.dirname(file_path))
         download.setDownloadFileName(os.path.basename(file_path))
+        if is_image:
+            recorded = {"done": False}
+
+            def finalize_image_export(*_args) -> None:
+                if recorded["done"] or not download.isFinished():
+                    return
+                recorded["done"] = True
+                self.web_view_main.page().runJavaScript(
+                    "window._lastNetstExportState || null",
+                    lambda state: self._record_image_export(
+                        file_path, extension.lstrip('.'), state),
+                )
+
+            if hasattr(download, 'isFinishedChanged'):
+                download.isFinishedChanged.connect(finalize_image_export)
+            elif hasattr(download, 'stateChanged'):
+                download.stateChanged.connect(finalize_image_export)
         download.accept()
+
+    def _record_image_export(self, file_path: str, image_format: str,
+                             view_state=None) -> None:
+        if self._project_manifest is None:
+            return
+        entry = {
+            "id": str(uuid.uuid4()),
+            "relative_path": self._project_relative_path(file_path),
+            "format": str(image_format).lower(),
+            "exported_at": utc_now_iso(),
+            "view_state": view_state if isinstance(view_state, dict) else None,
+        }
+        if os.path.isfile(file_path):
+            entry["size"] = os.path.getsize(file_path)
+            entry["sha256"] = sha256_file(file_path)
+        exports = self._project_manifest.visualization.setdefault(
+            "image_exports", [])
+        previous = next((
+            item for item in reversed(exports)
+            if isinstance(item, dict)
+            and item.get("format") == entry["format"]
+            and item.get("sha256")
+        ), None)
+        if previous is not None and entry.get("sha256"):
+            entry["expected_sha256"] = previous["sha256"]
+            entry["matches_previous_export"] = (
+                entry["sha256"] == previous["sha256"])
+        exports.append(entry)
+        if isinstance(view_state, dict):
+            self._project_manifest.visualization["current_state"] = view_state
+        self._schedule_project_save()
 
     def _handle_pdf_export(self) -> None:
         """Export the network as a PDF by retrieving the SVG from tcsBU."""
@@ -555,9 +738,20 @@ class MainForm(MainWindowUI):
             if not file_path.lower().endswith('.pdf'):
                 file_path += '.pdf'
             self._write_svg_to_pdf(svg_markup, width, height, file_path)
+            if os.path.isfile(file_path):
+                self._record_image_export(
+                    file_path, 'pdf', result.get('project_state'))
 
         self.web_view_main.page().runJavaScript(
-            'window._pdfSvgPayload || null', on_payload)
+            '(function () {'
+            '  if (!window._pdfSvgPayload) return null;'
+            '  return {'
+            '    markup: window._pdfSvgPayload.markup,'
+            '    width: window._pdfSvgPayload.width,'
+            '    height: window._pdfSvgPayload.height,'
+            '    project_state: window._lastNetstExportState || null'
+            '  };'
+            '})()', on_payload)
 
     def _write_svg_to_pdf(self, svg_markup: str, width: int, height: int,
                           file_path: str) -> None:
@@ -630,8 +824,11 @@ class MainForm(MainWindowUI):
         self._network_view_generation += 1
         self._pending_js = None
         self._pending_js_generation = None
+        self._pending_project_view_state = None
         self._last_interpretation_kind = None
         self._last_interpretation_result = None
+        if self._project_manifest is not None:
+            self._project_manifest.visualization["current_state"] = None
 
         # Loader results are guarded by identity checks, so requesting
         # interruption and dropping the current token is enough to make any
@@ -652,6 +849,506 @@ class MainForm(MainWindowUI):
             widget.deleteLater()
             setattr(self, attr, None)
 
+    # ==================== Reproducible Project ====================
+
+    def _begin_tracked_project(
+        self,
+        sequence_path: str,
+        file_format: str,
+        standardization: StandardizationConfig,
+        *,
+        additional_sources=None,
+        sequence_options=None,
+    ) -> None:
+        """Start a new manifest after a sequence import has fully succeeded."""
+        now = utc_now_iso()
+        output_path = os.path.abspath(self.get_output_path())
+        options = dict(sequence_options or {})
+        options["standardization"] = standardization.to_dict()
+        sources = [managed_source_reference(
+            sequence_path,
+            role="sequences",
+            file_format=file_format,
+            project_directory=output_path,
+            options=options,
+        )]
+        for source in additional_sources or ():
+            path = source.get("path")
+            if path:
+                sources.append(managed_source_reference(
+                    path,
+                    role=source["role"],
+                    file_format=source.get("format", "file"),
+                    project_directory=output_path,
+                    options=source.get("options"),
+                ))
+        self._project_manifest = ProjectManifest(
+            project={
+                "id": str(uuid.uuid4()),
+                "name": self.get_project_prefix() or "project",
+                "created_at": now,
+                "updated_at": now,
+                "output_path": ".",
+            },
+            environment=runtime_environment(),
+            sources=sources,
+            data_pipeline={},
+            workflow={"analyses": []},
+            visualization={"current_state": None, "image_exports": []},
+        )
+        # Establish the relative-path base immediately, before the first
+        # autosave, so newly managed sources always remain resolvable.
+        self._project_manifest_path = self._project_default_path()
+        self._project_replaying = False
+        self._refresh_project_manifest_state()
+        self._schedule_project_save()
+
+    def _refresh_project_manifest_state(self) -> None:
+        manifest = self._project_manifest
+        if manifest is None:
+            return
+        project_name = self.get_project_prefix() or "project"
+        if validate_project_prefix(project_name) is not None:
+            project_name = "project"
+        manifest.project["name"] = project_name
+        # New manifests are relocatable: the active output directory is the
+        # directory containing the project JSON, not a machine-specific path.
+        manifest.project["output_path"] = "."
+        manifest.project["updated_at"] = utc_now_iso()
+        manifest.data_pipeline["samples"] = snapshot_taxons(
+            self.table_model.get_all_taxons())
+        manifest.data_pipeline["trait_schema"] = serialize_trait_schema(
+            self.table_model.schema())
+        manifest.data_pipeline["sample_count"] = self.table_model.rowCount()
+
+    def _schedule_project_save(self) -> None:
+        if self._project_manifest is not None:
+            self._project_save_timer.start(300)
+
+    def _project_default_path(self) -> str:
+        output = os.path.abspath(self.get_output_path())
+        prefix = self.get_project_prefix() or "project"
+        if validate_project_prefix(prefix) is not None:
+            prefix = "project"
+        return os.path.join(output, f"{prefix}.netst.json")
+
+    def _project_relative_path(self, path: str) -> str:
+        """Return a JSON-portable path relative to the active manifest."""
+        manifest_path = self._project_manifest_path or self._project_default_path()
+        base = os.path.dirname(os.path.abspath(manifest_path))
+        return os.path.relpath(os.path.abspath(path), base).replace(os.sep, "/")
+
+    def _prepare_manifest_paths(self, destination: str) -> None:
+        """Copy sources beside a manifest and store project-relative paths."""
+        if self._project_manifest is None:
+            return
+        current_manifest_path = (
+            self._project_manifest_path or self._project_default_path())
+        destination_directory = os.path.dirname(os.path.abspath(destination))
+        prepared_sources = []
+        for source in self._project_manifest.sources:
+            absolute = resolve_source_path(source, current_manifest_path)
+            if not absolute:
+                # Compatibility with a relocated legacy project whose source
+                # was selected manually during this import session.
+                legacy_path = str(source.get("path", "")).strip()
+                if legacy_path and os.path.isfile(legacy_path):
+                    absolute = os.path.abspath(legacy_path)
+            if not absolute:
+                raise ProjectConfigError(
+                    f"Project source is unavailable: {source.get('role', 'file')}")
+            expected = str(source.get("sha256", "")).lower()
+            if expected and sha256_file(absolute).lower() != expected:
+                raise ProjectConfigError(
+                    f"Project source has changed: {absolute}")
+            portable = managed_source_reference(
+                absolute,
+                role=str(source.get("role", "source")),
+                file_format=str(source.get("format", "file")),
+                project_directory=destination_directory,
+                options=(source.get("options")
+                         if isinstance(source.get("options"), dict) else {}),
+            )
+            # Preserve any future non-path metadata while guaranteeing that
+            # neither the legacy absolute path nor stale fingerprint fields
+            # leak into the exported JSON.
+            updated = dict(source)
+            for key in ("path", "relative_path", "sha256", "size", "modified_ns",
+                        "role", "format", "options"):
+                updated.pop(key, None)
+            updated.update(portable)
+            prepared_sources.append(updated)
+        self._project_manifest.sources = prepared_sources
+
+    def _autosave_project(self) -> None:
+        if self._project_manifest is None or self.table_model.rowCount() < 1:
+            return
+        try:
+            destination = self._project_manifest_path or self._project_default_path()
+            self._refresh_project_manifest_state()
+            self._prepare_manifest_paths(destination)
+            save_project(self._project_manifest, destination)
+            self._project_manifest_path = destination
+        except (OSError, ProjectConfigError, ValueError) as exc:
+            logger.warning("Project sidecar could not be saved: %s", exc)
+
+    def _export_project(self) -> None:
+        if self._project_manifest is None or self.table_model.rowCount() < 1:
+            QMessageBox.warning(
+                self, lang_manager.get('title_warning', 'Warning'),
+                lang_manager.get(
+                    'msg_no_project_to_export',
+                    'Import sequence data before exporting a project.'))
+            return
+        default_path = self._project_default_path()
+        destination, _ = QFileDialog.getSaveFileName(
+            self,
+            lang_manager.get('dlg_export_project', 'Export NetST Project'),
+            default_path,
+            lang_manager.get(
+                'filter_netst_project',
+                'NetST Project Files (*.netst.json);;JSON Files (*.json)'),
+        )
+        if not destination:
+            return
+        if not destination.lower().endswith('.json'):
+            destination += '.netst.json'
+
+        def finish_save(view_state=None) -> None:
+            if isinstance(view_state, dict):
+                self._project_manifest.visualization["current_state"] = view_state
+            try:
+                self._refresh_project_manifest_state()
+                self._prepare_manifest_paths(destination)
+                save_project(self._project_manifest, destination)
+                self._project_manifest_path = destination
+                self._append_localized_log(
+                    'success', 'log_project_exported',
+                    'Project configuration exported to: {path}', path=destination)
+            except (OSError, ProjectConfigError, ValueError) as exc:
+                self._show_export_error(exc)
+
+        if hasattr(self.web_view_main, 'page'):
+            self.web_view_main.page().runJavaScript(
+                "typeof window.exportProjectViewState === 'function' "
+                "? window.exportProjectViewState() : null",
+                finish_save,
+            )
+        else:
+            finish_save()
+
+    def _import_project(self) -> None:
+        project_path, _ = QFileDialog.getOpenFileName(
+            self,
+            lang_manager.get('dlg_import_project', 'Import NetST Project'),
+            "",
+            lang_manager.get(
+                'filter_netst_project',
+                'NetST Project Files (*.netst.json);;JSON Files (*.json)'),
+        )
+        if not project_path:
+            return
+        try:
+            manifest = load_project(project_path)
+            resolved_paths = []
+            for source in manifest.sources:
+                resolved, issue = verify_source(source, project_path)
+                if issue == "missing":
+                    resolved, _ = QFileDialog.getOpenFileName(
+                        self,
+                        lang_manager.get(
+                            'dlg_relocate_project_source',
+                            'Locate project source: {role}').format(
+                                role=source.get('role', 'file')),
+                        os.path.dirname(project_path),
+                        'All Files (*.*)',
+                    )
+                    if not resolved:
+                        return
+                    if sha256_file(resolved).lower() != str(
+                        source.get("sha256", "")).lower():
+                        raise ProjectConfigError(
+                            f"Selected replacement file does not match the saved "
+                            f"SHA-256: {resolved}")
+                    source["path"] = os.path.abspath(resolved)
+                elif issue == "hash_mismatch":
+                    raise ProjectConfigError(
+                        f"Input file has changed since the project was saved: {resolved}")
+                resolved_paths.append(os.path.abspath(resolved))
+            self._replay_project(manifest, project_path, resolved_paths)
+        except (ProjectConfigError, OSError, ValueError) as exc:
+            self._append_localized_log(
+                'error', 'log_project_import_failed',
+                'Project import failed: {error}', error=str(exc))
+            QMessageBox.critical(
+                self, lang_manager.get('title_error', 'Error'), str(exc))
+
+    def _replay_project(self, manifest: ProjectManifest, project_path: str,
+                        resolved_paths: list) -> None:
+        """Restore inputs and automatically replay the saved workflow."""
+        saved_prefix = str(manifest.project.get("name", "")).strip()
+        if validate_project_prefix(saved_prefix) is not None:
+            raise ProjectConfigError(
+                f"Project file contains an unsafe project name: {saved_prefix!r}")
+        saved_network = manifest.workflow.get("network")
+        replay_network_config = None
+        if isinstance(saved_network, dict):
+            replay_network_config = HaplotypeNetworkConfig.from_dict(
+                saved_network.get("parameters", {}))
+            if replay_network_config.algorithm != saved_network.get("algorithm"):
+                raise ProjectConfigError(
+                    "Saved network algorithm and parameters disagree")
+        source_pairs = list(zip(manifest.sources, resolved_paths))
+        sequence_source, sequence_path = next(
+            pair for pair in source_pairs if pair[0].get("role") == "sequences")
+        file_format = str(sequence_source.get("format", "")).lower()
+        options = sequence_source.get("options", {})
+        if not isinstance(options, dict):
+            raise ProjectConfigError("Sequence source options are invalid")
+        standardization = StandardizationConfig.from_dict(
+            options.get("standardization", {}))
+
+        if file_format == "vcf":
+            metadata_path = next((path for source, path in source_pairs
+                                  if source.get("role") == "vcf_metadata"), "")
+            reference_path = next((path for source, path in source_pairs
+                                   if source.get("role") == "vcf_reference"), "")
+            imported_result = import_vcf(
+                sequence_path, metadata_path or None, reference_path or None)
+            imported = list(imported_result.taxons)
+            original_snapshot = {
+                taxon.name: taxon.sequence for taxon in imported
+            }
+        else:
+            loaders = {
+                "fasta": self.file_service.load_fasta_file,
+                "nexus": self.file_service.load_nexus_file,
+                "phylip": self.file_service.load_phylip_file,
+            }
+            loader = loaders.get(file_format)
+            if loader is None:
+                raise ProjectConfigError(
+                    f"Unsupported project sequence format: {file_format!r}")
+            imported = loader(sequence_path)
+            original_snapshot = {}
+            metadata_path = ""
+
+        taxons = self.file_service.apply_standardization(imported, standardization)
+        apply_taxon_snapshot(
+            taxons, manifest.data_pipeline.get("samples", []))
+        selected_taxons = [taxon for taxon in taxons if taxon.selected]
+        if not selected_taxons:
+            raise ProjectConfigError("Saved project has no selected samples")
+        validation_issue = validate_taxons(selected_taxons)
+        if validation_issue is not None:
+            raise ProjectConfigError(
+                f"Saved project samples failed validation: {validation_issue.code}")
+        schema = deserialize_trait_schema(
+            manifest.data_pipeline.get("trait_schema", {}))
+
+        manifest_directory = os.path.dirname(os.path.abspath(project_path))
+        saved_output = str(manifest.project.get("output_path", ".")).strip()
+        # Portable manifests resolve output paths from their own directory.
+        # Legacy absolute paths are deliberately rebased to the imported JSON
+        # directory so transferred projects do not write to the creator's
+        # machine-specific location.
+        if saved_output and not os.path.isabs(saved_output):
+            output_path = os.path.abspath(os.path.join(
+                manifest_directory,
+                saved_output.replace("\\", os.sep).replace("/", os.sep)))
+            try:
+                if os.path.commonpath((
+                    os.path.realpath(manifest_directory),
+                    os.path.realpath(output_path),
+                )) != os.path.realpath(manifest_directory):
+                    raise ProjectConfigError(
+                        "Project output path escapes the project directory")
+            except ValueError as exc:
+                raise ProjectConfigError("Project output path is invalid") from exc
+        else:
+            output_path = manifest_directory
+        os.makedirs(output_path, exist_ok=True)
+        self._project_save_timer.stop()
+        self._project_manifest = None
+        self.output_panel.output_path = output_path
+        self.output_panel.output_path_edit.setText(output_path)
+        self.output_panel.project_name_edit.setText(
+            saved_prefix)
+
+        self.table_model.clear()
+        self.table_model.add_taxons(taxons)
+        self.table_model.set_schema(schema)
+        self.table_model.sync_all_primary_traits()
+        self._invalidate_derived_results()
+        self._refresh_metadata_tab(focus=False)
+        self._update_selected_count()
+        self.data_tab.update_counts(total=len(taxons))
+
+        self._clear_vcf_source()
+        if file_format == "vcf" and metadata_path:
+            try:
+                read_metadata_rows(metadata_path)
+                self._mcan_vcf_input = McanVcfInput(sequence_path, metadata_path)
+                self._vcf_sequence_snapshot = original_snapshot
+            except FormatConversionError:
+                pass
+
+        self._project_manifest = manifest
+        self._project_manifest_path = os.path.abspath(project_path)
+        self._project_replaying = True
+        self._project_replay_start_run_index = len(manifest.runs)
+        analyses = manifest.workflow.get("analyses", [])
+        self._project_replay_analysis_queue = (
+            list(analyses) if isinstance(analyses, list) else [])
+        view_state = manifest.visualization.get("current_state")
+        if not isinstance(view_state, dict):
+            exports = manifest.visualization.get("image_exports", [])
+            if isinstance(exports, list) and exports:
+                latest = exports[-1]
+                if isinstance(latest, dict):
+                    view_state = latest.get("view_state")
+        self._pending_project_view_state = (
+            dict(view_state) if isinstance(view_state, dict) else None)
+
+        if replay_network_config is not None:
+            self._run_network_analysis(
+                replay_network_config.algorithm,
+                extra_args=replay_network_config.to_extra_args(),
+                network_config=replay_network_config,
+                record_project=False,
+            )
+        else:
+            self._run_next_project_analysis()
+
+    def _run_next_project_analysis(self) -> None:
+        if not self._project_replaying:
+            return
+        if not self._project_replay_analysis_queue:
+            self._project_replaying = False
+            self._schedule_project_save()
+            replay_runs = self._project_manifest.runs[
+                self._project_replay_start_run_index:
+            ] if self._project_manifest is not None else []
+            mismatched = [run for run in replay_runs
+                          if run.get("artifacts_match") is False]
+            if mismatched:
+                self.log_tab.append_warning(
+                    'Project replay completed, but one or more output file '
+                    'hashes differ from the saved run. See the project JSON '
+                    'artifact_comparison records.')
+            else:
+                self._append_localized_log(
+                    'success', 'log_project_replay_complete',
+                    'Project replay completed.')
+            return
+        entry = self._project_replay_analysis_queue.pop(0)
+        if not isinstance(entry, dict):
+            self._run_next_project_analysis()
+            return
+        kind = entry.get("kind")
+        options = entry.get("options", {})
+        if not isinstance(options, dict):
+            options = {}
+        try:
+            if kind in {"diversity", "distance"}:
+                dataset = self._aligned_interpretation_dataset()
+                self._start_interpretation(kind, dataset, options)
+            elif kind == "topology":
+                gml_path = os.path.join(
+                    self.get_output_path(), f"{self.get_project_prefix()}.gml")
+                self._start_interpretation(
+                    kind, self._topology_analysis_payload(gml_path), options)
+            else:
+                self._run_next_project_analysis()
+        except (AnalysisDataError, OSError, FormatConversionError) as exc:
+            self._project_replaying = False
+            QMessageBox.critical(
+                self, lang_manager.get('title_error', 'Error'), str(exc))
+
+    def _start_project_run(self, kind: str, configuration: dict) -> Optional[str]:
+        if self._project_manifest is None:
+            return None
+        run_id = str(uuid.uuid4())
+        self._project_manifest.runs.append({
+            "id": run_id,
+            "kind": kind,
+            "status": "running",
+            "started_at": utc_now_iso(),
+            "configuration": project_json_compatible(configuration),
+        })
+        self._schedule_project_save()
+        return run_id
+
+    def _finish_project_run(self, run_id: Optional[str], *, success: bool,
+                            cancelled: bool = False, error: str = "",
+                            provenance=None) -> None:
+        if self._project_manifest is None or not run_id:
+            return
+        target_run = None
+        for run in reversed(self._project_manifest.runs):
+            if run.get("id") == run_id:
+                target_run = run
+                run["status"] = (
+                    "cancelled" if cancelled else "success" if success else "failed")
+                run["finished_at"] = utc_now_iso()
+                if error:
+                    run["error"] = str(error)
+                if isinstance(provenance, dict) and provenance:
+                    run["provenance"] = project_json_compatible(provenance)
+                break
+        if success:
+            previous = {
+                item.get("relative_path"): item.get("sha256")
+                for item in self._project_manifest.artifacts
+                if item.get("relative_path") and item.get("sha256")
+            }
+            self._refresh_project_artifacts()
+            if target_run is not None and previous:
+                current = {
+                    item.get("relative_path"): item.get("sha256")
+                    for item in self._project_manifest.artifacts
+                    if item.get("relative_path") and item.get("sha256")
+                }
+                comparison = []
+                for relative_path, expected in sorted(previous.items()):
+                    actual = current.get(relative_path)
+                    comparison.append({
+                        "artifact": relative_path,
+                        "expected_sha256": expected,
+                        "actual_sha256": actual,
+                        "matches": actual == expected,
+                    })
+                target_run["artifact_comparison"] = comparison
+                target_run["artifacts_match"] = all(
+                    item["matches"] for item in comparison)
+        self._schedule_project_save()
+
+    def _refresh_project_artifacts(self) -> None:
+        """Fingerprint project outputs without hashing the manifest itself."""
+        manifest = self._project_manifest
+        if manifest is None:
+            return
+        output = os.path.abspath(self.get_output_path())
+        prefix = self.get_project_prefix()
+        if not os.path.isdir(output) or not prefix:
+            return
+        artifacts = []
+        for name in sorted(os.listdir(output)):
+            if not name.startswith(prefix) or name.endswith('.netst.json'):
+                continue
+            path = os.path.join(output, name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                artifacts.append({
+                    "relative_path": name,
+                    "size": os.path.getsize(path),
+                    "sha256": sha256_file(path),
+                })
+            except OSError:
+                continue
+        manifest.artifacts = artifacts
+
         index_html = os.path.join(
             self.current_directory, 'static', 'tcsbu', 'index.html')
         if os.path.isfile(index_html):
@@ -661,6 +1358,7 @@ class MainForm(MainWindowUI):
         """Invalidate derived output after selection or editable input changes."""
         if self._syncing_metadata_from_network:
             return
+        self._schedule_project_save()
         # Only a name or sequence edit invalidates the original VCF provenance;
         # trait/metadata edits leave the samples (and the network topology)
         # unchanged. Keep the existing alignment/GML and let the Metadata tab
@@ -744,6 +1442,28 @@ class MainForm(MainWindowUI):
             self._invalidate_derived_results()
             self._seed_schema_from_taxons(taxons)
 
+            additional_sources = []
+            if metadata_path:
+                additional_sources.append({
+                    "path": metadata_path,
+                    "role": "vcf_metadata",
+                    "format": os.path.splitext(metadata_path)[1].lstrip('.') or "metadata",
+                })
+            if config['reference_fasta']:
+                additional_sources.append({
+                    "path": config['reference_fasta'],
+                    "role": "vcf_reference",
+                    "format": "fasta",
+                })
+            self._begin_tracked_project(
+                config['vcf_path'], "vcf", std_config,
+                additional_sources=additional_sources,
+                sequence_options={
+                    "full_length": bool(config['reference_fasta']),
+                    "native_mcan_requested": bool(metadata_path),
+                },
+            )
+
             # Native McAN VCF mode requires the McAN six-column tab-delimited
             # metadata. Set it last so table signals cannot clear it; the
             # snapshot gate disables it automatically if names were changed.
@@ -751,9 +1471,20 @@ class MainForm(MainWindowUI):
             self._vcf_sequence_snapshot = {}
             if metadata_path:
                 try:
-                    read_metadata_rows(metadata_path)
+                    manifest_path = self._project_default_path()
+                    managed_vcf = next((
+                        resolve_source_path(source, manifest_path)
+                        for source in self._project_manifest.sources
+                        if source.get("role") == "sequences"
+                    ), "")
+                    managed_metadata = next((
+                        resolve_source_path(source, manifest_path)
+                        for source in self._project_manifest.sources
+                        if source.get("role") == "vcf_metadata"
+                    ), "")
+                    read_metadata_rows(managed_metadata)
                     self._mcan_vcf_input = McanVcfInput(
-                        config['vcf_path'], metadata_path)
+                        managed_vcf, managed_metadata)
                     self._vcf_sequence_snapshot = original_snapshot
                     self._append_localized_log(
                         'info', 'log_vcf_native_available',
@@ -909,6 +1640,7 @@ class MainForm(MainWindowUI):
             self._clear_vcf_source()
             self._invalidate_derived_results()
             self._seed_schema_from_taxons(taxons)
+            self._begin_tracked_project(file_path, file_format, config)
 
             self._update_selected_count()
             self.data_tab.update_counts(total=len(taxons))
@@ -1161,6 +1893,17 @@ class MainForm(MainWindowUI):
             self.table_model.sync_all_primary_traits()
             self._refresh_metadata_tab(focus=False)
 
+            if self._project_manifest is not None:
+                self._project_manifest.sources.append(managed_source_reference(
+                    file_path,
+                    role="metadata",
+                    file_format=("tsv" if delimiter == "\t" else "csv"),
+                    project_directory=self.get_output_path(),
+                    options={"delimiter": delimiter,
+                             "mapping": project_json_compatible(mapping)},
+                ))
+                self._schedule_project_save()
+
             self._append_localized_log(
                 'success', 'log_csv_imported',
                 'Metadata imported: {count} sequences updated',
@@ -1280,19 +2023,71 @@ class MainForm(MainWindowUI):
                     'filter_gml', 'GML Network Files (*.gml);;All Files (*.*)'),
             )
         if gml_path:
-            self._start_interpretation('topology', gml_path, {})
+            self._start_interpretation(
+                'topology', self._topology_analysis_payload(gml_path), {})
+
+    def _topology_analysis_payload(self, gml_path: str) -> dict:
+        """Attach project haplotype assignments and current traits to a GML."""
+        import csv
+
+        stem, _ = os.path.splitext(gml_path)
+        assignment_path = f"{stem}_seq.meta.csv"
+        sample_haplotypes: Dict[str, str] = {}
+        if os.path.isfile(assignment_path):
+            with open(assignment_path, 'r', encoding='utf-8-sig', newline='') as handle:
+                reader = csv.DictReader(handle)
+                if {'sequence_name', 'haplotype'}.issubset(reader.fieldnames or ()):
+                    for row in reader:
+                        sample = str(row.get('sequence_name', '')).strip()
+                        haplotype = str(row.get('haplotype', '')).strip()
+                        if sample and haplotype:
+                            sample_haplotypes[sample] = haplotype
+
+        taxons = self.table_model.get_all_taxons()
+        trait_names = [
+            definition.name
+            for definition in self.table_model.schema().ordered()
+        ]
+        sample_traits = {
+            taxon.name: {
+                name: taxon.trait_value(name)
+                for name in trait_names
+            }
+            for taxon in taxons
+        }
+        trait_types = {
+            definition.name: definition.kind
+            for definition in self.table_model.schema().ordered()
+        }
+        return {
+            'gml_path': gml_path,
+            'sample_haplotypes': sample_haplotypes,
+            'sample_traits': sample_traits,
+            'trait_types': trait_types,
+        }
 
     def _start_interpretation(self, kind: str, payload, options: dict) -> None:
-        self._stop_worker(self.interpretation_worker)
+        if not self._stop_worker(self.interpretation_worker):
+            self._worker_stop_timed_out()
+            return
         name = self._interpretation_name(kind)
         self._append_localized_log(
             'info', 'log_interpretation_started', 'Starting {analysis}.',
             analysis=name)
         self.set_status_key('status_interpreting', 'Running interpretation analysis...')
         self.set_progress(0)
+        if self._project_manifest is not None and not self._project_replaying:
+            analyses = self._project_manifest.workflow.setdefault("analyses", [])
+            analyses.append({
+                "kind": kind,
+                "options": project_json_compatible(options),
+            })
+        project_run_id = self._start_project_run(
+            f"analysis:{kind}", {"options": options})
         worker = InterpretationWorker(kind, payload, options)
         worker.output_path = self.get_output_path()
         worker.prefix = self.get_project_prefix()
+        worker.project_run_id = project_run_id
         self.interpretation_worker = worker
         worker.finished.connect(
             lambda outcome, source=worker: self._on_interpretation_finished(source, outcome))
@@ -1306,13 +2101,21 @@ class MainForm(MainWindowUI):
         kind = outcome.get('kind', 'interpretation')
         name = self._interpretation_name(kind)
         if outcome.get('cancelled'):
+            self._finish_project_run(
+                getattr(worker, 'project_run_id', None),
+                success=False, cancelled=True,
+                error=str(outcome.get('error') or ''))
             self.set_status_key('status_ready', 'Ready')
             self.set_progress(0)
             self._append_localized_log(
                 'warning', 'log_cancel_requested', 'Analysis was cancelled.')
+            self._project_replaying = False
             return
         if not outcome.get('success'):
             error = outcome.get('error') or 'Unknown error'
+            self._finish_project_run(
+                getattr(worker, 'project_run_id', None),
+                success=False, error=str(error))
             self.set_status_key('status_ready', 'Ready')
             self.set_progress(0)
             self._append_localized_log(
@@ -1323,6 +2126,7 @@ class MainForm(MainWindowUI):
                 lang_manager.get(
                     'msg_interpretation_failed',
                     'Interpretation analysis failed: {error}').format(error=error))
+            self._project_replaying = False
             return
 
         result = outcome['result']
@@ -1342,6 +2146,10 @@ class MainForm(MainWindowUI):
             'success', 'log_interpretation_complete',
             '{analysis} completed; results saved to {path}.',
             analysis=name, path=output_file)
+        self._finish_project_run(
+            getattr(worker, 'project_run_id', None), success=True)
+        if self._project_replaying:
+            self._run_next_project_analysis()
 
     def _interpretation_name(self, kind: str) -> str:
         keys = {
@@ -1393,13 +2201,30 @@ class MainForm(MainWindowUI):
             (tr('单倍型多样性 Hd', 'Haplotype diversity (Hd)'), overall.hd),
             (tr('核苷酸多样性 π', 'Nucleotide diversity (pi)'), overall.pi),
             (tr("Watterson's θW", "Watterson's theta W"), overall.theta_w),
+            (tr('平均成对差异 k', 'Mean pairwise differences (k)'), overall.k),
+            ("Tajima's D", overall.tajima_d),
+            (tr('总体 Hudson FST', 'Global Hudson FST'), result.fst.global_fst),
+            (tr('FST 置换 P 值', 'FST permutation P'), result.fst.p_value),
+            (tr('AMOVA ΦST', 'AMOVA Phi-ST'), result.amova.phi_st),
+            (tr('AMOVA 置换 P 值', 'AMOVA permutation P'), result.amova.p_value),
         ]
         group_rows = [(
             group.label, group.sample_count, group.callable_site_count,
             group.segregating_site_count, group.haplotype_richness,
             group.private_haplotype_count, group.hd, group.pi, group.theta_w,
+            group.k, group.tajima_d, group.tajima_callable_site_count,
             group.private_haplotypes,
         ) for group in result.groups]
+        fst_rows = [(
+            pair.group_a, pair.group_b, pair.sample_count_a, pair.sample_count_b,
+            pair.pi_within_a, pair.pi_within_b, pair.pi_between, pair.fst,
+        ) for pair in result.fst.pairs]
+        mismatch_rows = []
+        for summary in (overall, *result.groups):
+            mismatch_rows.extend((
+                summary.label, item.differences, item.pair_count, item.frequency,
+                summary.mismatch_distribution.callable_site_count,
+            ) for item in summary.mismatch_distribution.bins)
         sample_rows = [(
             sample.sample_name, sample.missing_count, sample.missing_rate,
             sample.gap_count, sample.unknown_count, sample.ambiguity_count,
@@ -1417,8 +2242,34 @@ class MainForm(MainWindowUI):
             'columns': [tr('分组', 'Group'), tr('样本数', 'N'),
                         tr('有效位点', 'Callable sites'), tr('分离位点', 'S'),
                         tr('单倍型数', 'Haplotypes'), tr('私有单倍型数', 'Private'),
-                        'Hd', 'π', 'θW', tr('私有单倍型', 'Private haplotypes')],
+                        'Hd', 'π', 'θW', 'k', "Tajima's D",
+                        tr('D/MMD 完整位点', 'D/MMD complete sites'),
+                        tr('私有单倍型', 'Private haplotypes')],
             'rows': group_rows,
+        }, {
+            'title': tr('两两群体 Hudson FST', 'Pairwise Hudson FST'),
+            'columns': [tr('群体 A', 'Population A'), tr('群体 B', 'Population B'),
+                        'N(A)', 'N(B)', 'π(A)', 'π(B)', 'π(between)', 'FST'],
+            'rows': fst_rows,
+        }, {
+            'title': tr('单层 AMOVA', 'One-level AMOVA'),
+            'columns': [tr('变异来源', 'Source'), 'df', 'SS', 'MS',
+                        tr('方差组分', 'Variance component'),
+                        tr('变异百分比', 'Percent variation')],
+            'rows': [
+                (tr('群体间', 'Among populations'), result.amova.df_among,
+                 result.amova.sum_squares_among, result.amova.mean_squares_among,
+                 result.amova.variance_among, result.amova.percent_among),
+                (tr('群体内', 'Within populations'), result.amova.df_within,
+                 result.amova.sum_squares_within, result.amova.mean_squares_within,
+                 result.amova.variance_within, result.amova.percent_within),
+            ],
+        }, {
+            'title': tr('错配分布', 'Mismatch distribution'),
+            'columns': [tr('分组', 'Group'), tr('差异数', 'Differences'),
+                        tr('序列对数', 'Pair count'), tr('频率', 'Frequency'),
+                        tr('完整位点', 'Complete sites')],
+            'rows': mismatch_rows,
         }, {
             'title': tr('样本质量', 'Sample quality'),
             'columns': [tr('样本', 'Sample'), tr('缺失数', 'Missing'),
@@ -1449,8 +2300,10 @@ class MainForm(MainWindowUI):
         report['notes'] = [
             tr('缺口、N、? 和 IUPAC 模糊状态不作为确定等位基因。',
                'Gaps, N, ?, and IUPAC ambiguity states are not treated as called alleles.'),
-            tr('Tajima’s D 未自动计算，因为可靠解释需要额外的人口历史与零模型假设。',
-               "Tajima's D is not calculated automatically because defensible interpretation requires demographic and null-model assumptions."),
+            tr('Tajima’s D 与错配分布使用组内完整位点；D 的生物学解释仍需结合中性、重组和人口历史假设。',
+               "Tajima's D and mismatch distributions use group-complete sites; biological interpretation of D still depends on neutrality, recombination, and demographic assumptions."),
+            tr('FST 为等权群体 Hudson 序列估计；AMOVA 为单层分析，使用全体样本共同可比位点的未校正 p-distance。',
+               'FST is the equal-population Hudson sequence estimator; one-level AMOVA uses uncorrected p-distance over sites callable in every sample.'),
             tr('组间数值比较应同时考虑样本量与缺失率。',
                'Compare groups together with their sample sizes and missing-data rates.'),
         ]
@@ -1537,8 +2390,25 @@ class MainForm(MainWindowUI):
     def _build_topology_report(self, result) -> dict:
         tr = self._bi
         graph = result.graph
-        node_rows = result.nodes[:5000]
+        # Inferred transition nodes remain part of the full-graph calculation,
+        # but they are not biological haplotypes and therefore do not belong in
+        # the node table requested by users.
+        mapped_nodes = [node for node in result.nodes if node.haplotype]
+        node_rows = mapped_nodes[:5000]
         edge_rows = result.edges[:5000]
+        maximum_frequency = max(
+            (node.frequency for node in mapped_nodes), default=0.0)
+        maximum_degree = max((node.degree for node in mapped_nodes), default=0)
+
+        def structural_role(node) -> str:
+            roles = []
+            if maximum_frequency > 0 and node.frequency == maximum_frequency:
+                roles.append(tr('高频单倍型', 'Most frequent'))
+            if maximum_degree > 0 and node.degree == maximum_degree:
+                roles.append(tr('高度连接节点', 'Highest-degree node'))
+            if node.articulation_point:
+                roles.append(tr('割点/结构桥接', 'Articulation/structural bridge'))
+            return '; '.join(roles) or tr('外围/一般连接', 'Peripheral/general')
         report = self._report_shell(
             'analysis_topology_title', 'analysis_topology_description')
         report['summary'] = [
@@ -1549,35 +2419,56 @@ class MainForm(MainWindowUI):
             (tr('环秩', 'Cycle rank'), graph.cycle_rank),
             (tr('观测单倍型节点', 'Observed haplotype nodes'),
              graph.observed_node_count),
+            (tr('已映射并展示的单倍型节点', 'Mapped haplotype nodes shown'),
+             len(mapped_nodes)),
             (tr('中间节点', 'Intermediate nodes'), graph.intermediate_node_count),
             (tr('源网络有向', 'Source graph directed'), graph.source_directed),
             (tr('分析投影', 'Analysis projection'), graph.analysis_projection),
         ]
         report['tables'] = [{
             'title': tr('节点指标', 'Node metrics'),
-            'columns': [tr('节点 ID', 'Node ID'), tr('度', 'Degree'),
+            'columns': [tr('节点 ID', 'Node ID'), tr('单倍型', 'Haplotype'),
+                        tr('样本频数', 'Sample frequency'),
+                        tr('结构角色', 'Structural role'),
+                        tr('度', 'Degree'),
                         tr('相邻突变距离和', 'Mutation-distance sum'),
                         tr('接近中心性', 'Closeness'),
                         tr('介数中心性', 'Betweenness'),
-                        tr('分量', 'Component'), tr('割点', 'Articulation'),
-                        tr('中间节点', 'Intermediate')],
+                        tr('分量', 'Component'), tr('割点', 'Articulation')],
             'rows': [(
-                node.node_id, node.degree, node.mutation_distance_sum,
+                node.node_id, node.haplotype, node.frequency, structural_role(node),
+                node.degree, node.mutation_distance_sum,
                 node.closeness, node.betweenness, node.component,
-                node.articulation_point, node.is_intermediate,
+                node.articulation_point,
             ) for node in node_rows],
         }, {
             'title': tr('边指标', 'Edge metrics'),
             'columns': [tr('边编号', 'Edge'), tr('起点', 'Source'),
-                        tr('终点', 'Target'), tr('突变距离', 'Mutation distance'),
+                        tr('起点单倍型', 'Source haplotype'),
+                        tr('终点', 'Target'),
+                        tr('终点单倍型', 'Target haplotype'),
+                        tr('突变距离', 'Mutation distance'),
                         tr('桥', 'Bridge'), tr('边介数', 'Edge betweenness')],
             'rows': [(
-                edge.edge_index, edge.source, edge.target,
+                edge.edge_index, edge.source, edge.source_haplotype,
+                edge.target, edge.target_haplotype,
                 edge.mutation_distance, edge.bridge, edge.betweenness,
             ) for edge in edge_rows],
         }]
         report['warnings'] = []
-        if len(result.nodes) > len(node_rows) or len(result.edges) > len(edge_rows):
+        unmapped_observed = sum(
+            not node.is_intermediate and not node.haplotype
+            for node in result.nodes
+        )
+        if not mapped_nodes:
+            report['warnings'].append(tr(
+                '未找到节点到单倍型的可靠映射，因此节点表不展示任何节点。请使用项目网络及其同名前缀的 _seq.meta.csv 文件重新分析。',
+                'No reliable node-to-haplotype mapping was found, so the node table is empty. Reanalyse the project network with its matching _seq.meta.csv file.'))
+        elif unmapped_observed:
+            report['warnings'].append(tr(
+                f'{unmapped_observed} 个观测节点缺少可靠的单倍型映射，已从节点表和图表中隐藏。',
+                f'{unmapped_observed} observed nodes lack a reliable haplotype mapping and were hidden from the node table and charts.'))
+        if len(mapped_nodes) > len(node_rows) or len(result.edges) > len(edge_rows):
             report['warnings'].append(tr(
                 '拓扑表格在界面中仅显示前 5000 行；JSON 文件保留完整结果。',
                 'Topology tables show the first 5,000 rows in the UI; JSON retains the complete result.'))
@@ -1586,7 +2477,11 @@ class MainForm(MainWindowUI):
                'Mutation count is treated as distance, never as stronger connectivity.'),
             tr('中心性、割点和桥仅描述图结构，不能识别祖先、起源地或传播源。',
                result.interpretation_note),
+            tr('无单倍型映射的中间节点仍参与全图指标计算，但不在节点表中展示；边表保留这些连接并将相应单倍型显示为空。',
+               'Unmapped intermediate nodes remain in full-graph metric calculations but are hidden from the node table; their edges remain visible with a blank haplotype value.'),
         ]
+        report['notes'].extend(
+            self._topology_biological_notes(mapped_nodes, result.edges, tr))
         if graph.source_directed:
             report['notes'].append(tr(
                 '源 GML 为有向网络；当前拓扑指标基于无向投影，方向信息仅作为来源记录保留。',
@@ -1594,6 +2489,51 @@ class MainForm(MainWindowUI):
         report['cards'] = interpretation_charts.topology_cards(result, tr)
         report['figures'] = interpretation_charts.topology_figures(result, tr)
         return report
+
+    @staticmethod
+    def _topology_biological_notes(nodes, edges, tr) -> list:
+        """Describe sample/trait patterns without assigning ancestry or causality."""
+        if not nodes:
+            return []
+        notes = []
+        dominant = max(nodes, key=lambda node: (node.frequency, node.degree))
+        dominant_traits = '; '.join(
+            f"{name}={','.join(values)}"
+            for name, values in dominant.traits.items() if values
+        )
+        if dominant_traits:
+            notes.append(tr(
+                f'样本频数最高的单倍型为 {dominant.haplotype}（n={dominant.frequency:g}；{dominant_traits}）。这表示当前采样中的相对常见性，不等同于祖先单倍型。',
+                f'The most frequent sampled haplotype is {dominant.haplotype} (n={dominant.frequency:g}; {dominant_traits}). This indicates relative prevalence in the present sample, not ancestry.'))
+        else:
+            notes.append(tr(
+                f'样本频数最高的单倍型为 {dominant.haplotype}（n={dominant.frequency:g}）。这表示当前采样中的相对常见性，不等同于祖先单倍型。',
+                f'The most frequent sampled haplotype is {dominant.haplotype} (n={dominant.frequency:g}). This indicates relative prevalence in the present sample, not ancestry.'))
+
+        hubs = sorted(nodes, key=lambda node: node.betweenness, reverse=True)
+        hub = next((node for node in hubs if node.betweenness > 0), None)
+        if hub is not None:
+            hub_traits = '; '.join(
+                f"{name}={','.join(values)}"
+                for name, values in hub.traits.items() if values
+            ) or tr('无已记录性状', 'no recorded traits')
+            notes.append(tr(
+                f'{hub.haplotype} 的介数中心性在已映射单倍型中最高（{hub.betweenness:.4g}；{hub_traits}），提示它在最短突变路径上具有结构桥接作用；需结合采样地点、时间或表型检验其生物学意义。',
+                f'{hub.haplotype} has the highest betweenness among mapped haplotypes ({hub.betweenness:.4g}; {hub_traits}), suggesting a structural bridging position on shortest mutational paths; its biological relevance requires testing against sampling location, time, or phenotype.'))
+
+        mapped_bridges = [
+            edge for edge in edges
+            if edge.bridge and edge.source_haplotype and edge.target_haplotype
+        ]
+        if mapped_bridges:
+            examples = ', '.join(
+                f'{edge.source_haplotype}–{edge.target_haplotype}'
+                for edge in mapped_bridges[:5]
+            )
+            notes.append(tr(
+                f'检测到连接已映射单倍型的桥边：{examples}。这些连接对当前网络连通性敏感，可优先比较两端单倍型的性状组成，但不能据此推断迁移方向。',
+                f'Bridge edges connecting mapped haplotypes include {examples}. These links are sensitive points in current network connectivity and are useful targets for comparing endpoint traits, but they do not establish migration direction.'))
+        return notes
 
     @staticmethod
     def _json_compatible(value):
@@ -1654,6 +2594,22 @@ class MainForm(MainWindowUI):
                 '单倍型指标仅使用全局完整位点，避免缺失模式被误判为新单倍型。',
             'Pairwise pi values can use different callable sites for different sample pairs':
                 '成对删除时，不同样本对的 π 可能基于不同的有效位点集。',
+            "No complete sites are available for Tajima's D or mismatch distribution":
+                '没有可用于 Tajima’s D 或错配分布的完整位点。',
+            "Tajima's D is undefined when no complete site is segregating":
+                '完整位点中没有分离位点，Tajima’s D 无定义。',
+            "Tajima's D is undefined for this sample size and variation":
+                '当前样本量与变异水平下 Tajima’s D 无定义。',
+            "Tajima's D and mismatch distribution use complete sites so every pair has the same sequence length":
+                'Tajima’s D 与错配分布使用完整位点，以确保所有序列对具有相同的比较长度。',
+            'FST and AMOVA require at least two groups':
+                'FST 与 AMOVA 至少需要两个群体。',
+            'Hudson FST is undefined for comparisons containing a group with fewer than two samples':
+                '若参与比较的群体少于两个样本，Hudson FST 无定义。',
+            'AMOVA requires at least one site callable in every sample':
+                'AMOVA 至少需要一个在所有样本中均可调用的位点。',
+            'AMOVA uses sites callable in every sample to keep one complete molecular-distance matrix':
+                'AMOVA 使用所有样本共同可调用的位点，以保持完整的分子距离矩阵。',
             'PCoA requires at least two sequences; no axes were returned.':
                 'PCoA 至少需要两条序列，因此未返回坐标轴。',
             'PCoA was not calculated because one or more pairwise distances are unavailable (NaN). Review comparable-site coverage or use a complete subset; missing distances were not imputed.':
@@ -1744,7 +2700,11 @@ class MainForm(MainWindowUI):
         )
         if config is None:
             return
-        self._run_network_analysis(config.algorithm, extra_args=config.to_extra_args())
+        self._run_network_analysis(
+            config.algorithm,
+            extra_args=config.to_extra_args(),
+            network_config=config,
+        )
 
     def _group_colors_for_taxons(self, taxons) -> dict:
         """Resolve the group trait's category → colour map for the given samples.
@@ -1766,7 +2726,9 @@ class MainForm(MainWindowUI):
                 categories.append(value)
         return group.resolve_category_colors(categories)
 
-    def _run_network_analysis(self, network_type: str, extra_args: list = None):
+    def _run_network_analysis(self, network_type: str, extra_args: list = None,
+                              network_config: Optional[HaplotypeNetworkConfig] = None,
+                              *, record_project: bool = True):
         """Run haplotype network analysis."""
         selected = self._selected_taxons_for_analysis()
         if selected is None:
@@ -1775,6 +2737,27 @@ class MainForm(MainWindowUI):
         if output_target is None:
             return
         output_path, prefix = output_target
+
+        if network_config is None:
+            network_config = HaplotypeNetworkConfig(algorithm=network_type)
+        if network_config.algorithm != network_type:
+            raise ValueError("Network type and configuration algorithm disagree")
+        if self._project_manifest is not None and record_project:
+            self._project_manifest.workflow["network"] = {
+                "algorithm": network_type,
+                "parameters": network_config.to_dict(),
+                "alignment_policy": {
+                    "mode": "auto_if_unequal_length",
+                    "primary": "mafft_default",
+                    "fallback": "muscle_default",
+                },
+                "haplotype_method": "identical_complete_aligned_sequence",
+            }
+        project_run_id = self._start_project_run(
+            "network", {
+                "algorithm": network_type,
+                "parameters": network_config.to_dict(),
+            })
 
         # Warn if selected data lacks traits that affect visualization
         has_discrete = any(t.discrete_traits.strip() for t in selected)
@@ -1809,7 +2792,9 @@ class MainForm(MainWindowUI):
             'info', 'log_output_directory', 'Output directory: {path}', path=output_path)
         self.set_status_key('status_analyzing', 'Analyzing...')
 
-        self._stop_worker(self.analysis_worker)
+        if not self._stop_worker(self.analysis_worker):
+            self._worker_stop_timed_out()
+            return
         mcan_vcf_input = (
             self._current_mcan_vcf_input() if network_type == 'mcan' else None
         )
@@ -1826,6 +2811,7 @@ class MainForm(MainWindowUI):
         )
         worker.input_generation = self._input_generation
         worker.network_view_generation = self._network_view_generation
+        worker.project_run_id = project_run_id
         self.analysis_worker = worker
         worker.progress.connect(self.set_progress)
         worker.log.connect(self.log_tab.append_info)
@@ -1851,6 +2837,7 @@ class MainForm(MainWindowUI):
         # current group and primary continuous trait onto the compatibility
         # fields before the worker snapshots the table.
         self.table_model.sync_all_primary_traits()
+        self._schedule_project_save()
         output_target = self._analysis_output_target()
         if output_target is None:
             return
@@ -1884,7 +2871,9 @@ class MainForm(MainWindowUI):
         self._append_localized_log('info', 'log_project', 'Project: {prefix}', prefix=prefix)
         self.set_status_key('status_analyzing', 'Analyzing...')
 
-        self._stop_worker(self.analysis_worker)
+        if not self._stop_worker(self.analysis_worker):
+            self._worker_stop_timed_out()
+            return
         worker = NetworkMetadataWorker(
             self.analysis_service, taxons, output_path, prefix,
             group_colors=self._group_colors_for_taxons(taxons))
@@ -1974,6 +2963,7 @@ class MainForm(MainWindowUI):
         finally:
             self._syncing_metadata_from_network = False
         self.metadata_tab.set_schema(schema)
+        self._schedule_project_save()
 
     def _ensure_metadata_tab(self):
         """Create the Metadata tab on first use and wire its callbacks."""
@@ -2051,6 +3041,13 @@ class MainForm(MainWindowUI):
         if worker is not self.analysis_worker:
             return
         self._clear_active_worker(worker)
+        self._finish_project_run(
+            getattr(worker, 'project_run_id', None),
+            success=bool(result.success),
+            cancelled=bool(result.cancelled),
+            error=result.error_message or "",
+            provenance=result.provenance,
+        )
 
         if result.cancelled:
             self._append_localized_log(
@@ -2104,6 +3101,11 @@ class MainForm(MainWindowUI):
 
         self.set_progress(0)
         self.set_status_key('status_ready', 'Ready')
+        if self._project_replaying:
+            if result.success:
+                self._run_next_project_analysis()
+            else:
+                self._project_replaying = False
 
     def _on_web_view_load_finished(self, ok: bool) -> None:
         """Inject pending network data JS after index.html finishes loading."""
@@ -2145,6 +3147,12 @@ class MainForm(MainWindowUI):
                 self._pending_js = None
                 self._pending_js_generation = None
                 self.web_view_main.page().runJavaScript(js)
+                if self._pending_project_view_state is not None:
+                    QTimer.singleShot(
+                        150,
+                        lambda: self._try_apply_project_view_state(
+                            generation, attempts_remaining=30),
+                    )
             elif attempts_remaining > 1:
                 QTimer.singleShot(
                     100,
@@ -2158,6 +3166,37 @@ class MainForm(MainWindowUI):
 
         self.web_view_main.page().runJavaScript(
             "typeof window.loadGraph === 'function'", on_probe)
+
+    def _try_apply_project_view_state(self, generation: int,
+                                      attempts_remaining: int) -> None:
+        if (generation != self._network_view_generation
+                or self._pending_project_view_state is None):
+            return
+        state_json = json.dumps(
+            self._pending_project_view_state, ensure_ascii=False,
+            allow_nan=False)
+
+        def applied(result) -> None:
+            if generation != self._network_view_generation:
+                return
+            if result is True:
+                self._pending_project_view_state = None
+                return
+            if attempts_remaining > 1:
+                QTimer.singleShot(
+                    100,
+                    lambda: self._try_apply_project_view_state(
+                        generation, attempts_remaining - 1),
+                )
+            else:
+                self.log_tab.append_warning(
+                    'Saved network visualization state could not be restored.')
+
+        self.web_view_main.page().runJavaScript(
+            "typeof window.applyProjectViewState === 'function' "
+            f"? window.applyProjectViewState({state_json}) : false",
+            applied,
+        )
 
     def _build_network_js_injection(self, js_file: str, has_continuous_traits: bool,
                                     meta_config: Optional[dict] = None) -> str:
@@ -2214,10 +3253,13 @@ class MainForm(MainWindowUI):
         for definition in visualized:
             if definition.kind == DISCRETE:
                 categories = self._trait_categories(definition.name)
+                colors = definition.resolve_category_colors(categories)
+                if definition.is_group:
+                    colors.setdefault("Default", "#6BAB30")
                 traits_spec.append({
                     "name": definition.name, "kind": DISCRETE,
                     "group": definition.is_group,
-                    "colors": definition.resolve_category_colors(categories),
+                    "colors": colors,
                 })
             else:
                 low, high = definition.gradient_endpoints()
@@ -2251,6 +3293,13 @@ class MainForm(MainWindowUI):
         if output_target is None:
             return
         output_path, prefix = output_target
+        if self._project_manifest is not None:
+            self._project_manifest.workflow["alignment"] = {
+                "mode": "standalone",
+                "config": config.to_dict(),
+            }
+        project_run_id = self._start_project_run(
+            "alignment", {"config": config.to_dict()})
 
         tool_label = "MAFFT" if config.tool == "mafft" else "MUSCLE"
         self._append_localized_log(
@@ -2259,10 +3308,13 @@ class MainForm(MainWindowUI):
             tool=tool_label, count=len(selected))
         self.set_status_key('status_aligning', 'Aligning...')
 
-        self._stop_worker(self.alignment_worker)
+        if not self._stop_worker(self.alignment_worker):
+            self._worker_stop_timed_out()
+            return
         worker = AlignmentWorker(
             self.analysis_service, selected, output_path, prefix, config)
         worker.input_generation = self._input_generation
+        worker.project_run_id = project_run_id
         self.alignment_worker = worker
         worker.log.connect(self.log_tab.append_info)
         worker.finished.connect(
@@ -2274,6 +3326,10 @@ class MainForm(MainWindowUI):
         if worker is not self.alignment_worker:
             return
         self._clear_active_worker(worker)
+        self._finish_project_run(
+            getattr(worker, 'project_run_id', None),
+            success=bool(result.success), cancelled=bool(result.cancelled),
+            error=result.error_message or "", provenance=result.provenance)
         self.set_status_key('status_ready', 'Ready')
         if result.cancelled:
             self._append_localized_log(
@@ -2315,6 +3371,13 @@ class MainForm(MainWindowUI):
         if output_target is None:
             return
         output_path, prefix = output_target
+        if self._project_manifest is not None:
+            self._project_manifest.workflow["haplotype"] = {
+                "alignment": config.to_dict(),
+                "method": "identical_complete_aligned_sequence",
+            }
+        project_run_id = self._start_project_run(
+            "haplotype", {"alignment": config.to_dict()})
 
         tool_label = "MAFFT" if config.tool == "mafft" else "MUSCLE"
         self._append_localized_log(
@@ -2323,10 +3386,13 @@ class MainForm(MainWindowUI):
             tool=tool_label, count=len(selected))
         self.set_status_key('status_haplotype', 'Calculating haplotypes...')
 
-        self._stop_worker(self.haplotype_worker)
+        if not self._stop_worker(self.haplotype_worker):
+            self._worker_stop_timed_out()
+            return
         worker = HaplotypeWorker(
             self.analysis_service, selected, output_path, prefix, config)
         worker.input_generation = self._input_generation
+        worker.project_run_id = project_run_id
         self.haplotype_worker = worker
         worker.progress.connect(self.set_progress)
         worker.log.connect(self.log_tab.append_info)
@@ -2347,6 +3413,10 @@ class MainForm(MainWindowUI):
         if worker is not self.haplotype_worker:
             return
         self._clear_active_worker(worker)
+        self._finish_project_run(
+            getattr(worker, 'project_run_id', None),
+            success=bool(result.success), cancelled=bool(result.cancelled),
+            error=result.error_message or "", provenance=result.provenance)
         self.set_progress(0)
         self.set_status_key('status_ready', 'Ready')
 
@@ -2401,7 +3471,9 @@ class MainForm(MainWindowUI):
             'info', 'log_loading_alignment_view',
             'Loading alignment view in background…')
 
-        self._stop_worker(self.alignment_tab_loader)
+        if not self._stop_worker(self.alignment_tab_loader):
+            self._worker_stop_timed_out()
+            return
         worker = AlignmentTabLoadWorker(fasta_path)
         self.alignment_tab_loader = worker
         worker.finished.connect(
@@ -2440,7 +3512,9 @@ class MainForm(MainWindowUI):
             'info', 'log_loading_haplotype_view',
             'Loading haplotype view in background…')
 
-        self._stop_worker(self.haplotype_tab_loader)
+        if not self._stop_worker(self.haplotype_tab_loader):
+            self._worker_stop_timed_out()
+            return
         worker = HaplotypeTabLoadWorker(output_path, prefix)
         self.haplotype_tab_loader = worker
         worker.finished.connect(
@@ -2527,7 +3601,11 @@ class MainForm(MainWindowUI):
         if self.status_bar_widget:
             self.status_bar_widget.update_language()
 
-        if self._active_worker is self.analysis_worker:
+        if (
+            self._active_worker is not None
+            and self._active_worker is self.analysis_worker
+            and self._active_worker.isRunning()
+        ):
             self.show_waiting_page()
 
         self.output_panel.append_info(lang_manager.get('msg_language_changed'))
@@ -2543,8 +3621,6 @@ class MainForm(MainWindowUI):
             lang_manager.get(
                 'msg_about_text',
                 'Haplotype Network Analysis Tool\n\n'
-                'Version: 2.0.0\n\n'
-                'Python version rebuilt with PyQt6\n\n'
                 'For haplotype network construction and analysis'
             )
         )
@@ -2633,17 +3709,37 @@ class MainForm(MainWindowUI):
 
     def closeEvent(self, event):
         """Ensure background workers are stopped before the window is destroyed."""
+        pending = []
         for worker in (self.analysis_worker, self.alignment_worker,
                        self.haplotype_worker, self.interpretation_worker,
                        self.alignment_tab_loader,
                        self.haplotype_tab_loader):
-            self._stop_worker(worker)
+            if not self._stop_worker(worker):
+                pending.append(worker)
+        if pending:
+            self._worker_stop_timed_out()
+            event.ignore()
+            return
+        self._project_save_timer.stop()
+        self._autosave_project()
         super().closeEvent(event)
 
 
 def main():
     """Main entry point."""
+    try:
+        log_path = configure_logging()
+    except OSError:
+        log_path = None
+        logging.basicConfig(level=logging.INFO)
+        logger.exception("Could not initialize the persistent application log")
+    logger.info(
+        "Starting NetST; Python %s; %s %s; executable=%s; log=%s",
+        platform.python_version(), platform.system(), platform.machine(),
+        sys.executable, log_path or "stderr",
+    )
     app = QApplication(sys.argv)
+    app.setApplicationName("NetST")
     app.setStyle("Fusion")
 
     window = MainForm()

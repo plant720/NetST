@@ -3,14 +3,14 @@ Service for running haplotype network analyses and external programs.
 Corresponds to the analysis_network and related methods in VB.NET.
 """
 import csv
+import logging
 import os
 import platform
 import re
 import sys
 import tempfile
-import traceback
-from dataclasses import dataclass
-from typing import List, Optional, Callable, Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Callable, Sequence, Tuple
 
 from model.taxon_data import TaxonData
 from service.file_service import FileService
@@ -39,10 +39,15 @@ from service.process_service import (
 from service.rmst_service import (
     RMSTCancelled,
     RMSTError,
+    _rmst_executable_path,
     build_rmst_network,
     parse_rmst_options,
 )
+from service.project_service import sha256_file
 from service.validation_service import has_meaningful_continuous_trait
+
+
+logger = logging.getLogger(__name__)
 
 
 class AnalysisEngineError(RuntimeError):
@@ -62,6 +67,7 @@ class AlignmentResult:
     error_message: Optional[str] = None
     cancelled: bool = False
     displayable_fasta: bool = True
+    provenance: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -81,6 +87,7 @@ class AnalysisResult:
     aligned_fasta: str = ""
     # Distinguishes an intentional user cancellation from an analysis failure.
     cancelled: bool = False
+    provenance: Dict[str, Any] = field(default_factory=dict)
 
 
 class AnalysisService:
@@ -103,6 +110,21 @@ class AnalysisService:
         self._progress_callback: Optional[Callable[[int], None]] = None
         self._log_callback: Optional[Callable[[str], None]] = None
         self._cancel_callback: Optional[Callable[[], bool]] = None
+        self._run_provenance: Dict[str, Any] = {}
+
+    def _record_tool(self, stage: str, tool: str, executable: str) -> None:
+        # Record a portable tool identity, not an installation-specific path.
+        # The binary hash provides exact traceability across machines.
+        entry: Dict[str, Any] = {
+            "tool": tool,
+            "executable": os.path.basename(executable) if executable else "",
+        }
+        if executable and os.path.isfile(executable):
+            try:
+                entry["sha256"] = sha256_file(executable)
+            except OSError:
+                pass
+        self._run_provenance[stage] = entry
 
     def set_progress_callback(self, callback: Callable[[int], None]) -> None:
         self._progress_callback = callback
@@ -157,6 +179,7 @@ class AnalysisService:
         Returns:
             AnalysisResult with prefix and success status
         """
+        self._run_provenance = {}
         if extra_args is None:
             extra_args = []
         if network_type not in _NETWORK_TYPES:
@@ -196,6 +219,8 @@ class AnalysisService:
             else:
                 FileService.safe_copy(input_fasta, aligned_fasta)
                 self._log("Sequences already aligned — skipping alignment step")
+                self._run_provenance["alignment"] = {
+                    "tool": "none", "reason": "sequences_already_aligned"}
 
             # Track the aligned FASTA so the caller can display it in the Alignment tab.
             produced_aligned_fasta = aligned_fasta if os.path.isfile(aligned_fasta) else ""
@@ -252,12 +277,15 @@ class AnalysisService:
                             has_continuous_traits=has_continuous_traits,
                             aligned_fasta=produced_aligned_fasta,
                         )
+                    self._record_tool("network", "McAN", exe_path)
                     self._run_mcan(
                         exe_path, aligned_fasta, file_suffix, extra_args, output_path,
                         mcan_vcf_input=mcan_vcf_input,
                         selected_names=[taxon.name for taxon in taxons],
                     )
                 elif network_type == "rmst":
+                    self._record_tool(
+                        "network", "netst-rmst", _rmst_executable_path())
                     rmst_options = parse_rmst_options(extra_args)
                     rmst_result = build_rmst_network(
                         f"{file_suffix}_hap.fasta",
@@ -288,6 +316,7 @@ class AnalysisService:
                             has_continuous_traits=has_continuous_traits,
                             aligned_fasta=produced_aligned_fasta,
                         )
+                    self._record_tool("network", "fastHaN", exe_path)
                     cmd = [exe_path, network_type, "-i", seq_phy_file]
                     cmd += extra_args + ["-o", file_suffix]
                     self._log(f"Running: {' '.join(cmd)}")
@@ -301,9 +330,15 @@ class AnalysisService:
                         cancel_requested=self._cancel_callback,
                     )
                     self._log_process_output("fastHaN", process.stdout, process.stderr)
+                    stderr_text = str(process.stderr or "").strip()
                     if process.returncode != 0:
+                        detail = f"\n{stderr_text}" if stderr_text else ""
                         raise AnalysisEngineError(
-                            f"fastHaN exited with code {process.returncode}"
+                            f"fastHaN exited with code {process.returncode}{detail}"
+                        )
+                    if stderr_text.startswith("error"):
+                        raise AnalysisEngineError(
+                            f"fastHaN reported an error:\n{stderr_text}"
                         )
             except ProcessTimedOut:
                 self._log(f"{engine_name} timed out after 600 seconds")
@@ -312,7 +347,7 @@ class AnalysisService:
             except (McanAdapterError, RMSTError, AnalysisEngineError,
                     FileNotFoundError, PermissionError, OSError) as e:
                 self._log(f"{engine_name} network construction error: {e}")
-                self._log(traceback.format_exc())
+                logger.exception("%s network construction failed", engine_name)
                 success = False
                 failure_message = f"{engine_name} network construction error: {e}"
 
@@ -346,14 +381,15 @@ class AnalysisService:
                                   cancelled=True)
         except Exception as e:
             self._log(f"Analysis error: {str(e)}")
-            self._log(traceback.format_exc())
+            logger.exception("Network analysis failed")
             return AnalysisResult(prefix, False, output_path, str(e),
                                   haplotype_ready=haplotype_ready)
 
         return AnalysisResult(prefix, success, output_path, failure_message,
                               haplotype_ready=haplotype_ready,
                               has_continuous_traits=has_continuous_traits,
-                              aligned_fasta=produced_aligned_fasta)
+                              aligned_fasta=produced_aligned_fasta,
+                              provenance=dict(self._run_provenance))
 
     def refresh_network_metadata(self, taxons: List[TaxonData],
                                  output_path: str, prefix: str,
@@ -471,7 +507,7 @@ class AnalysisService:
                 cancelled=True)
         except Exception as e:
             self._log(f"Metadata update error: {str(e)}")
-            self._log(traceback.format_exc())
+            logger.exception("Network metadata refresh failed")
             return AnalysisResult(prefix, False, output_path, str(e))
 
     # ── Alignment helpers ───────────────────────────────────────────────────────
@@ -497,6 +533,7 @@ class AnalysisService:
         Returns:
             AlignmentResult with success flag and output file path
         """
+        self._run_provenance = {}
         FileService.ensure_directory(output_path)
         input_fasta = os.path.join(output_path, f"{prefix}.fasta")
         if config.tool == "mafft":
@@ -539,6 +576,7 @@ class AnalysisService:
                     success=True,
                     output_file=output_file,
                     displayable_fasta=displayable_fasta,
+                    provenance=dict(self._run_provenance),
                 )
             else:
                 return AlignmentResult(
@@ -615,6 +653,7 @@ class AnalysisService:
                         and os.path.isfile(output_file)
                         and os.path.getsize(output_file) > 0):
                     self._log(f"MAFFT alignment succeeded using: {mafft_cmd}")
+                    self._record_tool("alignment", "MAFFT", mafft_cmd)
                     return True
 
                 if os.path.isfile(output_file):
@@ -687,6 +726,7 @@ class AnalysisService:
                             and os.path.isfile(output_file)
                             and os.path.getsize(output_file) > 0):
                         self._log(f"MUSCLE alignment succeeded using: {muscle_cmd}")
+                        self._record_tool("alignment", "MUSCLE", muscle_cmd)
                         return True
 
                     if os.path.isfile(output_file):
@@ -802,7 +842,7 @@ class AnalysisService:
             raise
         except Exception as e:
             self._log(f"Haplotype processing error: {str(e)}")
-            self._log(traceback.format_exc())
+            logger.exception("Haplotype processing failed")
             return False, False
 
     def _write_haplotype_outputs(
@@ -919,6 +959,7 @@ class AnalysisService:
         Returns:
             AnalysisResult with haplotype_ready=True on success
         """
+        self._run_provenance = {}
         FileService.ensure_directory(output_path)
         haplotype_ready = False
         produced_aligned_fasta = ""
@@ -986,7 +1027,8 @@ class AnalysisService:
             return AnalysisResult(prefix, True, output_path,
                                   haplotype_ready=haplotype_ready,
                                   has_continuous_traits=has_continuous_traits,
-                                  aligned_fasta=produced_aligned_fasta)
+                                  aligned_fasta=produced_aligned_fasta,
+                                  provenance=dict(self._run_provenance))
 
         except ProcessCancelled:
             self._log("Haplotype calculation cancelled by user")
@@ -998,7 +1040,7 @@ class AnalysisService:
             )
         except Exception as e:
             self._log(f"Haplotype calculation error: {str(e)}")
-            self._log(traceback.format_exc())
+            logger.exception("Haplotype calculation failed")
             return AnalysisResult(prefix, False, output_path, str(e),
                                   haplotype_ready=haplotype_ready)
 
@@ -1092,7 +1134,9 @@ class AnalysisService:
         )
         self._log_process_output("McAN", process.stdout, process.stderr)
         if process.returncode != 0:
-            raise AnalysisEngineError(f"McAN exited with code {process.returncode}")
+            stderr_text = str(process.stderr or "").strip()
+            detail = f"\n{stderr_text}" if stderr_text else ""
+            raise AnalysisEngineError(f"McAN exited with code {process.returncode}{detail}")
         graphml_file = next(
             (path for path in graphml_candidates
              if os.path.isfile(path) and os.path.getsize(path) > 0),
@@ -1234,8 +1278,10 @@ class AnalysisService:
         arch = platform.machine().lower()
 
         if self._is_windows():
+            # NetST ships an x86-64 Windows build only; Windows-on-ARM is not a
+            # supported target, so there is no native ARM fastHaN binary.
             candidates = [
-                "fastHaN_win_arm.exe" if 'arm' in arch else "fastHaN_win_intel.exe",
+                "fastHaN_win_intel.exe",
                 "fastHaN.exe",
                 "fastHaN",
             ]

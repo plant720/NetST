@@ -12,6 +12,7 @@ import os
 
 from model.trait_schema import default_category_colors, normalize_hex_color
 
+DEFAULT_GROUP_COLOR = "#6BAB30"
 
 def _gen_hap_config(hap_file: str):
     """Read _seq.meta.csv and return list of (sample, group, hap) tuples.
@@ -41,11 +42,9 @@ def _gen_hap_config(hap_file: str):
 def _color_group_config(hap_conf_list, group_colors=None):
     """Assign colors to each unique group.
 
-    Groups are written to groupconf.csv exactly as-is; tcsBU's loadGroups
-    already seeds the list with a 'Default' (white) entry, so we only
-    write non-Default groups.  When all samples fall into 'Default'
-    (i.e. no discrete traits) we return an empty list — the groupconf
-    file will be empty and tcsBU will keep its built-in Default group.
+    Groups are written to groupconf.csv exactly as-is.  ``Default`` is emitted
+    with NetST's green fallback so an ungrouped network and the editable tcsBU
+    Groups panel always agree on its colour.
 
     ``group_colors`` (group name → ``#RRGGBB``) lets the Metadata tab override
     the automatic colours; groups it does not cover use the curated palette
@@ -54,10 +53,6 @@ def _color_group_config(hap_conf_list, group_colors=None):
     group_colors = group_colors or {}
     group_names = list(dict.fromkeys(group for _, group, _ in hap_conf_list))
     non_default = [g for g in group_names if g != "Default"]
-
-    if not non_default:
-        # No named groups — all samples belong to Default; groupconf stays empty.
-        return []
 
     valid_overrides = {
         name: color
@@ -69,7 +64,10 @@ def _color_group_config(hap_conf_list, group_colors=None):
         seed="primary-group",
         excluded=tuple(valid_overrides.values()),
     )
-    result = []
+    result = [
+        ("Default", normalize_hex_color(group_colors.get("Default"))
+         or DEFAULT_GROUP_COLOR, 'none')
+    ] if "Default" in group_names else []
     for name in non_default:
         color = valid_overrides.get(name, automatic[name])
         result.append((name, color, 'none'))

@@ -110,9 +110,9 @@
 </head>
 <body>
 <div>
-    <h1>tcsBU - a TCS beautifier</h1>
+    <h1>tcsBU - haplotype network visualization help</h1>
 
-    <p>
+    <nav aria-label="Table of contents">
     <ul>
         <li><a href="#intro">Introduction</a></li>
         <li><a href="#software">The software</a>
@@ -145,7 +145,7 @@
         </li>
         <li><a href="#references">References</a></li>
     </ul>
-    </p>
+    </nav>
 
     <h2><a id="intro">Introduction</a></h2>
 
@@ -169,14 +169,14 @@
         <li>Display haplotype names (e.g., H1, H2) on nodes when a three-column haplotype configuration file is
             provided, and toggle per-edge mutation-distance labels.
         </li>
-        <li>Save the final network as <b>SVG (vector), PNG, or JPG</b> for publication or further editing.</li>
+        <li>Save the final network as <b>SVG (vector), PNG, JPG, or PDF</b> for publication or further editing.</li>
     </ul>
 
     <div class="note"><b>This build.</b> tcsBU here is the enhanced version embedded in <b>NetST</b>. When NetST drives
         it, the concentric multi-trait rings are configured on NetST's <i>Metadata</i> page and the configuration files
         below are generated automatically — you normally do not edit them by hand. The toolbar and dialogs described in
         this document match the current build (for example, trait rings replace the old single "Style"/"Color" toggles,
-        and image export offers SVG/PNG/JPG).
+        and image export offers SVG/PNG/JPG/PDF).
     </div>
 
     <h2><a id="software">The software</a></h2>
@@ -199,8 +199,8 @@
         </li>
     </ul>
 
-    <p><b>tcsBU</b> will only run on modern browsers (Firefox 20+, Chrome, Chrome for Android, IE 10+, Opera 15+, and
-        Safari 6.1+).</p>
+    <p><b>tcsBU</b> requires JavaScript, SVG, FileReader, and Blob/FileSaver support. Use the Qt WebEngine bundled with
+        NetST or a current desktop browser for standalone use.</p>
 
     <h3><a id="installation">Installation</a></h3>
 
@@ -248,8 +248,8 @@
 
     <h3><a id="tcsfiles">Step 1: Loading a GML file</a></h3>
 
-    <p>Click the <b>Load Data</b> button (top-left of the toolbar) to open a file browser. Select the GML file produced
-        by TCS — these files typically have the extension <i>.graph</i> and are found in the directory where the
+    <p>Click the <b>Load Data</b> button (top-left of the toolbar) to open a file browser. Select a tcsBU-compatible GML
+        file. Classic TCS files may use <i>.graph</i>; NetST writes <i>.gml</i>. The files are usually found in the directory where the
         alignment used by TCS was stored. This action calls the internal <code>loadGraph</code> function, which parses
         the file, builds the internal node and edge lists, and starts the force-directed layout algorithm to display the
         raw haplotype network.</p>
@@ -285,12 +285,10 @@ AAA
 
     <h3><a id="labels">Haplotype labels in TCS files</a></h3>
 
-    <p>TCS does not restrict haplotype names beyond requiring standard ASCII characters. However, the <i>d3.js</i>
-        library does not allow SVG element IDs to start with digits. Therefore, <b>tcsBU will automatically prepend an
-            'L' to every label that starts with a digit (0–9)</b>. This only matters when preparing haplotype
-        configuration files (hapconf): any haplotype name that originally starts with a digit must also be written with
-        a leading 'L' in the hapconf file. The safest practice is to avoid haplotype names that begin with a digit in
-        the original alignment.</p>
+    <p>For safe SVG and grid identifiers, tcsBU normalizes each GML member label: non-alphanumeric characters other than
+        underscore become underscores, and a label beginning with a digit receives an <b>L</b> prefix. Configuration-file
+        names pass through the same normalization. The safest practice is to keep original sample names unique after this
+        transformation and to use the exact original names in the configuration files.</p>
 
     <h3><a id="groups">Step 2: Defining classification groups</a></h3>
 
@@ -308,7 +306,7 @@ AAA
     <pre>
 circles-1, circles-2,
 lines-1, lines-2, lines-3, lines-4, lines-5, lines-6, lines-7, lines-8,
-cross-1, cross-2
+cross-1, cross-2, cross-3, cross-4
 </pre>
 
     <p>Click the <b>Load</b> button in the Groups tab toolbar to load a previously saved group configuration file
@@ -324,32 +322,16 @@ cross-1, cross-2
 
     <p><b>tcsBU</b> supports two hapconf file formats, detected automatically by the number of columns:</p>
 
-    <table>
-        <tr>
-            <th>Columns</th>
-            <th>Column 1</th>
-            <th>Column 2</th>
-            <th>Column 3</th>
-            <th>Effect</th>
-        </tr>
-        <tr>
-            <td>2</td>
-            <td>Sequence name</td>
-            <td>Group name</td>
-            <td>—</td>
-            <td>Assigns each sequence to a group. Node labels remain the first sequence name in each node.</td>
-        </tr>
-        <tr>
-            <td>3</td>
-            <td>Sequence name</td>
-            <td>Group name</td>
-            <td>Haplotype name (e.g., H1, H2)</td>
-            <td>Assigns sequences to groups <i>and</i> sets a custom haplotype label (e.g., H1) for each node. The
-                <b>Haplotype</b> toolbar button (which toggles the labels) is enabled only when a 3-column file is
-                loaded.
-            </td>
-        </tr>
-    </table>
+    <ul>
+        <li><b>Two columns — sequence name; group name.</b> Assigns each sequence to a group. Node labels remain the
+            first sequence name in each node.
+        </li>
+        <li><b>Three columns — sequence name; group name; haplotype name (for example, H1 or H2).</b> Assigns sequences
+            to groups and supplies the display label for the existing node that contains the sequence. It does not
+            regroup nodes or change topology. The <b>Haplotype</b> toolbar button is enabled only after a three-column
+            file is loaded.
+        </li>
+    </ul>
 
     <p>Sequence names must exactly match those in the original GML file (remember to prepend 'L' where names started
         with a digit). Group names must match those defined in the Groups tab. See <a href="#fmt-hapconf">Haplotype
@@ -383,7 +365,7 @@ cross-1, cross-2
         represents). Trait information is layered as concentric rings, ordered from the centre outward:</p>
 
     <ul>
-        <li>The <b>group</b> (primary categorical trait) occupies the <b>innermost</b> ring, drawn as a pie chart
+        <li>In a NetST metadata configuration, the designated <b>Group</b> (primary categorical trait) occupies the <b>innermost</b> ring, drawn as a pie chart
             coloured by group.
         </li>
         <li>Each additional enabled trait is drawn as a further ring moving <b>outward</b>, in the order defined on
@@ -427,48 +409,36 @@ cross-1, cross-2
     <p>The toolbar <b>Advanced</b> button opens a settings dialog that can be <b>moved by dragging its title bar</b>. It
         is organized into three sections:</p>
 
-    <table>
-        <tr>
-            <th>Section</th>
-            <th>Settings</th>
-        </tr>
-        <tr>
-            <td><b>Force-Directed Layout Settings</b></td>
-            <td>Link Distance, Link Strength, Friction, Charge, Gravity, plus <b>Start</b> / <b>Stop</b> to re-run or
-                freeze the layout (see above).
-            </td>
-        </tr>
-        <tr>
-            <td><b>Node and Edge Settings</b></td>
-            <td>
-                <ul>
-                    <li><b>Node Radius</b> — radius (px) of a frequency-1 node; relative sizes of higher-frequency nodes
-                        are preserved when this changes.
-                    </li>
-                    <li><b>Node Line Width</b> — stroke width of the node outline.</li>
-                    <li><b>Edge Line Width</b> — base stroke width of the edges (links) between nodes.</li>
-                    <li><b>Edge Weight Scale</b> — maximum multiplier applied to Edge Line Width when the toolbar's
-                        Edge Weight toggle is on. Edges approach the base width as their Changes value increases.
-                    </li>
-                    <li><b>Text Offset</b> — gap between a node and its label text.</li>
-                </ul>
-            </td>
-        </tr>
-        <tr>
-            <td><b>Metadata Ring Settings</b></td>
-            <td>
-                <ul>
-                    <li><b>Ring Line Width</b> — stroke width drawn between the segments of each trait ring.</li>
-                    <li><b>Base Ring Width</b> — base thickness (px) of each outer (non-group) ring at ratio 1; the
-                        actual thickness is <i>base width × the ring's ratio</i>.
-                    </li>
-                    <li><b>Outer Ring Ratios</b> — comma-separated thickness ratios, from the innermost outer ring to the
-                        outermost (missing values default to 1).
-                    </li>
-                </ul>
-            </td>
-        </tr>
-    </table>
+    <h4>Force-Directed Layout Settings</h4>
+    <p>Link Distance, Link Strength, Friction, Charge, Gravity, plus <b>Start</b> / <b>Stop</b> to re-run or freeze the
+        layout (see above).</p>
+
+    <h4>Node and Edge Settings</h4>
+    <ul>
+        <li><b>Node Radius</b> — radius (px) of a frequency-1 node; relative sizes of higher-frequency nodes are
+            preserved when this changes.
+        </li>
+        <li><b>Node Line Width</b> — stroke width of the node outline.</li>
+        <li><b>Edge Line Width</b> — base stroke width of the edges (links) between nodes.</li>
+        <li><b>Edge Weight Scale</b> — maximum multiplier applied to Edge Line Width when the toolbar's Edge Weight
+            toggle is on. Edges approach the base width as their Changes value increases.
+        </li>
+        <li><b>Text Offset</b> — gap between a node and its label text.</li>
+        <li><b>Haplotype Font Size</b> and <b>Name/ID Font Size</b> — global label sizes; the Info panel can override the
+            position and size of an individual node's labels.
+        </li>
+    </ul>
+
+    <h4>Metadata Ring Settings</h4>
+    <ul>
+        <li><b>Ring Line Width</b> — stroke width drawn between the segments of each trait ring.</li>
+        <li><b>Ring Width Ratio</b> — each outer (non-group) ring's width as a fraction of the node radius; the actual
+            thickness is <i>node radius × ratio × the ring's outer-ring scale</i>.
+        </li>
+        <li><b>Outer Ring Ratios</b> — comma-separated thickness ratios, from the innermost outer ring to the outermost
+            (missing values default to 1).
+        </li>
+    </ul>
 
     <p>Enter values and click <b>Apply</b> to redraw the network, or <b>Cancel</b> to close without changes. Inputs are
         validated (for example, widths must be zero or positive); invalid entries show an inline message.</p>
@@ -490,7 +460,7 @@ cross-1, cross-2
         </tr>
         <tr>
             <td><b>Save Image</b> (menu)</td>
-            <td>Exports the whole network as <b>SVG (vector)</b>, <b>PNG</b>, or <b>JPG</b>; a system save dialog then
+            <td>Exports the whole network as <b>SVG (vector)</b>, <b>PNG</b>, <b>JPG</b>, or <b>PDF</b>; a system save dialog then
                 chooses the location. See <a href="#saving">Saving the network</a>.
             </td>
         </tr>
@@ -513,7 +483,8 @@ cross-1, cross-2
         </tr>
         <tr>
             <td><b>Legend</b> (toggle)</td>
-            <td>Shows or hides the legend. The legend is draggable and can be repositioned anywhere on the canvas. It
+            <td>Shows or hides the legend. The legend is draggable and can be repositioned anywhere on the canvas.
+                Hover over it and use the mouse wheel to resize it; double-click it to restore the original size. It
                 lists every trait ring — categorical class swatches and continuous-gradient ranges — in inner-to-outer
                 order.
             </td>
@@ -525,6 +496,11 @@ cross-1, cross-2
             </td>
         </tr>
         <tr>
+            <td><b>Name/ID</b> (toggle)</td>
+            <td>Shows or hides one member name/ID for each sampled haplotype node. Select a specific member and adjust
+                its text position or size from the right Info panel.</td>
+        </tr>
+        <tr>
             <td><b>Distance</b> (toggle)</td>
             <td>Shows or hides the mutation-distance (number of changes) label on each edge.</td>
         </tr>
@@ -533,6 +509,10 @@ cross-1, cross-2
             <td>Weights edge thickness by mutation distance: fewer changes produce thicker edges. The base width and
                 maximum multiplier are controlled by Edge Line Width and Edge Weight Scale in Advanced settings.
             </td>
+        </tr>
+        <tr>
+            <td><b>Undo</b></td>
+            <td>Restores the latest deleted node or link. Deletions are recorded in a stack, so Undo can be used repeatedly until the stack is empty.</td>
         </tr>
         <tr>
             <td><b>Advanced</b></td>
@@ -546,9 +526,14 @@ cross-1, cross-2
         force-directed simulation from that position. The left <b>Data</b> panel (Groups / Haplotypes) and the right
         <b>Info</b> panel can each be collapsed with the chevron buttons to give the network more room.</p>
 
+    <p>The right <b>Info</b> panel supports node search and shows details for a clicked node or edge. For nodes, it can
+        display member sequences, group composition, metadata summaries, label controls, label X/Y positions and sizes,
+        and highlighting. For edges, it shows endpoints and the changes count and can toggle highlighting or a per-edge
+        changes label.</p>
+
     <h3><a id="saving">Saving the network</a></h3>
 
-    <p>Use the <b>Save Image</b> toolbar menu to export the entire network. Three formats are offered:</p>
+    <p>Use the <b>Save Image</b> toolbar menu to export the entire network. Four formats are offered:</p>
 
     <ul>
         <li><b>SVG (vector)</b> — a standard <code>image/svg+xml</code> file. All parts of the network, including any
@@ -556,10 +541,11 @@ cross-1, cross-2
             processor or edited in vector software such as Inkscape or Adobe Illustrator&reg;.
         </li>
         <li><b>PNG</b> and <b>JPG</b> — raster images, exported at 2&times; resolution by default for sharper output.</li>
+        <li><b>PDF</b> — available when tcsBU is embedded in NetST; NetST converts the current serialized SVG to a vector PDF.</li>
     </ul>
 
-    <p>After choosing a format, a system save dialog lets you pick the location. The legend is not scalable, so it is
-        advisable to scale the network appropriately before saving.</p>
+    <p>After choosing a format, a system save dialog lets you pick the location. The exported image preserves the
+        legend's current position and size.</p>
 
     <h2><a id="fileformats">File formats</a></h2>
 
@@ -619,9 +605,9 @@ L1821_ES-HER;Northern Spain;H4
 L1879_MA-RAS;Morocco;H2
 </pre>
 
-    <p>When a three-column file is loaded, sequences sharing the same haplotype label (column 3) are grouped into the
-        same network node and that label is used as the node's display name. The <b>Haplotype</b> toolbar button
-        (which toggles the labels) becomes enabled.</p>
+    <p>When a three-column file is loaded, column 3 supplies a display label for each existing sampled node, using the
+        first sequence name in that node as the lookup key. The network topology and node membership come from the GML
+        and are not changed by hapconf. The <b>Haplotype</b> toolbar button then becomes enabled.</p>
 
     <div class="note"><b>Reminder:</b> Sequence names must exactly match those in the GML file. If any name originally
         started with a digit, it will have been automatically prepended with 'L' by <b>tcsBU</b> — the same 'L' prefix
@@ -653,7 +639,7 @@ L1879_MA-RAS;2009
         <li>Sequences not present in the currently loaded network are silently ignored.</li>
         <li>A linear color scale maps the minimum value to one end of the gradient and the maximum value to the other.
         </li>
-        <li>Within each node, the inner ring is subdivided into sectors proportional to the number of sequences at each
+        <li>Within each node, the continuous-trait ring is subdivided into sectors proportional to the number of sequences at each
             distinct trait value.
         </li>
     </ul>

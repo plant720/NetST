@@ -18,6 +18,7 @@ from typing import Dict, List, Mapping, Optional, Sequence
 from model.trait_schema import CONTINUOUS, DISCRETE, UNASSIGNED_COLOR
 from service.topology_analysis_service import parse_tcsbu_gml
 
+DEFAULT_GROUP_COLOR = "#6BAB30"
 
 def _clamp8(value: float) -> int:
     return max(0, min(255, int(round(value))))
@@ -169,6 +170,7 @@ def build_meta_config(
                 })
             else:
                 colors = spec.get("colors") or {}
+                fallback = DEFAULT_GROUP_COLOR if spec.get("group") else UNASSIGNED_COLOR
                 counts = Counter(
                     (sample_values.get(s, {}).get(name, "") or "").strip()
                     for s in samples
@@ -181,7 +183,7 @@ def build_meta_config(
                     {
                         "label": c,
                         "value": counts[c],
-                        "color": colors.get(c, UNASSIGNED_COLOR),
+                        "color": colors.get(c, fallback),
                     }
                     for c in ordered
                 ]
@@ -190,13 +192,13 @@ def build_meta_config(
                     segments.append({
                         "label": "",
                         "value": blank,
-                        "color": UNASSIGNED_COLOR,
+                        "color": fallback,
                     })
                 if not segments:
                     segments = [{
                         "label": "",
                         "value": 1,
-                        "color": UNASSIGNED_COLOR,
+                        "color": fallback,
                     }]
                 rings.append({"kind": "discrete", "trait": name, "segments": segments})
         nodes[str(node.id)] = {"rings": rings}

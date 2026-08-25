@@ -1,6 +1,9 @@
 """Data models, loaded lazily to keep non-GUI utilities lightweight."""
 
-__all__ = ['TaxonData', 'TaxonTableModel', 'SequenceAlignmentConfig']
+__all__ = [
+    'TaxonData', 'TaxonTableModel', 'SequenceAlignmentConfig',
+    'ProjectManifest', 'ProjectConfigError',
+]
 
 
 def __getattr__(name):
@@ -13,4 +16,10 @@ def __getattr__(name):
     if name == 'SequenceAlignmentConfig':
         from model.alignment_config import SequenceAlignmentConfig
         return SequenceAlignmentConfig
+    if name in {'ProjectManifest', 'ProjectConfigError'}:
+        from model.project_config import ProjectConfigError, ProjectManifest
+        return {
+            'ProjectManifest': ProjectManifest,
+            'ProjectConfigError': ProjectConfigError,
+        }[name]
     raise AttributeError(name)
