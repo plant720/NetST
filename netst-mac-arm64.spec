@@ -25,6 +25,7 @@ entitlements_file = os.environ.get("NETST_ENTITLEMENTS_FILE") or None
 datas = [
     ("static/docs", "static/docs"),
     ("static/tcsbu", "static/tcsbu"),
+    ("statics/fig", "statics/fig"),
     ("lib/mac_arm64", "lib/mac_arm64"),
 ]
 

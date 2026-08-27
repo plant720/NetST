@@ -89,6 +89,7 @@ def _check_bundle_inputs(target: str) -> None:
         ROOT / "static" / "icon" / "netst.icns",
         ROOT / "static" / "icon" / "netst.ico",
         ROOT / "static" / "tcsbu" / "index.html",
+        ROOT / "statics" / "fig" / "netst-workflow.png",
     ]
     if target == "macos-arm64":
         platform_files = [
@@ -155,6 +156,9 @@ def _validate_output(target: str, onefile: bool) -> Path:
              or _find_one(output, "QtWebEngineProcess")),
             ("QtWebEngine resources", _find_one(output, "qtwebengine_resources.pak")),
             ("tcsBU resources", (resource_root / "static" / "tcsbu" / "tcsBU.js").exists()),
+            ("Home workflow infographic", (
+                resource_root / "statics" / "fig" / "netst-workflow.png"
+            ).exists()),
             ("platform libraries", (resource_root / "lib").is_dir()),
             ("native RMST engine", _find_one(output, "netst-rmst.exe")
              or _find_one(output, "netst-rmst")),

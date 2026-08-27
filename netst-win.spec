@@ -20,6 +20,7 @@ onefile = os.environ.get("NETST_ONEFILE", "0") == "1"
 datas = [
     ("static/docs", "static/docs"),
     ("static/tcsbu", "static/tcsbu"),
+    ("statics/fig", "statics/fig"),
     ("lib/win", "lib/win"),
 ]
 
